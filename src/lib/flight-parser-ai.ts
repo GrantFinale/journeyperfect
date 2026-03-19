@@ -10,22 +10,44 @@ export async function parseFlightTextWithAI(text: string): Promise<ParseResult |
 
   const model = await getConfig("ai.flight_parser.model", "anthropic/claude-haiku-4.5")
 
-  const prompt = `You are parsing an airline confirmation email or flight itinerary. These emails often contain a lot of marketing content, promotional banners, legal disclaimers, and unrelated text. IGNORE all of that. Focus ONLY on the booking/itinerary section that contains actual flight details.
+  const prompt = `You are parsing an airline confirmation email or flight itinerary. These emails often contain marketing content, banners, and disclaimers — IGNORE all of that. Focus ONLY on the flight booking details.
 
-Extract all flight segments and return a JSON object with this exact structure:
+CRITICAL: Extract EVERY flight segment as a separate entry. A round trip has at least 2 flights. A trip with connections may have 4, 6, or even 8+ segments. Each takeoff-to-landing is ONE segment. Do NOT combine or skip any.
 
+For example, a round trip NYC→LAX with a connection in Dallas each way = 4 flights:
+1. JFK→DFW (outbound leg 1)
+2. DFW→LAX (outbound leg 2)
+3. LAX→DFW (return leg 1)
+4. DFW→JFK (return leg 2)
+
+Return a JSON object:
 {
   "flights": [
     {
-      "airline": "Airline name",
-      "flightNumber": "XX1234",
+      "airline": "American Airlines",
+      "flightNumber": "AA1234",
       "departureAirport": "JFK",
       "departureCity": "New York",
       "departureTime": "2025-03-15T10:30:00",
       "departureTimezone": "America/New_York",
+      "arrivalAirport": "DFW",
+      "arrivalCity": "Dallas",
+      "arrivalTime": "2025-03-15T13:45:00",
+      "arrivalTimezone": "America/Chicago",
+      "confirmationNumber": "ABC123",
+      "cabin": "Economy",
+      "passengers": ["John Doe"]
+    },
+    {
+      "airline": "American Airlines",
+      "flightNumber": "AA5678",
+      "departureAirport": "DFW",
+      "departureCity": "Dallas",
+      "departureTime": "2025-03-15T15:00:00",
+      "departureTimezone": "America/Chicago",
       "arrivalAirport": "LAX",
       "arrivalCity": "Los Angeles",
-      "arrivalTime": "2025-03-15T13:45:00",
+      "arrivalTime": "2025-03-15T16:30:00",
       "arrivalTimezone": "America/Los_Angeles",
       "confirmationNumber": "ABC123",
       "cabin": "Economy",
@@ -36,14 +58,15 @@ Extract all flight segments and return a JSON object with this exact structure:
 }
 
 Rules:
-- Use IATA 3-letter airport codes (e.g. JFK, LAX, LHR)
-- Use IANA timezone names (e.g. America/New_York, not EST)
-- Use ISO 8601 datetime format for times
-- Flight number should include the 2-letter airline code prefix (e.g. AA123, DL456)
-- Include ALL flight segments (outbound, connections, and return flights)
-- If a field cannot be determined from the text, omit it entirely
-- Look for the confirmation/booking reference number — it is usually a 5-8 character alphanumeric code
-- Return ONLY valid JSON, no other text or explanation
+- IATA 3-letter airport codes (JFK, LAX, LHR)
+- IANA timezone names (America/New_York, not EST)
+- ISO 8601 datetime format
+- Flight number includes 2-letter airline code (AA123, DL456)
+- EVERY segment is a separate entry — outbound legs, connections, return legs, ALL of them
+- If the email shows "Flight 1", "Flight 2" or "Depart" / "Return" sections, extract each one
+- Omit fields that cannot be determined
+- Confirmation/booking reference is usually a 5-8 character alphanumeric code
+- Return ONLY valid JSON, no other text
 
 Text to parse:
 ${text}`

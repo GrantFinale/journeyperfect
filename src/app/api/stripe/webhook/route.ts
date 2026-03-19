@@ -5,11 +5,10 @@ import type { Plan } from "@/lib/plans"
 
 export const dynamic = "force-dynamic"
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: "2025-02-24.acacia",
-})
-
 export async function POST(request: Request) {
+  const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+    apiVersion: "2025-02-24.acacia",
+  })
   const rawBody = await request.text()
   const sig = request.headers.get("stripe-signature")
 

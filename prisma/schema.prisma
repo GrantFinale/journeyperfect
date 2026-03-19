@@ -135,6 +135,7 @@ model Trip {
 
   // Relations
   user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  destinations   TripDestination[]
   travelers      TripTraveler[]
   hotels         Hotel[]
   flights        Flight[]
@@ -148,6 +149,19 @@ model Trip {
 
   @@index([userId])
   @@index([shareSlug])
+}
+
+model TripDestination {
+  id        String   @id @default(cuid())
+  tripId    String
+  name      String
+  lat       Float?
+  lng       Float?
+  position  Int      @default(0)
+  trip      Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@index([tripId])
 }
 
 model TripTraveler {

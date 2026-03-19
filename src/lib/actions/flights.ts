@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/db"
 import { revalidatePath } from "next/cache"
 import { parseFlightText } from "@/lib/flight-parser"
+import { parseFlightTextWithAI } from "@/lib/flight-parser-ai"
 import { z } from "zod"
 
 const flightSchema = z.object({
@@ -26,6 +27,14 @@ const flightSchema = z.object({
 export async function parseAndPreviewFlight(text: string) {
   const session = await auth()
   if (!session?.user?.id) throw new Error("Unauthorized")
+
+  // Try AI parser first
+  const aiResult = await parseFlightTextWithAI(text)
+  if (aiResult && aiResult.flights.length > 0) {
+    return aiResult
+  }
+
+  // Fall back to regex parser
   return parseFlightText(text)
 }
 
@@ -67,6 +76,51 @@ export async function createFlight(tripId: string, data: z.infer<typeof flightSc
   revalidatePath(`/trip/${tripId}`)
   revalidatePath(`/trip/${tripId}/itinerary`)
   return flight
+}
+
+export async function createFlightsBatch(tripId: string, flights: z.infer<typeof flightSchema>[]) {
+  const session = await auth()
+  if (!session?.user?.id) throw new Error("Not authenticated")
+
+  const trip = await prisma.trip.findFirst({
+    where: { id: tripId, userId: session.user.id },
+  })
+  if (!trip) throw new Error("Trip not found")
+
+  await prisma.$transaction(
+    flights.map((flight) => {
+      const parsed = flightSchema.parse(flight)
+      const depTime = new Date(parsed.departureTime)
+      const arrTime = new Date(parsed.arrivalTime)
+      return prisma.flight.create({
+        data: {
+          tripId,
+          ...parsed,
+          departureTime: depTime,
+          arrivalTime: arrTime,
+          itineraryItems: {
+            create: {
+              tripId,
+              date: depTime,
+              startTime: depTime.toTimeString().slice(0, 5),
+              endTime: arrTime.toTimeString().slice(0, 5),
+              type: "FLIGHT",
+              title: `${parsed.airline || ""} ${parsed.flightNumber || "Flight"}`.trim(),
+              durationMins: Math.round(
+                (arrTime.getTime() - depTime.getTime()) / 60000
+              ),
+              position: 0,
+              isConfirmed: true,
+              costEstimate: 0,
+            },
+          },
+        },
+      })
+    })
+  )
+
+  revalidatePath(`/trip/${tripId}`)
+  revalidatePath(`/trip/${tripId}/itinerary`)
 }
 
 export async function updateFlight(tripId: string, flightId: string, data: Partial<z.infer<typeof flightSchema>>) {

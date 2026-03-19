@@ -6,7 +6,7 @@ import { toast } from "sonner"
 import { createFlight, deleteFlight, parseAndPreviewFlight } from "@/lib/actions/flights"
 import { createHotel, deleteHotel } from "@/lib/actions/hotels"
 import { addTravelerToTrip, removeTravelerFromTrip } from "@/lib/actions/travelers"
-import { updateTrip, deleteTrip, shareTrip, unshareTrip } from "@/lib/actions/trips"
+import { updateTrip, deleteTrip, shareTrip, unshareTrip, addDestination, removeDestination } from "@/lib/actions/trips"
 import { formatDate } from "@/lib/utils"
 import { cn } from "@/lib/utils"
 import {
@@ -22,12 +22,22 @@ import {
   Copy,
   AlertTriangle,
   Clipboard,
+  MapPin,
 } from "lucide-react"
+
+type TripDestinationType = {
+  id: string
+  name: string
+  lat: number | null
+  lng: number | null
+  position: number
+}
 
 type Trip = {
   id: string
   title: string
   destination: string
+  destinations: TripDestinationType[]
   startDate: Date
   endDate: Date
   notes: string | null
@@ -110,13 +120,16 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles }: Pro
   // General state
   const [generalForm, setGeneralForm] = useState({
     title: trip.title,
-    destination: trip.destination,
     startDate: trip.startDate.toISOString().split("T")[0],
     endDate: trip.endDate.toISOString().split("T")[0],
     notes: trip.notes || "",
   })
   const [savingGeneral, setSavingGeneral] = useState(false)
   const [deletingTrip, setDeletingTrip] = useState(false)
+
+  // Destination state
+  const [newDestinationName, setNewDestinationName] = useState("")
+  const [addingDestination, setAddingDestination] = useState(false)
 
   // Parse flight from text
   async function handleParseFlight() {
@@ -240,6 +253,40 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles }: Pro
       }
     } catch {
       toast.error("Failed to update travelers")
+    }
+  }
+
+  async function handleAddDestination() {
+    if (!newDestinationName.trim()) return
+    setAddingDestination(true)
+    try {
+      const dest = await addDestination(tripId, newDestinationName.trim())
+      setTrip((prev) => ({
+        ...prev,
+        destinations: [...prev.destinations, dest as unknown as TripDestinationType],
+        destination: [...prev.destinations.map((d) => d.name), newDestinationName.trim()].join(", "),
+      }))
+      setNewDestinationName("")
+      toast.success("Destination added")
+    } catch {
+      toast.error("Failed to add destination")
+    } finally {
+      setAddingDestination(false)
+    }
+  }
+
+  async function handleRemoveDestination(destinationId: string) {
+    try {
+      await removeDestination(tripId, destinationId)
+      const remaining = trip.destinations.filter((d) => d.id !== destinationId)
+      setTrip((prev) => ({
+        ...prev,
+        destinations: remaining,
+        destination: remaining.map((d) => d.name).join(", "),
+      }))
+      toast.success("Destination removed")
+    } catch {
+      toast.error("Failed to remove destination")
     }
   }
 
@@ -645,10 +692,52 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles }: Pro
                   className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
               </div>
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Destination</label>
-                <input type="text" value={generalForm.destination}
-                  onChange={(e) => setGeneralForm((f) => ({ ...f, destination: e.target.value }))}
-                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                <label className="block text-xs text-gray-500 mb-1">Destinations</label>
+                <div className="space-y-2">
+                  {trip.destinations.map((dest) => (
+                    <div
+                      key={dest.id}
+                      className="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-xl group"
+                    >
+                      <MapPin className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                      <span className="flex-1 text-sm text-gray-900">{dest.name}</span>
+                      <button
+                        onClick={() => handleRemoveDestination(dest.id)}
+                        className="p-1 text-gray-400 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                  {trip.destinations.length === 0 && (
+                    <p className="text-xs text-gray-400">No destinations yet</p>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 mt-2">
+                  <div className="relative flex-1">
+                    <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+                    <input
+                      type="text"
+                      placeholder="Add a destination..."
+                      value={newDestinationName}
+                      onChange={(e) => setNewDestinationName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault()
+                          handleAddDestination()
+                        }
+                      }}
+                      className="w-full pl-8 pr-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+                  <button
+                    onClick={handleAddDestination}
+                    disabled={addingDestination || !newDestinationName.trim()}
+                    className="px-3 py-2 bg-indigo-600 text-white text-sm font-medium rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                  >
+                    <Plus className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>

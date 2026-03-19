@@ -7,7 +7,7 @@ export default function LandingPage() {
       {/* Nav */}
       <nav className="flex items-center justify-between px-6 py-4 max-w-6xl mx-auto">
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white font-bold text-sm">JP</div>
+          <img src="/jp-icon.png" alt="JourneyPerfect" className="w-8 h-8" />
           <span className="font-semibold text-gray-900">JourneyPerfect</span>
         </div>
         <Link
@@ -149,7 +149,7 @@ export default function LandingPage() {
       <footer className="border-t border-gray-100 px-6 py-8">
         <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2 text-gray-500 text-sm">
-            <div className="w-5 h-5 rounded-md bg-indigo-600 flex items-center justify-center text-white font-bold text-[10px]">JP</div>
+            <img src="/jp-icon.png" alt="JourneyPerfect" className="w-5 h-5" />
             JourneyPerfect · Plan perfect vacations
           </div>
           <p className="text-gray-400 text-sm">© {new Date().getFullYear()} JourneyPerfect</p>

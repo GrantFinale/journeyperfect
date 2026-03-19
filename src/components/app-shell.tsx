@@ -78,9 +78,7 @@ export function AppShell({ children, user }: AppShellProps) {
       <aside className="hidden md:flex flex-col w-60 border-r border-border bg-card shrink-0">
         {/* Logo */}
         <div className="flex items-center gap-2 px-4 py-4 border-b border-border">
-          <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-primary-foreground font-bold text-sm">
-            JP
-          </div>
+          <img src="/jp-icon.png" alt="JourneyPerfect" className="w-8 h-8" />
           <span className="font-semibold text-foreground">JourneyPerfect</span>
         </div>
 
@@ -152,7 +150,7 @@ export function AppShell({ children, user }: AppShellProps) {
           <aside className="absolute left-0 top-0 bottom-0 w-72 bg-card border-r border-border flex flex-col z-50">
             <div className="flex items-center justify-between px-4 py-4 border-b border-border">
               <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-primary-foreground font-bold text-sm">JP</div>
+                <img src="/jp-icon.png" alt="JourneyPerfect" className="w-8 h-8" />
                 <span className="font-semibold">JourneyPerfect</span>
               </div>
               <button onClick={() => setSidebarOpen(false)}>
@@ -190,7 +188,7 @@ export function AppShell({ children, user }: AppShellProps) {
             <Menu className="w-5 h-5" />
           </button>
           <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded-md bg-primary flex items-center justify-center text-primary-foreground font-bold text-xs">JP</div>
+            <img src="/jp-icon.png" alt="JourneyPerfect" className="w-6 h-6" />
             <span className="font-semibold text-sm">JourneyPerfect</span>
           </div>
         </header>

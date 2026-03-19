@@ -10,9 +10,7 @@ export default async function LoginPage() {
       <div className="w-full max-w-sm">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="w-14 h-14 rounded-2xl bg-indigo-600 flex items-center justify-center text-white font-bold text-xl mx-auto mb-4">
-            JP
-          </div>
+          <img src="/jp-logo.png" alt="JourneyPerfect" className="w-32 mx-auto mb-4" />
           <h1 className="text-2xl font-bold text-gray-900">Welcome to JourneyPerfect</h1>
           <p className="text-gray-600 mt-2 text-sm">Sign in to start planning perfect vacations</p>
         </div>

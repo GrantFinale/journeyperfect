@@ -17,9 +17,7 @@ export default async function SharedTripPage({ params }: { params: Promise<{ slu
         {/* Header */}
         <div className="text-center mb-10">
           <div className="inline-flex items-center gap-2 px-3 py-1 bg-white rounded-full text-xs text-gray-500 shadow-sm border border-gray-100 mb-6">
-            <div className="w-4 h-4 rounded bg-indigo-600 flex items-center justify-center text-white font-bold text-[8px]">
-              JP
-            </div>
+            <img src="/jp-icon.png" alt="JourneyPerfect" className="w-4 h-4" />
             Shared via JourneyPerfect
           </div>
           <h1 className="text-3xl font-bold text-gray-900 mb-2">{trip.title}</h1>

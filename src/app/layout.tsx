@@ -8,6 +8,7 @@ export const metadata: Metadata = {
   },
   description: "Plan perfect vacations, effortlessly. Organize itineraries, discover activities, and manage every detail of your trips.",
   keywords: ["travel", "vacation planning", "itinerary", "trip planner"],
+  icons: { icon: "/jp-icon.png" },
 }
 
 // Root layout has NO client providers and NO next/font/google.
@@ -16,6 +17,9 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
+      <head>
+        <link rel="icon" href="/jp-icon.png" />
+      </head>
       <body className="min-h-screen bg-background text-foreground antialiased">
         {children}
       </body>

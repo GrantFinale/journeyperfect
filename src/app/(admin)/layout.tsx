@@ -20,7 +20,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
           <div className="max-w-7xl mx-auto flex items-center justify-between">
             <div className="flex items-center gap-6">
               <Link href="/admin" className="font-semibold text-gray-900 flex items-center gap-2">
-                <div className="w-7 h-7 rounded-md bg-red-600 flex items-center justify-center text-white text-xs font-bold">JP</div>
+                <img src="/jp-icon.png" alt="JourneyPerfect" className="w-7 h-7" />
                 Admin
               </Link>
               <div className="flex gap-4 text-sm">

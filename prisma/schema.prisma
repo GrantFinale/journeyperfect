@@ -1,0 +1,431 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Auth (NextAuth v5) ───────────────────────────────────────────────────────
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+
+  // SaaS billing (Stripe — schema ready, not yet wired)
+  stripeCustomerId String?  @unique
+  plan             Plan     @default(FREE)
+  planStatus       String?  // active | trialing | past_due | canceled
+  trialEndsAt      DateTime?
+
+  // Relations
+  accounts         Account[]
+  sessions         Session[]
+  trips            Trip[]
+  travelerProfiles TravelerProfile[]
+  preferences      UserPreferences?
+  subscription     Subscription?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ─── Traveler Profiles ────────────────────────────────────────────────────────
+
+model TravelerProfile {
+  id        String   @id @default(cuid())
+  userId    String
+  name      String
+  birthDate DateTime?
+  tags      String[] // ["child", "adult", "senior", "stroller-needed", "thrill-seeker"]
+  isDefault Boolean  @default(false)
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tripTravelers TripTraveler[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+}
+
+model UserPreferences {
+  id     String @id @default(cuid())
+  userId String @unique
+
+  // Airport / travel
+  airportArrivalBufferMins Int @default(90)
+
+  // Pacing
+  pacingStyle PacingStyle @default(MODERATE)
+
+  // Budget
+  avgDailyBudget Float?
+
+  // Schedule
+  wakeUpTime String @default("08:00") // HH:MM local time
+  bedTime    String @default("22:00")
+
+  // Preferences (stored as JSON arrays)
+  mealStylePrefs String[] // ["quick", "sit-down", "local", "upscale"]
+  activityMix    String[] // ["sightseeing", "beach", "food", "adventure", "relaxation"]
+  mobilityNotes  String?
+  maxDailyTravelMins Int @default(60)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  updatedAt DateTime @updatedAt
+}
+
+// ─── Trips ────────────────────────────────────────────────────────────────────
+
+model Trip {
+  id          String     @id @default(cuid())
+  userId      String
+  title       String
+  destination String
+  destinationLat Float?
+  destinationLng Float?
+  startDate   DateTime
+  endDate     DateTime
+  shareSlug   String?    @unique
+  isPublic    Boolean    @default(false)
+  coverImage  String?
+  notes       String?    @db.Text
+  status      TripStatus @default(PLANNING)
+
+  // Relations
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  travelers      TripTraveler[]
+  hotels         Hotel[]
+  flights        Flight[]
+  activities     Activity[]
+  itineraryItems ItineraryItem[]
+  documents      TravelDocument[]
+  budgetItems    BudgetItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([shareSlug])
+}
+
+model TripTraveler {
+  id                String @id @default(cuid())
+  tripId            String
+  travelerProfileId String
+  isPrimary         Boolean @default(false)
+
+  trip     Trip            @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  traveler TravelerProfile @relation(fields: [travelerProfileId], references: [id], onDelete: Cascade)
+
+  @@unique([tripId, travelerProfileId])
+}
+
+// ─── Hotels ───────────────────────────────────────────────────────────────────
+
+model Hotel {
+  id                 String   @id @default(cuid())
+  tripId             String
+  name               String
+  address            String?
+  lat                Float?
+  lng                Float?
+  checkIn            DateTime
+  checkOut           DateTime
+  confirmationNumber String?
+  bookingLink        String?
+  notes              String?  @db.Text
+  isVacationRental   Boolean  @default(false)
+
+  trip           Trip             @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  itineraryItems ItineraryItem[]
+  documents      TravelDocument[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tripId])
+}
+
+// ─── Flights ──────────────────────────────────────────────────────────────────
+
+model Flight {
+  id                 String   @id @default(cuid())
+  tripId             String
+  airline            String?
+  flightNumber       String?
+  departureAirport   String?
+  departureCity      String?
+  departureTime      DateTime
+  departureTimezone  String   @default("UTC")
+  arrivalAirport     String?
+  arrivalCity        String?
+  arrivalTime        DateTime
+  arrivalTimezone    String   @default("UTC")
+  confirmationNumber String?
+  bookingLink        String?
+  cabin              String?
+  notes              String?  @db.Text
+  passengers         String[] // traveler profile names
+
+  trip           Trip             @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  itineraryItems ItineraryItem[]
+  documents      TravelDocument[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tripId])
+}
+
+// ─── Activities ───────────────────────────────────────────────────────────────
+
+model Activity {
+  id                String         @id @default(cuid())
+  tripId            String
+  name              String
+  description       String?        @db.Text
+  address           String?
+  lat               Float?
+  lng               Float?
+  googlePlaceId     String?
+  category          String?        // "museum", "beach", "restaurant", "attraction", etc.
+  durationMins      Int            @default(120)
+  costPerAdult      Float          @default(0)
+  costPerChild      Float          @default(0)
+  priority          ActivityPriority @default(MEDIUM)
+  isFixed           Boolean        @default(false)
+  fixedDateTime     DateTime?
+  indoorOutdoor     IndoorOutdoor  @default(BOTH)
+  reservationNeeded Boolean        @default(false)
+  bookingLink       String?
+  websiteUrl        String?
+  imageUrl          String?
+  rating            Float?
+  hoursJson         String?        @db.Text // JSON: { "monday": "9:00-17:00", ... }
+  bestTimeOfDay     String?        // "morning", "afternoon", "evening", "any"
+  notes             String?        @db.Text
+  status            ActivityStatus @default(WISHLIST)
+
+  trip           Trip            @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  itineraryItems ItineraryItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tripId])
+  @@index([tripId, status])
+}
+
+// ─── Itinerary ────────────────────────────────────────────────────────────────
+
+model ItineraryItem {
+  id          String            @id @default(cuid())
+  tripId      String
+  date        DateTime          @db.Date
+  startTime   String?           // "HH:MM" local time
+  endTime     String?
+  type        ItineraryItemType
+  title       String
+  notes       String?           @db.Text
+
+  // Linked source entities (at most one will be set)
+  activityId  String?
+  flightId    String?
+  hotelId     String?
+
+  durationMins         Int     @default(60)
+  travelTimeToNextMins Int     @default(0)
+  costEstimate         Float   @default(0)
+  position             Int     @default(0)
+  isConfirmed          Boolean @default(false)
+
+  trip     Trip      @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  activity Activity? @relation(fields: [activityId], references: [id], onDelete: SetNull)
+  flight   Flight?   @relation(fields: [flightId], references: [id], onDelete: SetNull)
+  hotel    Hotel?    @relation(fields: [hotelId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tripId, date])
+}
+
+// ─── Travel Documents ─────────────────────────────────────────────────────────
+
+model TravelDocument {
+  id               String       @id @default(cuid())
+  tripId           String
+  flightId         String?
+  hotelId          String?
+  type             DocumentType
+  title            String
+  fileUrl          String?
+  externalLink     String?
+  confirmationCode String?
+  notes            String?      @db.Text
+
+  trip   Trip    @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  flight Flight? @relation(fields: [flightId], references: [id], onDelete: SetNull)
+  hotel  Hotel?  @relation(fields: [hotelId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tripId])
+}
+
+// ─── Budget ───────────────────────────────────────────────────────────────────
+
+model BudgetItem {
+  id         String         @id @default(cuid())
+  tripId     String
+  category   BudgetCategory
+  title      String
+  amount     Float
+  isEstimate Boolean        @default(true)
+  paidAt     DateTime?
+  notes      String?
+
+  trip Trip @relation(fields: [tripId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tripId])
+}
+
+// ─── Subscription (Stripe-ready) ─────────────────────────────────────────────
+
+model Subscription {
+  id                   String  @id @default(cuid())
+  userId               String  @unique
+  stripeSubscriptionId String? @unique
+  stripePriceId        String?
+  status               String  @default("active") // active | trialing | past_due | canceled
+  currentPeriodStart   DateTime?
+  currentPeriodEnd     DateTime?
+  cancelAtPeriodEnd    Boolean @default(false)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ─── Enums ────────────────────────────────────────────────────────────────────
+
+enum Plan {
+  FREE
+  PERSONAL
+  FAMILY
+  TEAM
+}
+
+enum TripStatus {
+  PLANNING
+  ACTIVE
+  COMPLETED
+  ARCHIVED
+}
+
+enum PacingStyle {
+  CHILL
+  LEISURELY
+  MODERATE
+  ACTIVE
+  PACKED
+}
+
+enum ActivityPriority {
+  MUST_DO
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum ActivityStatus {
+  WISHLIST
+  SCHEDULED
+  DONE
+  SKIPPED
+}
+
+enum IndoorOutdoor {
+  INDOOR
+  OUTDOOR
+  BOTH
+}
+
+enum ItineraryItemType {
+  FLIGHT
+  HOTEL_CHECK_IN
+  HOTEL_CHECK_OUT
+  ACTIVITY
+  MEAL
+  TRANSIT
+  BUFFER
+  CUSTOM
+}
+
+enum DocumentType {
+  BOARDING_PASS
+  HOTEL_CONFIRMATION
+  VISA
+  PASSPORT
+  INSURANCE
+  RENTAL_CAR
+  OTHER
+}
+
+enum BudgetCategory {
+  FLIGHTS
+  LODGING
+  ACTIVITIES
+  DINING
+  TRANSPORT
+  SHOPPING
+  OTHER
+}

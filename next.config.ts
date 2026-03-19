@@ -7,13 +7,14 @@ if (!process.env.DATABASE_URL) {
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  serverExternalPackages: ["sonner", "@tanstack/react-query"],
   // Memory optimizations for Docker builds on constrained servers
   productionBrowserSourceMaps: false,
   experimental: {
     serverSourceMaps: false,
     webpackMemoryOptimizations: true,
     staticGenerationMaxConcurrency: 1,
-    staticGenerationMinPagesPerWorker: 25,
+    
   },
   images: {
     remotePatterns: [

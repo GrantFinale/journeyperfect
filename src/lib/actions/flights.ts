@@ -3,7 +3,6 @@
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/db"
 import { revalidatePath } from "next/cache"
-import { parseFlightText } from "@/lib/flight-parser"
 import { parseFlightTextWithAI } from "@/lib/flight-parser-ai"
 import { z } from "zod"
 import { hasFeature } from "@/lib/features"
@@ -34,16 +33,18 @@ export async function parseAndPreviewFlight(text: string) {
     select: { plan: true },
   })
 
-  // Only use AI parser for paid plans
-  if (user && hasFeature(user.plan, "aiFlightParsing")) {
-    const aiResult = await parseFlightTextWithAI(text)
-    if (aiResult && aiResult.flights.length > 0) {
-      return aiResult // parsedBy: "ai" is set by the AI parser
-    }
+  // AI parsing is a paid feature
+  if (!user || !hasFeature(user.plan, "aiFlightParsing")) {
+    throw new Error("UPGRADE_REQUIRED:AI flight parsing requires a paid plan. Please enter flight details manually or upgrade your plan.")
   }
 
-  // Free users get regex parser only
-  return parseFlightText(text)
+  const aiResult = await parseFlightTextWithAI(text)
+  if (aiResult && aiResult.flights.length > 0) {
+    return aiResult
+  }
+
+  // AI failed — tell user to enter manually
+  throw new Error("PARSE_FAILED:Could not parse flight details. Please enter them manually.")
 }
 
 export async function createFlight(tripId: string, data: z.infer<typeof flightSchema>) {

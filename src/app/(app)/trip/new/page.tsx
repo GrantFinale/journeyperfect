@@ -91,8 +91,8 @@ export default function NewTripPage() {
     setParseError("")
     try {
       const result = await parseAndPreviewFlight(flightText)
-      if (result.flights.length === 0) {
-        setParseError("Could not detect any flights. Please fill in dates manually.")
+      if (!result || result.flights.length === 0) {
+        setParseError("Could not parse flight details. Please enter them manually.")
         setParsedFlights([])
         setParsing(false)
         return
@@ -308,10 +308,10 @@ export default function NewTripPage() {
             >
               <span className="flex items-center gap-2">
                 <Plane className="w-4 h-4 text-indigo-500" />
-                Have a flight confirmation? Paste it here to auto-fill dates
-                {!isPaid && (
-                  <span className="text-xs text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">Basic parsing</span>
-                )}
+                {isPaid
+                  ? "Have a flight confirmation? Paste it here to auto-fill dates"
+                  : "Upgrade to auto-import flights from confirmation emails"
+                }
               </span>
               {flightPasteOpen ? (
                 <ChevronUp className="w-4 h-4 text-gray-400" />
@@ -322,12 +322,17 @@ export default function NewTripPage() {
 
             {flightPasteOpen && (
               <div className="px-4 pb-4 space-y-3 border-t border-gray-100">
-                {!isPaid && (
-                  <div className="mt-3 flex items-center gap-2 text-xs text-indigo-600 bg-indigo-50 px-3 py-2 rounded-lg">
-                    <Sparkles className="w-3.5 h-3.5 flex-shrink-0" />
-                    <span>Upgrade to Personal for AI-powered flight parsing with higher accuracy</span>
+                {!isPaid ? (
+                  <div className="mt-3 text-center py-6">
+                    <Sparkles className="w-8 h-8 text-indigo-400 mx-auto mb-3" />
+                    <p className="text-sm font-medium text-gray-900 mb-1">AI Flight Import</p>
+                    <p className="text-xs text-gray-500 mb-4">Paste any airline confirmation email and we'll automatically extract all your flight details.</p>
+                    <a href="/settings/billing" className="inline-block px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors">
+                      Upgrade to Personal — $9/mo
+                    </a>
                   </div>
-                )}
+                ) : (
+                  <>
                 <textarea
                   placeholder="Paste your flight confirmation email here..."
                   value={flightText}
@@ -407,6 +412,8 @@ export default function NewTripPage() {
                       </div>
                     ))}
                   </div>
+                )}
+                  </>
                 )}
               </div>
             )}

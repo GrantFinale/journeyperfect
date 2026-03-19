@@ -17,7 +17,6 @@ import {
   CreditCard,
   Shield,
   Car,
-  Passport,
 } from "lucide-react"
 
 type Document = {

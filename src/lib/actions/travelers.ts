@@ -86,6 +86,8 @@ export async function deleteTravelerProfile(profileId: string) {
   revalidatePath("/settings")
 }
 
+export type TravelerProfileResult = Awaited<ReturnType<typeof createTravelerProfile>>
+
 export async function addTravelerToTrip(tripId: string, profileId: string) {
   const session = await auth()
   if (!session?.user?.id) throw new Error("Unauthorized")

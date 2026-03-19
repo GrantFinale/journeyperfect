@@ -361,7 +361,7 @@ enum Plan {
   FREE
   PERSONAL
   FAMILY
-  TEAM
+  PRO
 }
 
 enum TripStatus {

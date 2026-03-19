@@ -2,6 +2,7 @@
 
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/db"
+import { getPlanLimits, type Plan } from "@/lib/plans"
 import { revalidatePath } from "next/cache"
 import { nanoid } from "nanoid"
 import { z } from "zod"
@@ -21,6 +22,14 @@ export async function createTrip(data: z.infer<typeof createTripSchema>) {
   if (!session?.user?.id) throw new Error("Unauthorized")
 
   const parsed = createTripSchema.parse(data)
+
+  // Plan limit check
+  const tripCount = await prisma.trip.count({ where: { userId: session.user.id } })
+  const user = await prisma.user.findUnique({ where: { id: session.user.id }, select: { plan: true } })
+  const limits = getPlanLimits((user?.plan as Plan) ?? "FREE")
+  if (tripCount >= limits.maxTrips) {
+    throw new Error(`PLAN_LIMIT: You've reached your ${limits.maxTrips} trip limit. Upgrade to add more.`)
+  }
 
   const trip = await prisma.trip.create({
     data: {
@@ -63,7 +72,7 @@ export async function getTrip(tripId: string) {
       travelers: { include: { traveler: true } },
       hotels: { orderBy: { checkIn: "asc" } },
       flights: { orderBy: { departureTime: "asc" } },
-      _count: { select: { activities: true, budgetItems: true } },
+      _count: { select: { activities: true, budgetItems: true, itineraryItems: true } },
     },
   })
 

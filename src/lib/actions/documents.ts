@@ -44,6 +44,9 @@ export async function createDocument(tripId: string, data: z.infer<typeof docume
   return doc
 }
 
+export type DocumentResult = Awaited<ReturnType<typeof createDocument>>
+export type DocumentFull = Awaited<ReturnType<typeof getDocuments>>[number]
+
 export async function deleteDocument(tripId: string, documentId: string) {
   const session = await auth()
   if (!session?.user?.id) throw new Error("Unauthorized")

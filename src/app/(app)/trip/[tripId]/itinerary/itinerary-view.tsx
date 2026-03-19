@@ -1,9 +1,26 @@
 "use client"
 
 import { useState } from "react"
+import { useRouter } from "next/navigation"
 import { toast } from "sonner"
-import { runOptimizer, deleteItineraryItem, createItineraryItem } from "@/lib/actions/itinerary"
+import { runOptimizer, deleteItineraryItem, createItineraryItem, reorderItineraryItems } from "@/lib/actions/itinerary"
+import type { ItineraryItemResult } from "@/lib/actions/itinerary"
 import { formatDate, formatTime } from "@/lib/utils"
+import {
+  DndContext,
+  DragEndEvent,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  closestCenter,
+} from "@dnd-kit/core"
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+  arrayMove,
+} from "@dnd-kit/sortable"
+import { CSS } from "@dnd-kit/utilities"
 import {
   Plane,
   Hotel,
@@ -17,6 +34,7 @@ import {
   ChevronDown,
   ChevronUp,
   Coffee,
+  GripVertical,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -35,30 +53,8 @@ type ItineraryItem = {
   isConfirmed: boolean
 }
 
-type GroupedDay = {
-  date: Date
-  dateStr: string
-  items: ItineraryItem[]
-}
-
-function groupByDay(items: ItineraryItem[]): GroupedDay[] {
-  const map = new Map<string, ItineraryItem[]>()
-  for (const item of items) {
-    const key = new Date(item.date).toISOString().split("T")[0]
-    if (!map.has(key)) map.set(key, [])
-    map.get(key)!.push(item)
-  }
-  return Array.from(map.entries())
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([dateStr, items]) => ({
-      date: new Date(dateStr + "T12:00:00"),
-      dateStr,
-      items: items.sort((a, b) => {
-        if (a.startTime && b.startTime) return a.startTime.localeCompare(b.startTime)
-        return a.position - b.position
-      }),
-    }))
-}
+import { groupByDay } from "@/lib/itinerary-utils"
+import type { GroupedDay } from "@/lib/itinerary-utils"
 
 function typeIcon(type: string) {
   switch (type) {
@@ -86,6 +82,100 @@ function typeColor(type: string) {
   }
 }
 
+function SortableItineraryItem({
+  item,
+  isLast,
+  onDelete,
+}: {
+  item: ItineraryItem
+  isLast: boolean
+  onDelete: (id: string) => void
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: item.id })
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 10 : undefined,
+  }
+
+  return (
+    <div ref={setNodeRef} style={style}>
+      <div className="flex items-start gap-3 group">
+        {/* Drag handle */}
+        <button
+          className="mt-2 p-0.5 text-gray-300 hover:text-gray-500 cursor-grab active:cursor-grabbing touch-none"
+          {...attributes}
+          {...listeners}
+        >
+          <GripVertical className="w-4 h-4" />
+        </button>
+        {/* Timeline dot */}
+        <div className="flex flex-col items-center mt-1">
+          <div
+            className={cn(
+              "w-7 h-7 rounded-lg border flex items-center justify-center shrink-0",
+              typeColor(item.type)
+            )}
+          >
+            {typeIcon(item.type)}
+          </div>
+          {!isLast && (
+            <div className="w-0.5 bg-gray-100 flex-1 min-h-4 mt-1" />
+          )}
+        </div>
+        <div className="flex-1 min-w-0 pb-2">
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <div className="font-medium text-gray-900 text-sm leading-tight">
+                {item.title}
+              </div>
+              <div className="flex items-center gap-2 mt-0.5 text-xs text-gray-500">
+                {item.startTime && (
+                  <span>{formatTime(item.startTime)}</span>
+                )}
+                <span>{item.durationMins} min</span>
+                {item.costEstimate > 0 && (
+                  <span>${item.costEstimate.toFixed(0)}</span>
+                )}
+                {item.isConfirmed && (
+                  <span className="text-green-600 font-medium">Confirmed</span>
+                )}
+              </div>
+              {item.notes && (
+                <p className="text-xs text-gray-400 mt-0.5">{item.notes}</p>
+              )}
+            </div>
+            <button
+              onClick={() => onDelete(item.id)}
+              className="opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-red-500 transition-all"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      </div>
+      {/* Travel time indicator */}
+      {item.travelTimeToNextMins > 0 && !isLast && (
+        <div className="flex items-center gap-2 ml-14 my-0.5">
+          <Bus className="w-3 h-3 text-gray-300" />
+          <span className="text-[11px] text-gray-400">
+            {item.travelTimeToNextMins} min travel
+          </span>
+        </div>
+      )}
+    </div>
+  )
+}
+
 interface Props {
   tripId: string
   initialItems: ItineraryItem[]
@@ -94,6 +184,7 @@ interface Props {
 }
 
 export function ItineraryView({ tripId, initialItems, tripStartDate, tripEndDate }: Props) {
+  const router = useRouter()
   const [items, setItems] = useState<ItineraryItem[]>(initialItems)
   const [optimizing, setOptimizing] = useState(false)
   const [collapsedDays, setCollapsedDays] = useState<Set<string>>(new Set())
@@ -105,11 +196,19 @@ export function ItineraryView({ tripId, initialItems, tripStartDate, tripEndDate
     durationMins: 60,
   })
 
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    })
+  )
+
   const days = groupByDay(items)
 
   // If no itinerary items yet, build empty day placeholders
-  const allDays: GroupedDay[] = days.length > 0 ? days : (() => {
-    const result: GroupedDay[] = []
+  const allDays: GroupedDay<ItineraryItem>[] = days.length > 0 ? days : (() => {
+    const result: GroupedDay<ItineraryItem>[] = []
     const start = new Date(tripStartDate)
     const end = new Date(tripEndDate)
     const cur = new Date(start)
@@ -126,8 +225,7 @@ export function ItineraryView({ tripId, initialItems, tripStartDate, tripEndDate
     try {
       const result = await runOptimizer(tripId)
       toast.success(`Optimizer scheduled ${result.scheduledItems.length} activities!`)
-      // Refresh — in a real app you'd revalidate but since server state changed, reload
-      window.location.reload()
+      router.refresh()
     } catch (e) {
       toast.error("Optimization failed. Make sure you have activities on your wishlist.")
     } finally {
@@ -151,7 +249,7 @@ export function ItineraryView({ tripId, initialItems, tripStartDate, tripEndDate
       return
     }
     try {
-      const item = await createItineraryItem(tripId, {
+      const item: ItineraryItemResult = await createItineraryItem(tripId, {
         date: dateStr,
         title: newItemForm.title,
         type: newItemForm.type as "CUSTOM",
@@ -159,13 +257,62 @@ export function ItineraryView({ tripId, initialItems, tripStartDate, tripEndDate
         durationMins: newItemForm.durationMins,
         position: 99,
       })
-      setItems((prev) => [...prev, item as unknown as ItineraryItem])
+      setItems((prev) => [...prev, {
+        id: item.id,
+        date: item.date,
+        startTime: item.startTime,
+        endTime: item.endTime,
+        type: item.type,
+        title: item.title,
+        notes: item.notes,
+        durationMins: item.durationMins,
+        travelTimeToNextMins: item.travelTimeToNextMins,
+        costEstimate: item.costEstimate,
+        position: item.position,
+        isConfirmed: item.isConfirmed,
+      }])
       setAddingToDay(null)
       setNewItemForm({ title: "", type: "CUSTOM", startTime: "", durationMins: 60 })
       toast.success("Item added")
     } catch {
       toast.error("Failed to add item")
     }
+  }
+
+  function handleDragEnd(event: DragEndEvent, dayDateStr: string) {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+
+    // Find the day whose items we're reordering
+    const dayItems = items.filter(
+      (i) => new Date(i.date).toISOString().split("T")[0] === dayDateStr
+    )
+    const oldIndex = dayItems.findIndex((i) => i.id === active.id)
+    const newIndex = dayItems.findIndex((i) => i.id === over.id)
+    if (oldIndex === -1 || newIndex === -1) return
+
+    const reordered = arrayMove(dayItems, oldIndex, newIndex)
+
+    // Optimistically update local state
+    setItems((prev) => {
+      const otherItems = prev.filter(
+        (i) => new Date(i.date).toISOString().split("T")[0] !== dayDateStr
+      )
+      const updated = reordered.map((item, idx) => ({ ...item, position: idx }))
+      return [...otherItems, ...updated]
+    })
+
+    // Persist to server
+    const updates = reordered.map((item, idx) => ({
+      id: item.id,
+      position: idx,
+      date: dayDateStr,
+    }))
+    reorderItineraryItems(tripId, updates).catch(() => {
+      toast.error("Failed to save new order")
+      // Revert on failure
+      setItems(items)
+    })
   }
 
   function toggleDay(dateStr: string) {
@@ -239,67 +386,27 @@ export function ItineraryView({ tripId, initialItems, tripStartDate, tripEndDate
                       No items yet — add one below or run the optimizer
                     </div>
                   )}
-                  <div className="space-y-2 mb-3">
-                    {day.items.map((item, i) => (
-                      <div key={item.id}>
-                        <div className="flex items-start gap-3 group">
-                          {/* Timeline dot */}
-                          <div className="flex flex-col items-center mt-1">
-                            <div
-                              className={cn(
-                                "w-7 h-7 rounded-lg border flex items-center justify-center shrink-0",
-                                typeColor(item.type)
-                              )}
-                            >
-                              {typeIcon(item.type)}
-                            </div>
-                            {i < day.items.length - 1 && (
-                              <div className="w-0.5 bg-gray-100 flex-1 min-h-4 mt-1" />
-                            )}
-                          </div>
-                          <div className="flex-1 min-w-0 pb-2">
-                            <div className="flex items-start justify-between gap-2">
-                              <div>
-                                <div className="font-medium text-gray-900 text-sm leading-tight">
-                                  {item.title}
-                                </div>
-                                <div className="flex items-center gap-2 mt-0.5 text-xs text-gray-500">
-                                  {item.startTime && (
-                                    <span>{formatTime(item.startTime)}</span>
-                                  )}
-                                  <span>{item.durationMins} min</span>
-                                  {item.costEstimate > 0 && (
-                                    <span>${item.costEstimate.toFixed(0)}</span>
-                                  )}
-                                  {item.isConfirmed && (
-                                    <span className="text-green-600 font-medium">Confirmed</span>
-                                  )}
-                                </div>
-                                {item.notes && (
-                                  <p className="text-xs text-gray-400 mt-0.5">{item.notes}</p>
-                                )}
-                              </div>
-                              <button
-                                onClick={() => handleDelete(item.id)}
-                                className="opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-red-500 transition-all"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                        {/* Travel time indicator */}
-                        {item.travelTimeToNextMins > 0 && i < day.items.length - 1 && (
-                          <div className="flex items-center gap-2 ml-10 my-0.5">
-                            <Bus className="w-3 h-3 text-gray-300" />
-                            <span className="text-[11px] text-gray-400">
-                              {item.travelTimeToNextMins} min travel
-                            </span>
-                          </div>
-                        )}
+                  <DndContext
+                    sensors={sensors}
+                    collisionDetection={closestCenter}
+                    onDragEnd={(event) => handleDragEnd(event, day.dateStr)}
+                  >
+                    <SortableContext
+                      items={day.items.map((i) => i.id)}
+                      strategy={verticalListSortingStrategy}
+                    >
+                      <div className="space-y-2 mb-3">
+                        {day.items.map((item, i) => (
+                          <SortableItineraryItem
+                            key={item.id}
+                            item={item}
+                            isLast={i === day.items.length - 1}
+                            onDelete={handleDelete}
+                          />
+                        ))}
                       </div>
-                    ))}
-                  </div>
+                    </SortableContext>
+                  </DndContext>
 
                   {/* Add item inline form */}
                   {addingToDay === day.dateStr ? (

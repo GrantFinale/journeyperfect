@@ -7,6 +7,7 @@ import {
   deleteTravelerProfile,
   updateTravelerProfile,
 } from "@/lib/actions/travelers"
+import type { TravelerProfileResult } from "@/lib/actions/travelers"
 import { updatePreferences } from "@/lib/actions/preferences"
 import { cn } from "@/lib/utils"
 import { User, Users, Settings, Plus, Trash2, X, Save } from "lucide-react"
@@ -86,7 +87,14 @@ export function GlobalSettingsView({ user, initialProfiles, initialPrefs }: Prop
         tags: profileForm.tags,
         isDefault: profileForm.isDefault,
       })
-      setProfiles((prev) => [...prev, profile as unknown as TravelerProfile])
+      const newProfile: TravelerProfile = {
+        id: profile.id,
+        name: profile.name,
+        birthDate: profile.birthDate,
+        tags: profile.tags,
+        isDefault: profile.isDefault,
+      }
+      setProfiles((prev) => [...prev, newProfile])
       setShowAddProfile(false)
       setProfileForm({ name: "", birthDate: "", tags: [], isDefault: false })
       toast.success("Traveler added")

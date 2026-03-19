@@ -189,3 +189,7 @@ export async function runOptimizer(tripId: string) {
   revalidatePath(`/trip/${tripId}/itinerary`)
   return result
 }
+
+// Exported types derived from Prisma return types
+export type ItineraryItemResult = Awaited<ReturnType<typeof createItineraryItem>>
+export type ItineraryItemFull = Awaited<ReturnType<typeof getItinerary>>[number]

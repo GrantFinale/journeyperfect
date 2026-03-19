@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { toast } from "sonner"
 import { createBudgetItem, deleteBudgetItem } from "@/lib/actions/budget"
+import type { BudgetItemResult } from "@/lib/actions/budget"
 import { formatCurrency } from "@/lib/utils"
 import { cn } from "@/lib/utils"
 import { Plus, Trash2, X, TrendingUp, DollarSign, CreditCard, Receipt } from "lucide-react"
@@ -107,7 +108,15 @@ export function BudgetView({ tripId, initialBudget, tripTitle }: Props) {
         isEstimate: form.isEstimate,
         notes: form.notes || undefined,
       })
-      const newItem = item as unknown as BudgetItem
+      const newItem: BudgetItem = {
+        id: item.id,
+        category: item.category,
+        title: item.title,
+        amount: item.amount,
+        isEstimate: item.isEstimate,
+        paidAt: item.paidAt,
+        notes: item.notes,
+      }
       setBudget((prev) => {
         const items = [newItem, ...prev.items]
         return {

@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { toast } from "sonner"
 import { createDocument, deleteDocument } from "@/lib/actions/documents"
+import type { DocumentResult } from "@/lib/actions/documents"
 import { cn } from "@/lib/utils"
 import {
   FileText,
@@ -121,7 +122,20 @@ export function DocumentsView({ tripId, initialDocuments, flights, hotels }: Pro
         flightId: form.flightId || undefined,
         hotelId: form.hotelId || undefined,
       })
-      setDocuments((prev) => [doc as unknown as Document, ...prev])
+      const newDoc: Document = {
+        id: doc.id,
+        type: doc.type,
+        title: doc.title,
+        fileUrl: doc.fileUrl,
+        externalLink: doc.externalLink,
+        confirmationCode: doc.confirmationCode,
+        notes: doc.notes,
+        flightId: doc.flightId,
+        hotelId: doc.hotelId,
+        flight: null,
+        hotel: null,
+      }
+      setDocuments((prev) => [newDoc, ...prev])
       setShowForm(false)
       setForm({
         type: "OTHER",

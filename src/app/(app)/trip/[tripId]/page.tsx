@@ -2,7 +2,8 @@ import { notFound } from "next/navigation"
 import Link from "next/link"
 import { getTrip } from "@/lib/actions/trips"
 import { getBudgetSummary } from "@/lib/actions/budget"
-import { formatDate, tripDuration, formatCurrency } from "@/lib/utils"
+import { getItinerary, type ItineraryItemFull } from "@/lib/actions/itinerary"
+import { formatDate, formatTime, tripDuration, formatCurrency } from "@/lib/utils"
 import {
   Plane,
   Hotel,
@@ -15,6 +16,7 @@ import {
   MapPin,
   Clock,
   Map,
+  ArrowRight,
 } from "lucide-react"
 
 export default async function TripOverviewPage({ params }: { params: Promise<{ tripId: string }> }) {
@@ -22,12 +24,24 @@ export default async function TripOverviewPage({ params }: { params: Promise<{ t
 
   let trip: Awaited<ReturnType<typeof getTrip>>
   let budget: Awaited<ReturnType<typeof getBudgetSummary>>
+  let allItems: ItineraryItemFull[] = []
 
   try {
-    ;[trip, budget] = await Promise.all([getTrip(tripId), getBudgetSummary(tripId)])
+    ;[trip, budget, allItems] = await Promise.all([
+      getTrip(tripId),
+      getBudgetSummary(tripId),
+      getItinerary(tripId),
+    ])
   } catch {
     notFound()
   }
+
+  // Next 3 upcoming itinerary items (date >= today)
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const nextUpItems = allItems
+    .filter((item) => new Date(item.date) >= today)
+    .slice(0, 3)
 
   const duration = tripDuration(trip.startDate, trip.endDate)
   const daysUntil = Math.ceil(
@@ -108,6 +122,45 @@ export default async function TripOverviewPage({ params }: { params: Promise<{ t
           <div className="text-green-700 font-semibold">🎉 You&apos;re on your trip!</div>
           <div className="text-green-600 text-sm mt-1">
             {trip.destination} · Day {Math.abs(daysUntil) + 1} of {duration}
+          </div>
+        </div>
+      )}
+
+      {/* Next Up */}
+      {nextUpItems.length > 0 && (
+        <div className="bg-white border border-gray-100 rounded-2xl p-5 mb-6">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-semibold text-gray-700">Next Up</h2>
+            <Link
+              href={`/trip/${tripId}/itinerary`}
+              className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-700 font-medium"
+            >
+              View itinerary
+              <ArrowRight className="w-3 h-3" />
+            </Link>
+          </div>
+          <div className="space-y-2">
+            {nextUpItems.map((item) => (
+              <div
+                key={item.id}
+                className="flex items-center gap-3 bg-gray-50 rounded-xl px-3.5 py-2.5"
+              >
+                <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center shrink-0">
+                  <CalendarDays className="w-4 h-4 text-indigo-600" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="font-medium text-gray-900 text-sm truncate">{item.title}</div>
+                  <div className="text-xs text-gray-500">
+                    {formatDate(item.date, "EEE, MMM d")}
+                    {item.startTime && <> at {formatTime(item.startTime)}</>}
+                    {item.durationMins > 0 && <> &middot; {item.durationMins} min</>}
+                  </div>
+                </div>
+                <span className="text-[10px] font-medium text-gray-400 uppercase tracking-wide shrink-0">
+                  {item.type.replace(/_/g, " ")}
+                </span>
+              </div>
+            ))}
           </div>
         </div>
       )}

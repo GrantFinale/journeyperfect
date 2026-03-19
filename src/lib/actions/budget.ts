@@ -74,6 +74,9 @@ export async function updateBudgetItem(tripId: string, itemId: string, data: Par
   return updated
 }
 
+export type BudgetItemResult = Awaited<ReturnType<typeof createBudgetItem>>
+export type BudgetSummaryResult = Awaited<ReturnType<typeof getBudgetSummary>>
+
 export async function deleteBudgetItem(tripId: string, itemId: string) {
   const session = await auth()
   if (!session?.user?.id) throw new Error("Unauthorized")

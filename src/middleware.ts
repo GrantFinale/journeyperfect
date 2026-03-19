@@ -1,12 +1,16 @@
-import { auth } from "@/lib/auth"
-import { NextResponse } from "next/server"
+import { NextRequest, NextResponse } from "next/server"
 
-export default auth((req) => {
-  if (!req.auth) {
+export function middleware(req: NextRequest) {
+  // Check for NextAuth session cookie (works on edge without Prisma)
+  const sessionCookie =
+    req.cookies.get("__Secure-authjs.session-token") ??
+    req.cookies.get("authjs.session-token")
+
+  if (!sessionCookie) {
     const loginUrl = new URL("/login", req.url)
     return NextResponse.redirect(loginUrl)
   }
-})
+}
 
 export const config = {
   matcher: [
@@ -19,6 +23,6 @@ export const config = {
      * - /api/health
      * - _next/static, _next/image, favicon.ico, etc.
      */
-    "/((?!$|login|shared/.*|api/auth/.*|api/health|_next/static|_next/image|favicon\\.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    "/((?!$|login|shared/.*|api/auth/.*|api/health|api/stripe/.*|_next/static|_next/image|favicon\\.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 }

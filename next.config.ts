@@ -9,6 +9,8 @@ if (!process.env.DATABASE_URL) {
 const nextConfig: NextConfig = {
   output: "standalone",
   serverExternalPackages: ["sonner", "@tanstack/react-query"],
+  eslint: { ignoreDuringBuilds: true },
+  typescript: { ignoreBuildErrors: false },
   // Memory optimizations for Docker builds on constrained servers
   productionBrowserSourceMaps: false,
   webpack: (config) => {

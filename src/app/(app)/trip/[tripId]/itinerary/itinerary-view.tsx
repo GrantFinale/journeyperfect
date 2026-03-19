@@ -37,6 +37,8 @@ import {
   GripVertical,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { WeatherBar } from "@/components/weather-bar"
+import type { TripWeatherData } from "@/lib/weather"
 
 type ItineraryItem = {
   id: string
@@ -181,9 +183,10 @@ interface Props {
   initialItems: ItineraryItem[]
   tripStartDate: Date
   tripEndDate: Date
+  weather: TripWeatherData | null
 }
 
-export function ItineraryView({ tripId, initialItems, tripStartDate, tripEndDate }: Props) {
+export function ItineraryView({ tripId, initialItems, tripStartDate, tripEndDate, weather }: Props) {
   const router = useRouter()
   const [items, setItems] = useState<ItineraryItem[]>(initialItems)
   const [optimizing, setOptimizing] = useState(false)
@@ -202,6 +205,11 @@ export function ItineraryView({ tripId, initialItems, tripStartDate, tripEndDate
         distance: 8,
       },
     })
+  )
+
+  // Build a date -> forecast lookup for per-day weather display
+  const weatherByDate = new Map(
+    weather?.forecasts.map((f) => [f.date, f]) ?? []
   )
 
   const days = groupByDay(items)
@@ -343,10 +351,21 @@ export function ItineraryView({ tripId, initialItems, tripStartDate, tripEndDate
         </button>
       </div>
 
+      {/* Weather bar */}
+      {weather && (
+        <WeatherBar
+          forecasts={weather.forecasts}
+          tripStart={weather.tripStart}
+          tripEnd={weather.tripEnd}
+          alerts={weather.alerts}
+        />
+      )}
+
       {/* Day list */}
       <div className="space-y-6">
         {allDays.map((day, dayIdx) => {
           const isCollapsed = collapsedDays.has(day.dateStr)
+          const dayWeather = weatherByDate.get(day.dateStr)
           return (
             <div key={day.dateStr} className="bg-white border border-gray-100 rounded-2xl overflow-hidden">
               {/* Day header */}
@@ -364,8 +383,14 @@ export function ItineraryView({ tripId, initialItems, tripStartDate, tripEndDate
                     </span>
                   </div>
                   <div className="text-left">
-                    <div className="font-semibold text-gray-900 text-sm">
-                      Day {dayIdx + 1} · {formatDate(day.date, "MMMM d, yyyy")}
+                    <div className="font-semibold text-gray-900 text-sm flex items-center gap-1.5">
+                      <span>Day {dayIdx + 1} · {formatDate(day.date, "MMMM d, yyyy")}</span>
+                      {dayWeather && (
+                        <span className="inline-flex items-center gap-1 text-xs font-normal text-gray-500 ml-1">
+                          <span>{dayWeather.emoji}</span>
+                          <span>{dayWeather.highTemp}&deg;/{dayWeather.lowTemp}&deg;</span>
+                        </span>
+                      )}
                     </div>
                     <div className="text-xs text-gray-500">
                       {day.items.length} item{day.items.length !== 1 ? "s" : ""}

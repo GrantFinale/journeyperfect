@@ -11,12 +11,6 @@ const nextConfig: NextConfig = {
   serverExternalPackages: ["sonner", "@tanstack/react-query"],
   // Memory optimizations for Docker builds on constrained servers
   productionBrowserSourceMaps: false,
-  experimental: {
-    serverSourceMaps: false,
-    webpackMemoryOptimizations: true,
-    staticGenerationMaxConcurrency: 1,
-    
-  },
   webpack: (config) => {
     // Force single React instance to prevent useContext null errors
     // on Linux Docker builds where duplicate packages can occur

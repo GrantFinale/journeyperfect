@@ -50,7 +50,7 @@ const TRIP_NAV_ITEMS = (tripId: string): NavItem[] => [
 ]
 
 export function AppShell({ children, user }: AppShellProps) {
-  const pathname = usePathname()
+  const pathname = usePathname() ?? ""
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   // Extract trip ID from path if we're in a trip

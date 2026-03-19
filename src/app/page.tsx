@@ -64,20 +64,23 @@ export default function LandingPage() {
                 desc: "Day-by-day timeline with automatic travel time calculation, conflict detection, and drag-and-drop scheduling.",
                 colorClass: "bg-indigo-50",
                 iconColorClass: "text-indigo-600",
+                premium: false,
               },
               {
                 icon: Plane,
-                title: "Flight Import",
+                title: "AI Flight Import",
                 desc: "Paste any flight confirmation email and watch JourneyPerfect automatically parse it into structured itinerary events.",
                 colorClass: "bg-blue-50",
                 iconColorClass: "text-blue-600",
+                premium: true,
               },
               {
                 icon: Star,
-                title: "Activity Wishlist",
+                title: "Activity Discovery",
                 desc: "Search Google Places, save activities with hours, costs, and photos. Let the optimizer choose the best fit.",
                 colorClass: "bg-yellow-50",
                 iconColorClass: "text-yellow-600",
+                premium: true,
               },
               {
                 icon: DollarSign,
@@ -85,6 +88,7 @@ export default function LandingPage() {
                 desc: "Track estimated and actual spend by category. Get alerted when your itinerary is drifting over budget.",
                 colorClass: "bg-green-50",
                 iconColorClass: "text-green-600",
+                premium: false,
               },
               {
                 icon: MapPin,
@@ -92,20 +96,23 @@ export default function LandingPage() {
                 desc: "Automatically cluster activities by location, minimize travel time, and build a realistic daily schedule.",
                 colorClass: "bg-red-50",
                 iconColorClass: "text-red-600",
+                premium: false,
               },
               {
                 icon: Share2,
-                title: "Share Your Trip",
+                title: "Trip Sharing",
                 desc: "Generate a beautiful shareable link for friends and family to view your complete trip plan.",
                 colorClass: "bg-purple-50",
                 iconColorClass: "text-purple-600",
+                premium: true,
               },
               {
                 icon: Clock,
-                title: "Live Trip Mode",
-                desc: "During travel, see exactly what's next, how long to get there, and where you need to be.",
+                title: "Weather Alerts",
+                desc: "Get smart weather alerts and rescheduling suggestions for outdoor activities during your trip.",
                 colorClass: "bg-orange-50",
                 iconColorClass: "text-orange-600",
+                premium: true,
               },
               {
                 icon: Users,
@@ -113,9 +120,15 @@ export default function LandingPage() {
                 desc: "Add travelers with ages for automatic pricing calculations and activity age-appropriateness filtering.",
                 colorClass: "bg-teal-50",
                 iconColorClass: "text-teal-600",
+                premium: false,
               },
             ].map((feature) => (
-              <div key={feature.title} className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
+              <div key={feature.title} className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm relative">
+                {feature.premium && (
+                  <span className="absolute top-4 right-4 text-xs font-medium text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">
+                    Premium
+                  </span>
+                )}
                 <div className={`w-10 h-10 rounded-xl ${feature.colorClass} flex items-center justify-center mb-4`}>
                   <feature.icon className={`w-5 h-5 ${feature.iconColorClass}`} />
                 </div>
@@ -123,6 +136,62 @@ export default function LandingPage() {
                 <p className="text-gray-600 text-sm leading-relaxed">{feature.desc}</p>
               </div>
             ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Pricing */}
+      <section className="px-6 py-24 bg-white">
+        <div className="max-w-6xl mx-auto">
+          <h2 className="text-3xl font-bold text-gray-900 text-center mb-4">Simple, transparent pricing</h2>
+          <p className="text-gray-600 text-center mb-16 max-w-2xl mx-auto">Start free. Upgrade when you need more trips and premium features.</p>
+          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
+            {/* FREE */}
+            <div className="border rounded-2xl p-6">
+              <h3 className="font-semibold text-lg">Free</h3>
+              <p className="text-3xl font-bold mt-2">$0<span className="text-sm text-gray-500 font-normal">/mo</span></p>
+              <ul className="mt-6 space-y-3 text-sm text-gray-600">
+                <li>2 trips</li>
+                <li>Manual itinerary management</li>
+                <li>Basic flight parsing</li>
+                <li>Weather forecast</li>
+                <li>Budget tracking</li>
+              </ul>
+            </div>
+            {/* PERSONAL */}
+            <div className="border-2 border-indigo-600 rounded-2xl p-6 relative">
+              <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-indigo-600 text-white text-xs font-medium px-3 py-1 rounded-full">Most Popular</div>
+              <h3 className="font-semibold text-lg">Personal</h3>
+              <p className="text-3xl font-bold mt-2">$9<span className="text-sm text-gray-500 font-normal">/mo</span></p>
+              <ul className="mt-6 space-y-3 text-sm text-gray-600">
+                <li>10 trips</li>
+                <li>AI flight parsing</li>
+                <li>Smart destination search</li>
+                <li>Weather alerts &amp; rescheduling</li>
+                <li>Activity discovery</li>
+                <li>Trip sharing</li>
+              </ul>
+            </div>
+            {/* FAMILY */}
+            <div className="border rounded-2xl p-6">
+              <h3 className="font-semibold text-lg">Family</h3>
+              <p className="text-3xl font-bold mt-2">$19<span className="text-sm text-gray-500 font-normal">/mo</span></p>
+              <ul className="mt-6 space-y-3 text-sm text-gray-600">
+                <li>25 trips</li>
+                <li>Everything in Personal</li>
+                <li>10 travelers per trip</li>
+              </ul>
+            </div>
+            {/* PRO */}
+            <div className="border rounded-2xl p-6">
+              <h3 className="font-semibold text-lg">Pro</h3>
+              <p className="text-3xl font-bold mt-2">$39<span className="text-sm text-gray-500 font-normal">/mo</span></p>
+              <ul className="mt-6 space-y-3 text-sm text-gray-600">
+                <li>Unlimited trips</li>
+                <li>Everything in Family</li>
+                <li>Unlimited travelers</li>
+              </ul>
+            </div>
           </div>
         </div>
       </section>

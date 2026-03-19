@@ -1,11 +1,13 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { createTrip } from "@/lib/actions/trips"
 import { parseAndPreviewFlight, createFlightsBatch } from "@/lib/actions/flights"
+import { getUserPlan } from "@/lib/actions/user"
+import { hasFeature } from "@/lib/features"
 import { toast } from "sonner"
-import { MapPin, Calendar, ArrowRight, ArrowLeft, Plus, X, Plane, ChevronDown, ChevronUp, Loader2 } from "lucide-react"
+import { MapPin, Calendar, ArrowRight, ArrowLeft, Plus, X, Plane, ChevronDown, ChevronUp, Loader2, Sparkles } from "lucide-react"
 import PlacesAutocomplete from "@/components/places-autocomplete"
 
 interface ParsedFlightPreview {
@@ -28,6 +30,14 @@ export default function NewTripPage() {
   const router = useRouter()
   const [step, setStep] = useState(1)
   const [loading, setLoading] = useState(false)
+  const [userPlan, setUserPlan] = useState<string>("FREE")
+
+  useEffect(() => {
+    getUserPlan().then(setUserPlan)
+  }, [])
+
+  const isPaid = hasFeature(userPlan, "aiFlightParsing")
+
   const [form, setForm] = useState({
     title: "",
     destinations: [{ name: "" }] as { name: string; lat?: number; lng?: number }[],
@@ -242,8 +252,9 @@ export default function NewTripPage() {
                       value={dest.name}
                       onChange={(val) => updateDestination(index, val)}
                       onSelect={(place) => updateDestinationPlace(index, place)}
-                      placeholder="Search for a city..."
+                      placeholder={isPaid ? "Search for a city..." : "Type a city name..."}
                       className="w-full pl-9 pr-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                      disabled={!isPaid}
                     />
                   </div>
                   {form.destinations.length > 1 && (
@@ -298,6 +309,9 @@ export default function NewTripPage() {
               <span className="flex items-center gap-2">
                 <Plane className="w-4 h-4 text-indigo-500" />
                 Have a flight confirmation? Paste it here to auto-fill dates
+                {!isPaid && (
+                  <span className="text-xs text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">Basic parsing</span>
+                )}
               </span>
               {flightPasteOpen ? (
                 <ChevronUp className="w-4 h-4 text-gray-400" />
@@ -308,6 +322,12 @@ export default function NewTripPage() {
 
             {flightPasteOpen && (
               <div className="px-4 pb-4 space-y-3 border-t border-gray-100">
+                {!isPaid && (
+                  <div className="mt-3 flex items-center gap-2 text-xs text-indigo-600 bg-indigo-50 px-3 py-2 rounded-lg">
+                    <Sparkles className="w-3.5 h-3.5 flex-shrink-0" />
+                    <span>Upgrade to Personal for AI-powered flight parsing with higher accuracy</span>
+                  </div>
+                )}
                 <textarea
                   placeholder="Paste your flight confirmation email here..."
                   value={flightText}

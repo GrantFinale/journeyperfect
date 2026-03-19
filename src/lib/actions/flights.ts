@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache"
 import { parseFlightText } from "@/lib/flight-parser"
 import { parseFlightTextWithAI } from "@/lib/flight-parser-ai"
 import { z } from "zod"
+import { hasFeature } from "@/lib/features"
 
 const flightSchema = z.object({
   airline: z.string().optional(),
@@ -28,13 +29,20 @@ export async function parseAndPreviewFlight(text: string) {
   const session = await auth()
   if (!session?.user?.id) throw new Error("Unauthorized")
 
-  // Try AI parser first
-  const aiResult = await parseFlightTextWithAI(text)
-  if (aiResult && aiResult.flights.length > 0) {
-    return aiResult // parsedBy: "ai" is set by the AI parser
+  const user = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { plan: true },
+  })
+
+  // Only use AI parser for paid plans
+  if (user && hasFeature(user.plan, "aiFlightParsing")) {
+    const aiResult = await parseFlightTextWithAI(text)
+    if (aiResult && aiResult.flights.length > 0) {
+      return aiResult // parsedBy: "ai" is set by the AI parser
+    }
   }
 
-  // Fall back to regex parser (parsedBy: "regex" is set by the regex parser)
+  // Free users get regex parser only
   return parseFlightText(text)
 }
 

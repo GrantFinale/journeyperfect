@@ -67,6 +67,42 @@ export async function updateAdminConfig(key: string, value: string) {
   revalidatePath("/admin")
 }
 
+export async function getAdminTrips(options?: { userId?: string; search?: string }) {
+  await requireAdmin()
+  const where: any = {}
+  if (options?.userId) where.userId = options.userId
+  if (options?.search) {
+    where.OR = [
+      { title: { contains: options.search, mode: "insensitive" } },
+      { destination: { contains: options.search, mode: "insensitive" } },
+    ]
+  }
+  return prisma.trip.findMany({
+    where,
+    include: {
+      user: { select: { name: true, email: true } },
+      _count: { select: { itineraryItems: true, flights: true } },
+    },
+    orderBy: { createdAt: "desc" },
+    take: 100,
+  })
+}
+
+export async function deleteAdminTrip(tripId: string) {
+  await requireAdmin()
+  await prisma.trip.delete({ where: { id: tripId } })
+  revalidatePath("/admin/trips")
+}
+
+export async function updateUserPlan(userId: string, plan: string) {
+  await requireAdmin()
+  await prisma.user.update({
+    where: { id: userId },
+    data: { plan: plan as any },
+  })
+  revalidatePath("/admin/users")
+}
+
 export async function deleteAdminConfig(key: string) {
   await requireAdmin()
   await prisma.appConfig.delete({ where: { key } }).catch(() => {})

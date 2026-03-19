@@ -1,0 +1,11 @@
+"use server"
+
+import { auth } from "@/lib/auth"
+import { prisma } from "@/lib/db"
+
+export async function getUserPlan(): Promise<string> {
+  const session = await auth()
+  if (!session?.user?.id) return "FREE"
+  const user = await prisma.user.findUnique({ where: { id: session.user.id }, select: { plan: true } })
+  return user?.plan || "FREE"
+}

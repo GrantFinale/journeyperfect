@@ -1,7 +1,7 @@
 "use client"
 
 import { useTransition } from "react"
-import { toggleUserAdmin } from "@/lib/actions/admin"
+import { toggleUserAdmin, updateUserPlan } from "@/lib/actions/admin"
 
 type User = {
   id: string
@@ -21,6 +21,19 @@ export function UsersTable({ users }: { users: User[] }) {
     startTransition(async () => {
       await toggleUserAdmin(userId)
     })
+  }
+
+  function handlePlanChange(userId: string, plan: string) {
+    startTransition(async () => {
+      await updateUserPlan(userId, plan)
+    })
+  }
+
+  const planColors: Record<string, string> = {
+    FREE: "bg-gray-100 text-gray-700 border-gray-300",
+    PERSONAL: "bg-blue-50 text-blue-700 border-blue-300",
+    FAMILY: "bg-green-50 text-green-700 border-green-300",
+    PRO: "bg-purple-50 text-purple-700 border-purple-300",
   }
 
   return (
@@ -53,9 +66,17 @@ export function UsersTable({ users }: { users: User[] }) {
               </td>
               <td className="px-4 py-3 text-gray-600">{user.email}</td>
               <td className="px-4 py-3">
-                <span className="inline-block px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700">
-                  {user.plan}
-                </span>
+                <select
+                  value={user.plan}
+                  onChange={(e) => handlePlanChange(user.id, e.target.value)}
+                  disabled={isPending}
+                  className={`px-2 py-0.5 rounded text-xs font-medium border cursor-pointer disabled:opacity-50 ${planColors[user.plan] || "bg-gray-100 text-gray-700 border-gray-300"}`}
+                >
+                  <option value="FREE">FREE</option>
+                  <option value="PERSONAL">PERSONAL</option>
+                  <option value="FAMILY">FAMILY</option>
+                  <option value="PRO">PRO</option>
+                </select>
               </td>
               <td className="px-4 py-3 text-gray-600">{user._count.trips}</td>
               <td className="px-4 py-3">

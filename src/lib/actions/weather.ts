@@ -7,6 +7,7 @@ import {
   getWeatherAlerts,
   type TripWeatherData,
 } from "@/lib/weather"
+import { hasFeature } from "@/lib/features"
 
 export async function getTripWeather(tripId: string): Promise<TripWeatherData | null> {
   const session = await auth()
@@ -60,5 +61,12 @@ export async function getTripWeather(tripId: string): Promise<TripWeatherData | 
 
   const alerts = getWeatherAlerts(forecasts, activitiesWithDates)
 
-  return { forecasts, alerts, tripStart, tripEnd }
+  // Only show weather alerts for paid plans
+  const user = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { plan: true },
+  })
+  const showAlerts = user && hasFeature(user.plan, "weatherAlerts")
+
+  return { forecasts, alerts: showAlerts ? alerts : [], tripStart, tripEnd }
 }

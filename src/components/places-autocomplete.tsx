@@ -15,6 +15,7 @@ interface PlacesAutocompleteProps {
   onSelect: (place: { name: string; lat?: number; lng?: number }) => void
   placeholder?: string
   className?: string
+  disabled?: boolean
 }
 
 function loadGoogleMaps(): Promise<void> {
@@ -46,6 +47,7 @@ export default function PlacesAutocomplete({
   onSelect,
   placeholder,
   className,
+  disabled,
 }: PlacesAutocompleteProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const autocompleteRef = useRef<any>(null)
@@ -57,6 +59,7 @@ export default function PlacesAutocomplete({
   onChangeRef.current = onChange
 
   useEffect(() => {
+    if (disabled) return
     if (!process.env.NEXT_PUBLIC_GOOGLE_PLACES_KEY) return
 
     loadGoogleMaps().then(() => {
@@ -87,7 +90,24 @@ export default function PlacesAutocomplete({
         window.google?.maps?.event?.clearInstanceListeners(autocompleteRef.current)
       }
     }
-  }, [])
+  }, [disabled])
+
+  if (disabled) {
+    return (
+      <div className="relative">
+        <input
+          type="text"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder || "Type a city name..."}
+          className={className}
+        />
+        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full whitespace-nowrap">
+          Upgrade for smart search
+        </span>
+      </div>
+    )
+  }
 
   return (
     <input

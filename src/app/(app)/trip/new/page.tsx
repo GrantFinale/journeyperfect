@@ -6,6 +6,7 @@ import { createTrip } from "@/lib/actions/trips"
 import { parseAndPreviewFlight, createFlightsBatch } from "@/lib/actions/flights"
 import { toast } from "sonner"
 import { MapPin, Calendar, ArrowRight, ArrowLeft, Plus, X, Plane, ChevronDown, ChevronUp, Loader2 } from "lucide-react"
+import PlacesAutocomplete from "@/components/places-autocomplete"
 
 interface ParsedFlightPreview {
   airline?: string
@@ -29,7 +30,7 @@ export default function NewTripPage() {
   const [loading, setLoading] = useState(false)
   const [form, setForm] = useState({
     title: "",
-    destinations: [{ name: "" }] as { name: string }[],
+    destinations: [{ name: "" }] as { name: string; lat?: number; lng?: number }[],
     startDate: "",
     endDate: "",
     notes: "",
@@ -41,13 +42,22 @@ export default function NewTripPage() {
   const [parsing, setParsing] = useState(false)
   const [parsedFlights, setParsedFlights] = useState<ParsedFlightPreview[]>([])
   const [parseError, setParseError] = useState("")
+  const [parsedBy, setParsedBy] = useState<"ai" | "regex" | null>(null)
 
   const updateField = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }))
 
   const updateDestination = (index: number, value: string) => {
     setForm((f) => {
       const destinations = [...f.destinations]
-      destinations[index] = { name: value }
+      destinations[index] = { ...destinations[index], name: value }
+      return { ...f, destinations }
+    })
+  }
+
+  const updateDestinationPlace = (index: number, place: { name: string; lat?: number; lng?: number }) => {
+    setForm((f) => {
+      const destinations = [...f.destinations]
+      destinations[index] = { name: place.name, lat: place.lat, lng: place.lng }
       return { ...f, destinations }
     })
   }
@@ -84,6 +94,7 @@ export default function NewTripPage() {
         arrivalTime: f.arrivalTime ? new Date(f.arrivalTime).toISOString() : undefined,
       }))
       setParsedFlights(previews)
+      setParsedBy(result.parsedBy || null)
 
       // Auto-fill dates from parsed flights
       const departures = previews
@@ -108,8 +119,10 @@ export default function NewTripPage() {
         }))
       }
 
-      if (result.needsConfirmation) {
-        toast.info("Flights parsed with low confidence. Please verify the details.")
+      if (result.parsedBy === "regex") {
+        toast.info("Parsed with basic matching — some details may be missing. For better results, paste the full confirmation email.")
+      } else if (result.parsedBy === "ai") {
+        toast.success(`Parsed ${result.flights.length} flight${result.flights.length > 1 ? "s" : ""} with AI — please verify the details`)
       } else {
         toast.success(`Parsed ${result.flights.length} flight${result.flights.length > 1 ? "s" : ""}`)
       }
@@ -224,12 +237,12 @@ export default function NewTripPage() {
               {form.destinations.map((dest, index) => (
                 <div key={index} className="relative flex items-center gap-2">
                   <div className="relative flex-1">
-                    <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                    <input
-                      type="text"
-                      placeholder="City, country or region"
+                    <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 z-10" />
+                    <PlacesAutocomplete
                       value={dest.name}
-                      onChange={(e) => updateDestination(index, e.target.value)}
+                      onChange={(val) => updateDestination(index, val)}
+                      onSelect={(place) => updateDestinationPlace(index, place)}
+                      placeholder="Search for a city..."
                       className="w-full pl-9 pr-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                     />
                   </div>
@@ -329,9 +342,20 @@ export default function NewTripPage() {
 
                 {parsedFlights.length > 0 && (
                   <div className="space-y-2">
-                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-                      Detected flights
-                    </p>
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">
+                        Detected flights
+                      </p>
+                      {parsedBy && (
+                        <span className={`text-xs px-2 py-0.5 rounded-full ${
+                          parsedBy === "ai"
+                            ? "bg-indigo-100 text-indigo-700"
+                            : "bg-gray-100 text-gray-600"
+                        }`}>
+                          {parsedBy === "ai" ? "AI parsed" : "Basic match"}
+                        </span>
+                      )}
+                    </div>
                     {parsedFlights.map((flight, i) => (
                       <div
                         key={i}

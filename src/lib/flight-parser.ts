@@ -19,6 +19,7 @@ export interface ParseResult {
   rawText: string
   needsConfirmation: boolean
   parseNotes: string[]
+  parsedBy?: "ai" | "regex"
 }
 
 // Airport timezone map (100+ major airports)
@@ -102,7 +103,7 @@ export function parseFlightText(text: string): ParseResult {
 
   const needsConfirmation = flights.some(f => f.confidence < 0.7) || flights.length === 0
 
-  return { flights, rawText: text, needsConfirmation, parseNotes: notes }
+  return { flights, rawText: text, needsConfirmation, parseNotes: notes, parsedBy: "regex" }
 }
 
 function splitIntoSegments(text: string): string[] {

@@ -9,7 +9,7 @@ import { z } from "zod"
 
 const createTripSchema = z.object({
   title: z.string().min(1).max(100),
-  destinations: z.array(z.object({ name: z.string().min(1) })).min(1),
+  destinations: z.array(z.object({ name: z.string().min(1), lat: z.number().optional(), lng: z.number().optional() })).min(1),
   destination: z.string().optional(), // backward compat
   destinationLat: z.number().optional(),
   destinationLng: z.number().optional(),
@@ -47,6 +47,8 @@ export async function createTrip(data: z.infer<typeof createTripSchema>) {
       destinations: {
         create: parsed.destinations.map((d, i) => ({
           name: d.name,
+          lat: d.lat,
+          lng: d.lng,
           position: i,
         })),
       },
@@ -181,7 +183,7 @@ async function updateDestinationSummary(tripId: string) {
   })
 }
 
-export async function addDestination(tripId: string, name: string) {
+export async function addDestination(tripId: string, name: string, lat?: number, lng?: number) {
   const session = await auth()
   if (!session?.user?.id) throw new Error("Unauthorized")
 
@@ -198,6 +200,8 @@ export async function addDestination(tripId: string, name: string) {
     data: {
       tripId,
       name,
+      lat,
+      lng,
       position: (maxPos?.position ?? -1) + 1,
     },
   })

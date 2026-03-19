@@ -24,6 +24,7 @@ import {
   Clipboard,
   MapPin,
 } from "lucide-react"
+import PlacesAutocomplete from "@/components/places-autocomplete"
 
 type TripDestinationType = {
   id: string
@@ -129,6 +130,7 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles }: Pro
 
   // Destination state
   const [newDestinationName, setNewDestinationName] = useState("")
+  const [newDestinationCoords, setNewDestinationCoords] = useState<{ lat?: number; lng?: number }>({})
   const [addingDestination, setAddingDestination] = useState(false)
 
   // Parse flight from text
@@ -260,13 +262,14 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles }: Pro
     if (!newDestinationName.trim()) return
     setAddingDestination(true)
     try {
-      const dest = await addDestination(tripId, newDestinationName.trim())
+      const dest = await addDestination(tripId, newDestinationName.trim(), newDestinationCoords.lat, newDestinationCoords.lng)
       setTrip((prev) => ({
         ...prev,
         destinations: [...prev.destinations, dest as unknown as TripDestinationType],
         destination: [...prev.destinations.map((d) => d.name), newDestinationName.trim()].join(", "),
       }))
       setNewDestinationName("")
+      setNewDestinationCoords({})
       toast.success("Destination added")
     } catch {
       toast.error("Failed to add destination")
@@ -715,18 +718,18 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles }: Pro
                 </div>
                 <div className="flex items-center gap-2 mt-2">
                   <div className="relative flex-1">
-                    <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
-                    <input
-                      type="text"
-                      placeholder="Add a destination..."
+                    <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 z-10" />
+                    <PlacesAutocomplete
                       value={newDestinationName}
-                      onChange={(e) => setNewDestinationName(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.preventDefault()
-                          handleAddDestination()
-                        }
+                      onChange={(val) => {
+                        setNewDestinationName(val)
+                        setNewDestinationCoords({})
                       }}
+                      onSelect={(place) => {
+                        setNewDestinationName(place.name)
+                        setNewDestinationCoords({ lat: place.lat, lng: place.lng })
+                      }}
+                      placeholder="Search for a city..."
                       className="w-full pl-8 pr-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     />
                   </div>

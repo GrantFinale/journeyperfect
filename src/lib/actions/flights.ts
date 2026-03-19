@@ -31,10 +31,10 @@ export async function parseAndPreviewFlight(text: string) {
   // Try AI parser first
   const aiResult = await parseFlightTextWithAI(text)
   if (aiResult && aiResult.flights.length > 0) {
-    return aiResult
+    return aiResult // parsedBy: "ai" is set by the AI parser
   }
 
-  // Fall back to regex parser
+  // Fall back to regex parser (parsedBy: "regex" is set by the regex parser)
   return parseFlightText(text)
 }
 

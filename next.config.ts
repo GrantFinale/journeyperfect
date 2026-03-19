@@ -1,5 +1,4 @@
 import type { NextConfig } from "next"
-import path from "path"
 
 // Provide build-time fallback so Prisma generate doesn't fail
 if (!process.env.DATABASE_URL) {
@@ -11,18 +10,7 @@ const nextConfig: NextConfig = {
   serverExternalPackages: ["sonner", "@tanstack/react-query"],
   eslint: { ignoreDuringBuilds: true },
   typescript: { ignoreBuildErrors: false },
-  // Memory optimizations for Docker builds on constrained servers
   productionBrowserSourceMaps: false,
-  webpack: (config) => {
-    // Force single React instance to prevent useContext null errors
-    // on Linux Docker builds where duplicate packages can occur
-    config.resolve.alias = {
-      ...config.resolve.alias,
-      react: path.resolve("./node_modules/react"),
-      "react-dom": path.resolve("./node_modules/react-dom"),
-    }
-    return config
-  },
   images: {
     remotePatterns: [
       { protocol: "https", hostname: "maps.googleapis.com" },

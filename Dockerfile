@@ -7,7 +7,7 @@ WORKDIR /app
 COPY package*.json ./
 # Override any injected NODE_ENV=production so devDependencies are installed
 ENV NODE_ENV=development
-RUN npm ci && npm dedupe
+RUN npm ci
 
 # Stage 2: Build
 FROM node:22-slim AS builder
@@ -21,6 +21,7 @@ ENV NEXTAUTH_SECRET=build-time-secret
 ENV GOOGLE_CLIENT_ID=build-placeholder
 ENV GOOGLE_CLIENT_SECRET=build-placeholder
 ENV NEXT_PUBLIC_GOOGLE_PLACES_KEY=build-placeholder
+ENV NEXT_PUBLIC_APP_URL=http://localhost:3000
 RUN npx prisma generate
 ENV NODE_OPTIONS="--max-old-space-size=1536"
 RUN npm run build

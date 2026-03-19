@@ -24,6 +24,7 @@ ENV NEXT_PUBLIC_GOOGLE_PLACES_KEY=build-placeholder
 ENV NEXT_PUBLIC_APP_URL=http://localhost:3000
 RUN npx prisma generate
 ENV NODE_OPTIONS="--max-old-space-size=1536"
+ENV NODE_ENV=production
 RUN npm run build
 
 # Stage 3: Minimal production runner

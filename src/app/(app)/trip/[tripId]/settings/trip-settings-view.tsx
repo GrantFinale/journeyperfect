@@ -87,8 +87,10 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles }: Pro
     flightNumber: "",
     departureAirport: "",
     departureTime: "",
+    departureTimezone: "UTC",
     arrivalAirport: "",
     arrivalTime: "",
+    arrivalTimezone: "UTC",
     confirmationNumber: "",
     cabin: "",
   })
@@ -122,17 +124,20 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles }: Pro
     setParsingFlight(true)
     try {
       const result = await parseAndPreviewFlight(flightPasteText)
-      if (result) {
+      if (result && result.flights.length > 0) {
+        const f = result.flights[0]
         setParsedFlight(result as unknown as Record<string, string>)
         setFlightForm({
-          airline: result.airline || "",
-          flightNumber: result.flightNumber || "",
-          departureAirport: result.departureAirport || "",
-          departureTime: result.departureTime || "",
-          arrivalAirport: result.arrivalAirport || "",
-          arrivalTime: result.arrivalTime || "",
-          confirmationNumber: result.confirmationNumber || "",
-          cabin: result.cabin || "",
+          airline: f.airline || "",
+          flightNumber: f.flightNumber || "",
+          departureAirport: f.departureAirport || "",
+          departureTime: f.departureTime ? new Date(f.departureTime).toISOString().slice(0, 16) : "",
+          departureTimezone: f.departureTimezone || "UTC",
+          arrivalAirport: f.arrivalAirport || "",
+          arrivalTime: f.arrivalTime ? new Date(f.arrivalTime).toISOString().slice(0, 16) : "",
+          arrivalTimezone: f.arrivalTimezone || "UTC",
+          confirmationNumber: f.confirmationNumber || "",
+          cabin: f.cabin || "",
         })
         toast.success("Flight parsed successfully!")
       } else {
@@ -155,6 +160,8 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles }: Pro
         ...flightForm,
         departureTime: new Date(flightForm.departureTime).toISOString(),
         arrivalTime: new Date(flightForm.arrivalTime).toISOString(),
+        departureTimezone: flightForm.departureTimezone || "UTC",
+        arrivalTimezone: flightForm.arrivalTimezone || "UTC",
         airline: flightForm.airline || undefined,
         flightNumber: flightForm.flightNumber || undefined,
         departureAirport: flightForm.departureAirport || undefined,
@@ -166,7 +173,7 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles }: Pro
       setShowFlightForm(false)
       setFlightPasteText("")
       setParsedFlight(null)
-      setFlightForm({ airline: "", flightNumber: "", departureAirport: "", departureTime: "", arrivalAirport: "", arrivalTime: "", confirmationNumber: "", cabin: "" })
+      setFlightForm({ airline: "", flightNumber: "", departureAirport: "", departureTime: "", departureTimezone: "UTC", arrivalAirport: "", arrivalTime: "", arrivalTimezone: "UTC", confirmationNumber: "", cabin: "" })
       toast.success("Flight added!")
     } catch {
       toast.error("Failed to add flight")

@@ -26,12 +26,19 @@ interface AppShellProps {
   user: { name?: string | null; email?: string | null; image?: string | null; id: string }
 }
 
-const NAV_ITEMS = [
+type NavItem = {
+  href: string
+  label: string
+  icon: typeof LayoutDashboard
+  exact?: boolean
+}
+
+const NAV_ITEMS: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/settings", label: "Settings", icon: Settings },
 ]
 
-const TRIP_NAV_ITEMS = (tripId: string) => [
+const TRIP_NAV_ITEMS = (tripId: string): NavItem[] => [
   { href: `/trip/${tripId}`, label: "Overview", icon: Map, exact: true },
   { href: `/trip/${tripId}/itinerary`, label: "Itinerary", icon: CalendarDays },
   { href: `/trip/${tripId}/activities`, label: "Activities", icon: Star },

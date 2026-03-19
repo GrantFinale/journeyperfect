@@ -255,6 +255,7 @@ export function ItineraryView({ tripId, initialItems, tripStartDate, tripEndDate
         type: newItemForm.type as "CUSTOM",
         startTime: newItemForm.startTime || undefined,
         durationMins: newItemForm.durationMins,
+        costEstimate: 0,
         position: 99,
       })
       setItems((prev) => [...prev, {

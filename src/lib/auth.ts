@@ -16,6 +16,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   callbacks: {
     session({ session, user }) {
       session.user.id = user.id
+      // @ts-expect-error -- extending session type
+      session.user.isAdmin = (user as any).isAdmin ?? false
       return session
     },
   },

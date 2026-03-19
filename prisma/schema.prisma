@@ -21,6 +21,7 @@ model User {
   plan             Plan     @default(FREE)
   planStatus       String?  // active | trialing | past_due | canceled
   trialEndsAt      DateTime?
+  isAdmin          Boolean  @default(false)
 
   // Relations
   accounts         Account[]
@@ -365,6 +366,14 @@ model Subscription {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ─── App Config (admin key-value store) ──────────────────────────────────────
+
+model AppConfig {
+  key       String   @id
+  value     String
   updatedAt DateTime @updatedAt
 }
 

@@ -1,3 +1,5 @@
+import { getConfig } from "./config"
+
 export const PLANS = {
   FREE: { name: "Free", maxTrips: 2, maxTravelersPerTrip: 2, canShare: false },
   PERSONAL: { name: "Personal", maxTrips: 10, maxTravelersPerTrip: 6, canShare: true },
@@ -9,6 +11,14 @@ export type Plan = keyof typeof PLANS
 
 export function getPlanLimits(plan: Plan) {
   return PLANS[plan]
+}
+
+export async function getDynamicPlanLimits(plan: Plan) {
+  const defaults = PLANS[plan]
+  const maxTrips = parseInt(await getConfig(`plans.${plan}.maxTrips`, String(defaults.maxTrips)))
+  const maxTravelersPerTrip = parseInt(await getConfig(`plans.${plan}.maxTravelersPerTrip`, String(defaults.maxTravelersPerTrip)))
+  const canShare = (await getConfig(`plans.${plan}.canShare`, String(defaults.canShare))) === "true"
+  return { ...defaults, maxTrips, maxTravelersPerTrip, canShare }
 }
 
 // Price IDs (from env)

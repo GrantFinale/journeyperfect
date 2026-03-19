@@ -1,20 +1,14 @@
 import type { ParseResult, ParsedFlight } from "./flight-parser"
+import { getConfig } from "./config"
 
 export async function parseFlightTextWithAI(text: string): Promise<ParseResult | null> {
   try {
-    const apiKey = process.env.ANTHROPIC_API_KEY
+    const apiKey = process.env.OPENROUTER_API_KEY
     if (!apiKey) return null
 
-    const { default: Anthropic } = await import("@anthropic-ai/sdk")
-    const client = new Anthropic({ apiKey })
+    const model = await getConfig("ai.flight_parser.model", "anthropic/claude-haiku-4-5-20251001")
 
-    const response = await client.messages.create({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 2048,
-      messages: [
-        {
-          role: "user",
-          content: `Extract all flight segments from the following airline confirmation email or itinerary text. Return a JSON object with this exact structure:
+    const prompt = `Extract all flight segments from the following airline confirmation email or itinerary text. Return a JSON object with this exact structure:
 
 {
   "flights": [
@@ -47,16 +41,29 @@ Rules:
 - Return ONLY valid JSON, no other text
 
 Text to parse:
-${text}`,
-        },
-      ],
+${text}`
+
+    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        max_tokens: 2048,
+        messages: [{ role: "user", content: prompt }],
+      }),
     })
 
-    const content = response.content[0]
-    if (content.type !== "text") return null
+    if (!response.ok) return null
+
+    const data = await response.json()
+    const content = data.choices?.[0]?.message?.content
+    if (!content) return null
 
     // Extract JSON from the response (handle markdown code blocks)
-    let jsonStr = content.text.trim()
+    let jsonStr = content.trim()
     const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/)
     if (jsonMatch) {
       jsonStr = jsonMatch[1].trim()
@@ -91,7 +98,7 @@ ${text}`,
       flights,
       rawText: text,
       needsConfirmation: false,
-      parseNotes: ["Parsed with AI (Claude Haiku)"],
+      parseNotes: ["Parsed with AI (OpenRouter)"],
     }
   } catch {
     return null

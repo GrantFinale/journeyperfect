@@ -43,8 +43,53 @@ export function SettingsView({ configs: initialConfigs }: { configs: Config[] })
     })
   }
 
+  const AFFILIATE_KEYS = [
+    { key: "affiliate.booking.id", desc: "Booking.com affiliate ID (aid parameter)", example: "123456" },
+    { key: "affiliate.rentalcars.id", desc: "RentalCars.com affiliate code", example: "abc123" },
+    { key: "affiliate.viator.pid", desc: "Viator partner ID (pid parameter)", example: "P00012345" },
+    { key: "affiliate.getyourguide.id", desc: "GetYourGuide partner ID", example: "ABCDEF" },
+    { key: "affiliate.safetywing.id", desc: "SafetyWing referral ID", example: "journeyperfect" },
+    { key: "affiliate.amazon.tag", desc: "Amazon Associates tag", example: "journeyperfect-20" },
+  ]
+
+  function handleQuickAdd(key: string) {
+    setNewKey(key)
+    setNewValue("")
+  }
+
   return (
     <div className="space-y-6">
+      {/* Affiliate config reference */}
+      <div className="bg-indigo-50 rounded-lg border border-indigo-100 p-5">
+        <h2 className="text-sm font-semibold text-indigo-900 mb-1">Affiliate Link Configuration</h2>
+        <p className="text-xs text-indigo-700 mb-3">
+          Set these keys to enable affiliate commission links throughout the app. Links appear on trip dashboards, activity cards, and hotel listings.
+        </p>
+        <div className="space-y-1.5">
+          {AFFILIATE_KEYS.map((ak) => {
+            const isSet = configs.some((c) => c.key === ak.key)
+            return (
+              <div key={ak.key} className="flex items-center gap-2 text-xs">
+                <span className={`w-2 h-2 rounded-full ${isSet ? "bg-green-500" : "bg-gray-300"}`} />
+                <code className="font-mono text-indigo-800 bg-indigo-100 px-1.5 py-0.5 rounded">{ak.key}</code>
+                <span className="text-indigo-600">{ak.desc}</span>
+                {!isSet && (
+                  <button
+                    onClick={() => handleQuickAdd(ak.key)}
+                    className="ml-auto text-indigo-600 hover:text-indigo-800 font-medium"
+                  >
+                    + Add
+                  </button>
+                )}
+                {isSet && (
+                  <span className="ml-auto text-green-700 font-medium">Configured</span>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
       {/* Add new setting */}
       <div className="bg-white rounded-lg border border-gray-200 p-5">
         <h2 className="text-sm font-medium text-gray-700 mb-3">Add Setting</h2>

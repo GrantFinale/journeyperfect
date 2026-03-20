@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { createFlight, createFlightsBatch, deleteFlight, parseAndPreviewFlight } from "@/lib/actions/flights"
@@ -26,6 +26,9 @@ import {
   CheckCircle2,
 } from "lucide-react"
 import PlacesAutocomplete from "@/components/places-autocomplete"
+import { AffiliateBadge } from "@/components/affiliate-links"
+import { getHotelAffiliate, getCarRentalAffiliate } from "@/lib/actions/affiliates"
+import type { AffiliateLink } from "@/lib/affiliates"
 
 type TripDestinationType = {
   id: string
@@ -140,6 +143,25 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles }: Pro
   const [newDestinationName, setNewDestinationName] = useState("")
   const [newDestinationCoords, setNewDestinationCoords] = useState<{ lat?: number; lng?: number }>({})
   const [addingDestination, setAddingDestination] = useState(false)
+
+  // Affiliate link state
+  const [hotelAffiliateLink, setHotelAffiliateLink] = useState<AffiliateLink | null>(null)
+  const [carRentalLink, setCarRentalLink] = useState<AffiliateLink | null>(null)
+
+  useEffect(() => {
+    // Fetch hotel affiliate link
+    getHotelAffiliate(
+      trip.destination,
+      trip.startDate.toISOString().split("T")[0],
+      trip.endDate.toISOString().split("T")[0]
+    ).then(setHotelAffiliateLink)
+    // Fetch car rental affiliate link
+    getCarRentalAffiliate(
+      trip.destination,
+      trip.startDate.toISOString().split("T")[0],
+      trip.endDate.toISOString().split("T")[0]
+    ).then(setCarRentalLink)
+  }, [trip.destination, trip.startDate, trip.endDate])
 
   // Parse flight from text
   async function handleParseFlight() {
@@ -452,6 +474,14 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles }: Pro
             ))}
           </div>
 
+          {/* Rental car affiliate link when flights exist */}
+          {trip.flights.length > 0 && carRentalLink && (
+            <div className="mb-4 p-3 bg-blue-50 border border-blue-100 rounded-xl">
+              <p className="text-xs text-gray-500 mb-2">Need a car at your destination?</p>
+              <AffiliateBadge link={carRentalLink} />
+            </div>
+          )}
+
           {/* Add flight button */}
           {!showFlightForm && (
             <button
@@ -632,26 +662,33 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles }: Pro
 
           <div className="space-y-2 mb-4">
             {trip.hotels.map((hotel) => (
-              <div key={hotel.id} className="bg-white border border-gray-100 rounded-2xl p-4 flex items-center gap-3 group">
-                <div className="w-9 h-9 bg-purple-50 rounded-xl flex items-center justify-center">
-                  <Hotel className="w-4 h-4 text-purple-600" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="font-medium text-sm text-gray-900">
-                    {hotel.isVacationRental ? "🏡 " : "🏨 "}{hotel.name}
+              <div key={hotel.id} className="bg-white border border-gray-100 rounded-2xl p-4 group">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 bg-purple-50 rounded-xl flex items-center justify-center">
+                    <Hotel className="w-4 h-4 text-purple-600" />
                   </div>
-                  <div className="text-xs text-gray-500">
-                    {formatDate(hotel.checkIn, "MMM d")} → {formatDate(hotel.checkOut, "MMM d, yyyy")}
-                    {hotel.confirmationNumber && ` · ${hotel.confirmationNumber}`}
-                    {hotel.address && ` · ${hotel.address}`}
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-sm text-gray-900">
+                      {hotel.isVacationRental ? "\u{1F3E1} " : "\u{1F3E8} "}{hotel.name}
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      {formatDate(hotel.checkIn, "MMM d")} &rarr; {formatDate(hotel.checkOut, "MMM d, yyyy")}
+                      {hotel.confirmationNumber && ` \u00B7 ${hotel.confirmationNumber}`}
+                      {hotel.address && ` \u00B7 ${hotel.address}`}
+                    </div>
                   </div>
+                  <button
+                    onClick={() => handleDeleteHotel(hotel.id)}
+                    className="p-1.5 text-gray-400 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
                 </div>
-                <button
-                  onClick={() => handleDeleteHotel(hotel.id)}
-                  className="p-1.5 text-gray-400 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
+                {hotelAffiliateLink && (
+                  <div className="mt-2 ml-12">
+                    <AffiliateBadge link={hotelAffiliateLink} />
+                  </div>
+                )}
               </div>
             ))}
           </div>

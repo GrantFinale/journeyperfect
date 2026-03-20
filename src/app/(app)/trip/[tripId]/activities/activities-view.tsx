@@ -19,6 +19,7 @@ import {
   Lock,
   CalendarDays,
 } from "lucide-react"
+import { ActivityBookingLinks } from "@/components/affiliate-links"
 
 type Activity = {
   id: string
@@ -591,6 +592,9 @@ export function ActivitiesView({ tripId, initialActivities, destination }: Props
                     {activity.isFixed ? "Locked" : "Lock date"}
                   </button>
                 </div>
+
+                {/* Affiliate booking links */}
+                <ActivityBookingLinks activityName={activity.name} destination={destination} />
               </div>
             </div>
           </div>

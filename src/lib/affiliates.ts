@@ -8,26 +8,34 @@ export interface AffiliateLink {
   commission: string
 }
 
-// Booking.com affiliate
+// Booking.com affiliate (via Awin network)
+// Awin merchant ID for Booking.com: 6776
+// Config key "affiliate.booking.id" stores the Awin publisher/affiliate ID
 export async function getHotelBookingLink(
   destination: string,
   checkIn?: string,
   checkOut?: string
 ): Promise<AffiliateLink> {
-  const affiliateId = await getConfig("affiliate.booking.id", "")
-  const baseUrl = "https://www.booking.com/searchresults.html"
-  const params = new URLSearchParams({
+  const awinAffiliateId = await getConfig("affiliate.booking.id", "")
+  // Build the destination URL on Booking.com
+  const bookingParams = new URLSearchParams({
     ss: destination,
     ...(checkIn && { checkin: checkIn }),
     ...(checkOut && { checkout: checkOut }),
-    ...(affiliateId && { aid: affiliateId }),
   })
+  const destinationUrl = `https://www.booking.com/searchresults.html?${bookingParams}`
+
+  // If we have an Awin affiliate ID, use Awin tracking link
+  const url = awinAffiliateId
+    ? `https://www.awin1.com/cread.php?awinmid=6776&awinaffid=${awinAffiliateId}&ued=${encodeURIComponent(destinationUrl)}`
+    : destinationUrl
+
   return {
     provider: "Booking.com",
-    url: `${baseUrl}?${params}`,
+    url,
     label: "Find hotels on Booking.com",
     icon: "\u{1F3E8}",
-    commission: "up to 40%",
+    commission: "4%",
   }
 }
 

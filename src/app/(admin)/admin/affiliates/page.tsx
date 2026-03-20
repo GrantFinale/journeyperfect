@@ -2,7 +2,7 @@ import { getAdminConfigs } from "@/lib/actions/admin"
 import { AffiliateConfigForm } from "./affiliate-config-form"
 
 const AFFILIATE_PROGRAMS = [
-  { key: "affiliate.booking.id", name: "Booking.com", description: "Hotel bookings — up to 40% commission", signupUrl: "https://www.booking.com/affiliate-program/v2/index.html", icon: "🏨" },
+  { key: "affiliate.booking.id", name: "Booking.com (via Awin)", description: "Hotels, flights, cars — 4-6% commission. Enter your Awin publisher ID.", signupUrl: "https://ui.awin.com/merchant/6776/profile", icon: "🏨" },
   { key: "affiliate.rentalcars.id", name: "RentalCars.com", description: "Car rentals — up to 8% commission", signupUrl: "https://www.rentalcars.com/affiliates", icon: "🚗" },
   { key: "affiliate.viator.pid", name: "Viator", description: "Tours & activities — 8% commission", signupUrl: "https://www.viator.com/affiliates", icon: "🎟️" },
   { key: "affiliate.getyourguide.id", name: "GetYourGuide", description: "Tours & activities — 8% commission", signupUrl: "https://partner.getyourguide.com", icon: "🗺️" },

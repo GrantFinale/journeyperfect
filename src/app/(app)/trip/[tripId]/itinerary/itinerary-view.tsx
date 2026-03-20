@@ -53,6 +53,12 @@ type ItineraryItem = {
   costEstimate: number
   position: number
   isConfirmed: boolean
+  flight?: {
+    airline: string | null
+    flightNumber: string | null
+    departureAirport: string | null
+    arrivalAirport: string | null
+  } | null
 }
 
 import { groupByDay } from "@/lib/itinerary-utils"
@@ -145,7 +151,9 @@ function SortableItineraryItem({
           <div className="flex items-start justify-between gap-2">
             <div>
               <div className="font-medium text-gray-900 text-sm leading-tight">
-                {item.title}
+                {item.type === "FLIGHT" && item.flight
+                  ? `${item.flight.airline || ""} ${item.flight.flightNumber || "Flight"}${item.flight.departureAirport || item.flight.arrivalAirport ? ` · ${[item.flight.departureAirport, item.flight.arrivalAirport].filter(Boolean).join(" → ")}` : ""}`.trim()
+                  : item.title}
               </div>
               <div className="flex items-center gap-2 mt-0.5 text-xs text-gray-500">
                 {item.startTime && (

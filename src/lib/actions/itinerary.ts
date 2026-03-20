@@ -131,7 +131,7 @@ export async function runOptimizer(tripId: string) {
       date: f.departureTime,
       startTime: f.departureTime.toTimeString().slice(0, 5),
       durationMins: Math.ceil((f.arrivalTime.getTime() - f.departureTime.getTime()) / 60000),
-      title: `Flight ${f.flightNumber || ""}`,
+      title: `${f.airline || ""} ${f.flightNumber || "Flight"}${f.departureAirport || f.arrivalAirport ? ` · ${[f.departureAirport, f.arrivalAirport].filter(Boolean).join(" → ")}` : ""}`.trim(),
       lat: null,
       lng: null,
     })),

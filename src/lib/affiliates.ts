@@ -39,34 +39,30 @@ export async function getHotelBookingLink(
   }
 }
 
-// RentalCars.com affiliate
+// Car rentals via Booking.com/Awin (same affiliate account as hotels)
 export async function getRentalCarLink(
   pickupLocation: string,
   pickupDate?: string,
   dropoffDate?: string
 ): Promise<AffiliateLink> {
-  const affiliateId = await getConfig("affiliate.rentalcars.id", "")
-  const baseUrl = "https://www.rentalcars.com/search-results"
-  const params = new URLSearchParams({
-    location: pickupLocation,
-    ...(pickupDate && {
-      puDay: pickupDate.split("-")[2],
-      puMonth: pickupDate.split("-")[1],
-      puYear: pickupDate.split("-")[0],
-    }),
-    ...(dropoffDate && {
-      doDay: dropoffDate.split("-")[2],
-      doMonth: dropoffDate.split("-")[1],
-      doYear: dropoffDate.split("-")[0],
-    }),
-    ...(affiliateId && { affiliateCode: affiliateId }),
+  const awinAffiliateId = await getConfig("affiliate.booking.id", "")
+  const carParams = new URLSearchParams({
+    ss: pickupLocation,
+    ...(pickupDate && { pickup_date: pickupDate }),
+    ...(dropoffDate && { dropoff_date: dropoffDate }),
   })
+  const destinationUrl = `https://www.booking.com/cars/index.html?${carParams}`
+
+  const url = awinAffiliateId
+    ? `https://www.awin1.com/cread.php?awinmid=6776&awinaffid=${awinAffiliateId}&ued=${encodeURIComponent(destinationUrl)}`
+    : destinationUrl
+
   return {
-    provider: "RentalCars.com",
-    url: `${baseUrl}?${params}`,
-    label: "Rent a car",
+    provider: "Booking.com",
+    url,
+    label: "Rent a car on Booking.com",
     icon: "\u{1F697}",
-    commission: "up to 8%",
+    commission: "3.8-6%",
   }
 }
 

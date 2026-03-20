@@ -16,39 +16,58 @@ interface PlacesAutocompleteProps {
   placeholder?: string
   className?: string
   disabled?: boolean
-  apiKey?: string // passed from server to avoid build-time env var issue
+  apiKey?: string
 }
 
+let googleMapsLoadPromise: Promise<void> | null = null
+let googleMapsLoaded = false
+let googleMapsLoadFailed = false
+
 function loadGoogleMaps(apiKey: string): Promise<void> {
-  if (window.google?.maps?.places) return Promise.resolve()
+  if (googleMapsLoaded && window.google?.maps?.places) return Promise.resolve()
+  if (googleMapsLoadFailed) return Promise.reject(new Error("Previously failed"))
+  if (googleMapsLoadPromise) return googleMapsLoadPromise
 
   if (!apiKey || apiKey === "build-placeholder") {
-    return Promise.reject(new Error("Google Places API key not available"))
+    googleMapsLoadFailed = true
+    return Promise.reject(new Error("No API key"))
   }
 
-  return new Promise((resolve, reject) => {
+  googleMapsLoadPromise = new Promise((resolve, reject) => {
+    // Check if script already exists (maybe loaded by another component)
     if (document.querySelector('script[src*="maps.googleapis.com"]')) {
       let elapsed = 0
       const check = setInterval(() => {
         elapsed += 100
         if (window.google?.maps?.places) {
           clearInterval(check)
+          googleMapsLoaded = true
           resolve()
         } else if (elapsed > 10000) {
           clearInterval(check)
-          reject(new Error("Google Maps script load timeout"))
+          googleMapsLoadFailed = true
+          reject(new Error("Timeout"))
         }
       }, 100)
       return
     }
 
-    window.__googleMapsCallback = () => resolve()
+    window.__googleMapsCallback = () => {
+      googleMapsLoaded = true
+      resolve()
+    }
     const script = document.createElement("script")
     script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&callback=__googleMapsCallback`
     script.async = true
-    script.onerror = () => reject(new Error("Failed to load Google Maps script"))
+    script.onerror = () => {
+      googleMapsLoadFailed = true
+      googleMapsLoadPromise = null
+      reject(new Error("Script load failed"))
+    }
     document.head.appendChild(script)
   })
+
+  return googleMapsLoadPromise
 }
 
 export default function PlacesAutocomplete({
@@ -65,50 +84,72 @@ export default function PlacesAutocomplete({
   const autocompleteRef = useRef<any>(null)
   const onSelectRef = useRef(onSelect)
   const onChangeRef = useRef(onChange)
-  const [apiFailed, setApiFailed] = useState(false)
+  const [ready, setReady] = useState(false)
+  const [failed, setFailed] = useState(false)
 
-  // Keep refs up to date so the listener closure always uses the latest callbacks
   onSelectRef.current = onSelect
   onChangeRef.current = onChange
 
   useEffect(() => {
-    if (disabled || apiFailed) return
+    if (disabled || failed) return
+    // Don't try to load without a key
+    if (!resolvedApiKey || resolvedApiKey === "build-placeholder") return
+
+    // If already failed globally, don't retry
+    if (googleMapsLoadFailed) {
+      setFailed(true)
+      return
+    }
 
     loadGoogleMaps(resolvedApiKey)
       .then(() => {
         if (!inputRef.current || autocompleteRef.current) return
 
-        const autocomplete = new window.google.maps.places.Autocomplete(inputRef.current, {
-          types: ["(cities)"],
-        })
+        try {
+          const autocomplete = new window.google.maps.places.Autocomplete(inputRef.current, {
+            types: ["(cities)"],
+          })
 
-        autocomplete.addListener("place_changed", () => {
-          const place = autocomplete.getPlace()
-          if (place?.geometry) {
-            const name = place.formatted_address || place.name || ""
-            onSelectRef.current({
-              name,
-              lat: place.geometry.location?.lat(),
-              lng: place.geometry.location?.lng(),
-            })
-            onChangeRef.current(name)
-          }
-        })
+          autocomplete.addListener("place_changed", () => {
+            try {
+              const place = autocomplete.getPlace()
+              if (place?.geometry) {
+                const name = place.formatted_address || place.name || ""
+                onSelectRef.current({
+                  name,
+                  lat: place.geometry.location?.lat(),
+                  lng: place.geometry.location?.lng(),
+                })
+                onChangeRef.current(name)
+              }
+            } catch {
+              // Ignore errors from place_changed callback
+            }
+          })
 
-        autocompleteRef.current = autocomplete
+          autocompleteRef.current = autocomplete
+          setReady(true)
+        } catch {
+          setFailed(true)
+        }
       })
       .catch(() => {
-        // Google Maps failed to load — fall back to plain text input
-        setApiFailed(true)
+        setFailed(true)
       })
 
     return () => {
       if (autocompleteRef.current) {
-        window.google?.maps?.event?.clearInstanceListeners(autocompleteRef.current)
+        try {
+          window.google?.maps?.event?.clearInstanceListeners(autocompleteRef.current)
+        } catch {
+          // Ignore cleanup errors
+        }
+        autocompleteRef.current = null
       }
     }
-  }, [disabled, apiFailed])
+  }, [disabled, resolvedApiKey, failed])
 
+  // Plain text input (disabled, no key, or API failed)
   if (disabled) {
     return (
       <div className="relative">
@@ -126,8 +167,7 @@ export default function PlacesAutocomplete({
     )
   }
 
-  // If API failed to load, render a plain text input (no ref needed for autocomplete)
-  if (apiFailed) {
+  if (failed || (!resolvedApiKey && !ready)) {
     return (
       <input
         type="text"

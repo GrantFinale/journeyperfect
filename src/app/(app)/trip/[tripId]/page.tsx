@@ -10,6 +10,7 @@ import { AffiliateSmartSuggestions } from "@/components/affiliate-links"
 import {
   Plane,
   Hotel,
+  Car,
   CalendarDays,
   DollarSign,
   Star,
@@ -172,8 +173,8 @@ export default async function TripOverviewPage({ params }: { params: Promise<{ t
         </div>
       )}
 
-      {/* Flight/Hotel summary cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+      {/* Flight/Hotel/Car summary cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
         <div className="bg-white border border-gray-100 rounded-2xl p-4">
           <div className="flex items-center gap-2 mb-2">
             <Plane className="w-4 h-4 text-indigo-500" />
@@ -207,6 +208,27 @@ export default async function TripOverviewPage({ params }: { params: Promise<{ t
               className="text-xs text-indigo-500 hover:underline p-2 -m-2 inline-block"
             >
               Add hotels
+            </Link>
+          )}
+        </div>
+        <div className="bg-white border border-gray-100 rounded-2xl p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <Car className="w-4 h-4 text-green-600" />
+            <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Rental Cars</span>
+          </div>
+          <div className="text-2xl font-bold text-gray-900">{trip.rentalCars.length}</div>
+          {trip.rentalCars.length > 0 ? (
+            <div className="text-xs text-gray-500 mt-1 truncate">
+              {trip.rentalCars.length === 1 && trip.rentalCars[0].company
+                ? trip.rentalCars[0].company
+                : `${trip.rentalCars.length} car${trip.rentalCars.length > 1 ? "s" : ""}`}
+            </div>
+          ) : (
+            <Link
+              href={`/trip/${tripId}/settings?tab=cars`}
+              className="text-xs text-indigo-500 hover:underline p-2 -m-2 inline-block"
+            >
+              Add rental car
             </Link>
           )}
         </div>

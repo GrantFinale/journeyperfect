@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { createFlight, createFlightsBatch, deleteFlight, parseAndPreviewFlight } from "@/lib/actions/flights"
 import { createHotel, createHotelsBatch, deleteHotel, parseAndPreviewHotel } from "@/lib/actions/hotels"
+import { createRentalCar, deleteRentalCar, parseAndPreviewRentalCar } from "@/lib/actions/rental-cars"
+import { getCompanyInfo, RENTAL_CAR_COMPANIES } from "@/lib/rental-car-logos"
 import { addTravelerToTrip, removeTravelerFromTrip } from "@/lib/actions/travelers"
 import { updateTrip, deleteTrip, shareTrip, unshareTrip, addDestination, removeDestination } from "@/lib/actions/trips"
 import { formatDate } from "@/lib/utils"
@@ -12,6 +14,7 @@ import { cn } from "@/lib/utils"
 import {
   Plane,
   Hotel,
+  Car,
   Users,
   Settings,
   Plus,
@@ -71,6 +74,18 @@ type Trip = {
     confirmationNumber: string | null
     isVacationRental: boolean
   }[]
+  rentalCars: {
+    id: string
+    company: string | null
+    vehicleType: string | null
+    pickupLocation: string | null
+    pickupTime: Date
+    dropoffLocation: string | null
+    dropoffTime: Date
+    confirmationNumber: string | null
+    price: number | null
+    priceCurrency: string | null
+  }[]
   travelers: {
     id: string
     traveler: { id: string; name: string; tags: string[] }
@@ -86,7 +101,7 @@ interface Props {
   initialTab?: string
 }
 
-const TABS = ["Flights", "Hotels", "Travelers", "General"] as const
+const TABS = ["Flights", "Hotels", "Cars", "Travelers", "General"] as const
 type Tab = (typeof TABS)[number]
 
 function tabFromParam(param?: string): Tab {
@@ -151,6 +166,33 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles, initi
     confirmationNumber?: string; price?: number; priceCurrency?: string; roomCount?: number;
     roomType?: string; isVacationRental?: boolean;
   } | null>(null)
+
+  // Rental car state
+  const [showCarForm, setShowCarForm] = useState(false)
+  const [showCarParse, setShowCarParse] = useState(false)
+  const [carPasteText, setCarPasteText] = useState("")
+  const [parsingCar, setParsingCar] = useState(false)
+  const [parsedCar, setParsedCar] = useState<{
+    company?: string; vehicleType?: string; pickupLocation?: string; pickupAddress?: string;
+    pickupTime?: string; pickupTimezone?: string; dropoffLocation?: string; dropoffAddress?: string;
+    dropoffTime?: string; dropoffTimezone?: string; confirmationNumber?: string;
+    price?: number; priceCurrency?: string; bookingLink?: string; notes?: string;
+  } | null>(null)
+  const [carForm, setCarForm] = useState({
+    company: "",
+    companyOther: "",
+    vehicleType: "",
+    pickupLocation: "",
+    pickupTime: "",
+    pickupTimezone: "UTC",
+    dropoffLocation: "",
+    dropoffTime: "",
+    dropoffTimezone: "UTC",
+    confirmationNumber: "",
+    bookingLink: "",
+    price: "",
+    notes: "",
+  })
 
   // General state
   const [generalForm, setGeneralForm] = useState({
@@ -404,6 +446,122 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles, initi
       toast.success("Hotel removed")
     } catch {
       toast.error("Failed to remove hotel")
+    }
+  }
+
+  // Parse rental car from text
+  async function handleParseCar() {
+    if (!carPasteText.trim()) return
+    setParsingCar(true)
+    try {
+      const result = await parseAndPreviewRentalCar(carPasteText)
+      if (result && result.rentalCars && result.rentalCars.length > 0) {
+        const c = result.rentalCars[0]
+        setParsedCar({
+          company: c.company,
+          vehicleType: c.vehicleType,
+          pickupLocation: c.pickupLocation,
+          pickupAddress: c.pickupAddress,
+          pickupTime: c.pickupTime ? new Date(c.pickupTime).toISOString().slice(0, 16) : undefined,
+          pickupTimezone: c.pickupTimezone,
+          dropoffLocation: c.dropoffLocation,
+          dropoffAddress: c.dropoffAddress,
+          dropoffTime: c.dropoffTime ? new Date(c.dropoffTime).toISOString().slice(0, 16) : undefined,
+          dropoffTimezone: c.dropoffTimezone,
+          confirmationNumber: c.confirmationNumber || result.confirmationNumber,
+          price: c.price,
+          priceCurrency: c.priceCurrency,
+          bookingLink: c.bookingLink,
+          notes: c.notes,
+        })
+        toast.success("Rental car details parsed!")
+      } else {
+        toast.error("Could not parse rental car info -- fill in manually below")
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : ""
+      if (msg.includes("UPGRADE_REQUIRED")) {
+        toast.error(msg.split(":").slice(1).join(":"))
+      } else if (msg.includes("PARSE_FAILED")) {
+        toast.error(msg.split(":").slice(1).join(":"))
+      } else {
+        toast.error("Failed to parse rental car -- check API configuration in admin")
+      }
+    } finally {
+      setParsingCar(false)
+    }
+  }
+
+  async function handleAddParsedCar() {
+    if (!parsedCar?.pickupTime || !parsedCar?.dropoffTime) {
+      toast.error("Pickup and dropoff times are required")
+      return
+    }
+    try {
+      const car = await createRentalCar(tripId, {
+        company: parsedCar.company || undefined,
+        vehicleType: parsedCar.vehicleType || undefined,
+        pickupLocation: parsedCar.pickupLocation || undefined,
+        pickupAddress: parsedCar.pickupAddress || undefined,
+        pickupTime: new Date(parsedCar.pickupTime).toISOString(),
+        pickupTimezone: parsedCar.pickupTimezone || "UTC",
+        dropoffLocation: parsedCar.dropoffLocation || undefined,
+        dropoffAddress: parsedCar.dropoffAddress || undefined,
+        dropoffTime: new Date(parsedCar.dropoffTime).toISOString(),
+        dropoffTimezone: parsedCar.dropoffTimezone || "UTC",
+        confirmationNumber: parsedCar.confirmationNumber || undefined,
+        price: parsedCar.price,
+        priceCurrency: parsedCar.priceCurrency,
+        bookingLink: parsedCar.bookingLink || undefined,
+        notes: parsedCar.notes || undefined,
+      })
+      setTrip((prev) => ({ ...prev, rentalCars: [...prev.rentalCars, car as unknown as Trip["rentalCars"][0]] }))
+      setParsedCar(null)
+      setCarPasteText("")
+      setShowCarParse(false)
+      toast.success("Rental car added!")
+    } catch {
+      toast.error("Failed to add rental car")
+    }
+  }
+
+  async function handleAddCar() {
+    if (!carForm.pickupTime || !carForm.dropoffTime) {
+      toast.error("Pickup and dropoff times are required")
+      return
+    }
+    const companyName = carForm.company === "__other__" ? carForm.companyOther : carForm.company
+    try {
+      const car = await createRentalCar(tripId, {
+        company: companyName || undefined,
+        vehicleType: carForm.vehicleType || undefined,
+        pickupLocation: carForm.pickupLocation || undefined,
+        pickupTime: new Date(carForm.pickupTime).toISOString(),
+        pickupTimezone: carForm.pickupTimezone || "UTC",
+        dropoffLocation: carForm.dropoffLocation || undefined,
+        dropoffTime: new Date(carForm.dropoffTime).toISOString(),
+        dropoffTimezone: carForm.dropoffTimezone || "UTC",
+        confirmationNumber: carForm.confirmationNumber || undefined,
+        bookingLink: carForm.bookingLink || undefined,
+        price: carForm.price ? parseFloat(carForm.price) : undefined,
+        notes: carForm.notes || undefined,
+      })
+      setTrip((prev) => ({ ...prev, rentalCars: [...prev.rentalCars, car as unknown as Trip["rentalCars"][0]] }))
+      setShowCarForm(false)
+      setCarForm({ company: "", companyOther: "", vehicleType: "", pickupLocation: "", pickupTime: "", pickupTimezone: "UTC", dropoffLocation: "", dropoffTime: "", dropoffTimezone: "UTC", confirmationNumber: "", bookingLink: "", price: "", notes: "" })
+      toast.success("Rental car added!")
+    } catch {
+      toast.error("Failed to add rental car")
+    }
+  }
+
+  async function handleDeleteCar(carId: string) {
+    try {
+      await deleteRentalCar(tripId, carId)
+      setTrip((prev) => ({ ...prev, rentalCars: prev.rentalCars.filter((c) => c.id !== carId) }))
+      toast.success("Rental car removed")
+    } catch {
+      toast.error("Failed to remove rental car")
     }
   }
 
@@ -943,6 +1101,245 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles, initi
                   <button onClick={handleAddHotel}
                     className="flex-1 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-xl hover:bg-indigo-700">
                     Add
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* CARS TAB */}
+      {activeTab === "Cars" && (
+        <div>
+          {trip.rentalCars.length === 0 && !showCarForm && !showCarParse && (
+            <div className="text-center py-12">
+              <Car className="w-10 h-10 text-gray-200 mx-auto mb-3" />
+              <p className="text-gray-500 text-sm">No rental cars added yet</p>
+              <p className="text-gray-400 text-xs mt-1">
+                Paste a confirmation email to auto-import, or add manually
+              </p>
+            </div>
+          )}
+
+          {/* Rental car list */}
+          <div className="space-y-2 mb-4">
+            {trip.rentalCars.map((car) => {
+              const info = getCompanyInfo(car.company || "")
+              return (
+                <div key={car.id} className="bg-white border border-gray-100 rounded-2xl p-4 group">
+                  <div className="flex items-center gap-3">
+                    <div
+                      className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 text-sm"
+                      style={{ backgroundColor: info.color + "15" }}
+                    >
+                      <span>{info.logo}</span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium text-sm text-gray-900 truncate">
+                        {car.company || "Rental Car"}{car.vehicleType ? ` \u00B7 ${car.vehicleType}` : ""}
+                      </div>
+                      <div className="text-xs text-gray-500 truncate">
+                        {car.pickupLocation || "Pickup"} {"\u2192"} {car.dropoffLocation || "Dropoff"}
+                        {" \u00B7 "}
+                        {formatDate(car.pickupTime, "MMM d")} {"\u2192"} {formatDate(car.dropoffTime, "MMM d")}
+                        {car.confirmationNumber && ` \u00B7 ${car.confirmationNumber}`}
+                        {car.price != null && ` \u00B7 $${car.price}`}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => handleDeleteCar(car.id)}
+                      className="p-2 text-gray-400 hover:text-red-500 transition-colors sm:opacity-0 sm:group-hover:opacity-100"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+
+          {/* Paste rental car confirmation (collapsible) */}
+          {!showCarForm && (
+            <div className="mb-4">
+              <button
+                onClick={() => setShowCarParse(!showCarParse)}
+                className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-800 transition-colors p-2 -ml-2"
+              >
+                <ChevronDown className={cn("w-4 h-4 transition-transform", showCarParse && "rotate-180")} />
+                Paste rental car confirmation
+              </button>
+
+              {showCarParse && (
+                <div className="bg-white border border-gray-200 rounded-2xl p-4 mt-2">
+                  <textarea
+                    value={carPasteText}
+                    onChange={(e) => setCarPasteText(e.target.value)}
+                    rows={4}
+                    placeholder="Paste your rental car confirmation email here..."
+                    className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none font-mono text-xs"
+                  />
+                  <button
+                    onClick={handleParseCar}
+                    disabled={parsingCar || !carPasteText.trim()}
+                    className="mt-2 flex items-center gap-2 px-3 py-2 bg-gray-900 text-white text-xs font-medium rounded-lg hover:bg-gray-800 disabled:opacity-50 transition-colors"
+                  >
+                    <Clipboard className="w-3.5 h-3.5" />
+                    {parsingCar ? "Parsing..." : "Parse rental car info"}
+                  </button>
+
+                  {/* Parsed car preview */}
+                  {parsedCar && (
+                    <div className="mt-4 bg-green-50 border border-green-100 rounded-xl p-4">
+                      <div className="flex items-center gap-2 mb-3">
+                        <CheckCircle2 className="w-4 h-4 text-green-600" />
+                        <span className="text-sm font-medium text-gray-900">Rental car details parsed</span>
+                      </div>
+                      <div className="space-y-1 text-sm text-gray-700 mb-3">
+                        {parsedCar.company && <div><span className="text-gray-500">Company:</span> {parsedCar.company}</div>}
+                        {parsedCar.vehicleType && <div><span className="text-gray-500">Vehicle:</span> {parsedCar.vehicleType}</div>}
+                        {parsedCar.pickupLocation && <div><span className="text-gray-500">Pickup:</span> {parsedCar.pickupLocation}</div>}
+                        {parsedCar.pickupTime && <div><span className="text-gray-500">Pickup time:</span> {new Date(parsedCar.pickupTime).toLocaleString()}</div>}
+                        {parsedCar.dropoffLocation && <div><span className="text-gray-500">Dropoff:</span> {parsedCar.dropoffLocation}</div>}
+                        {parsedCar.dropoffTime && <div><span className="text-gray-500">Dropoff time:</span> {new Date(parsedCar.dropoffTime).toLocaleString()}</div>}
+                        {parsedCar.confirmationNumber && <div><span className="text-gray-500">Confirmation:</span> {parsedCar.confirmationNumber}</div>}
+                        {parsedCar.price !== undefined && <div><span className="text-gray-500">Price:</span> ${parsedCar.price}</div>}
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => { setParsedCar(null); setCarPasteText("") }}
+                          className="flex-1 py-2 border border-gray-200 text-gray-700 text-sm rounded-xl hover:bg-gray-50"
+                        >
+                          Discard
+                        </button>
+                        <button
+                          onClick={handleAddParsedCar}
+                          className="flex-1 py-2 bg-indigo-600 text-white text-sm font-medium rounded-xl hover:bg-indigo-700"
+                        >
+                          Add rental car
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {!showCarForm && (
+            <button
+              onClick={() => setShowCarForm(true)}
+              className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-xl hover:bg-indigo-700 transition-colors"
+            >
+              <Plus className="w-4 h-4" />
+              Add rental car
+            </button>
+          )}
+
+          {showCarForm && (
+            <div className="bg-white border border-indigo-200 rounded-2xl p-5">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-semibold text-gray-900">Add Rental Car</h3>
+                <button onClick={() => setShowCarForm(false)} className="p-2">
+                  <X className="w-4 h-4 text-gray-400" />
+                </button>
+              </div>
+              <div className="space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Company</label>
+                    <select
+                      value={carForm.company}
+                      onChange={(e) => setCarForm((f) => ({ ...f, company: e.target.value }))}
+                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+                    >
+                      <option value="">Select company...</option>
+                      {Object.entries(RENTAL_CAR_COMPANIES).map(([key, val]) => (
+                        <option key={key} value={val.name}>{val.logo} {val.name}</option>
+                      ))}
+                      <option value="__other__">Other...</option>
+                    </select>
+                  </div>
+                  {carForm.company === "__other__" && (
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">Company name</label>
+                      <input type="text" placeholder="Company name" value={carForm.companyOther}
+                        onChange={(e) => setCarForm((f) => ({ ...f, companyOther: e.target.value }))}
+                        className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                    </div>
+                  )}
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Vehicle type</label>
+                    <input type="text" placeholder="Midsize SUV, Tesla Model 3..." value={carForm.vehicleType}
+                      onChange={(e) => setCarForm((f) => ({ ...f, vehicleType: e.target.value }))}
+                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Pickup location</label>
+                    <input type="text" placeholder="Airport, city, address..." value={carForm.pickupLocation}
+                      onChange={(e) => setCarForm((f) => ({ ...f, pickupLocation: e.target.value }))}
+                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Pickup time *</label>
+                    <input type="datetime-local" value={carForm.pickupTime}
+                      onChange={(e) => setCarForm((f) => ({ ...f, pickupTime: e.target.value }))}
+                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Dropoff location</label>
+                    <input type="text" placeholder="Airport, city, address..." value={carForm.dropoffLocation}
+                      onChange={(e) => setCarForm((f) => ({ ...f, dropoffLocation: e.target.value }))}
+                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Dropoff time *</label>
+                    <input type="datetime-local" value={carForm.dropoffTime}
+                      onChange={(e) => setCarForm((f) => ({ ...f, dropoffTime: e.target.value }))}
+                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Confirmation #</label>
+                    <input type="text" placeholder="ABC123" value={carForm.confirmationNumber}
+                      onChange={(e) => setCarForm((f) => ({ ...f, confirmationNumber: e.target.value }))}
+                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono" />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Price (total $)</label>
+                    <input type="number" placeholder="0.00" value={carForm.price}
+                      onChange={(e) => setCarForm((f) => ({ ...f, price: e.target.value }))}
+                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      min="0" step="0.01" />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Booking link</label>
+                    <input type="url" placeholder="https://..." value={carForm.bookingLink}
+                      onChange={(e) => setCarForm((f) => ({ ...f, bookingLink: e.target.value }))}
+                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Notes</label>
+                  <textarea value={carForm.notes}
+                    onChange={(e) => setCarForm((f) => ({ ...f, notes: e.target.value }))}
+                    rows={2}
+                    placeholder="Insurance details, special requests..."
+                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none" />
+                </div>
+                <div className="flex gap-3 pt-1">
+                  <button onClick={() => setShowCarForm(false)}
+                    className="flex-1 py-2.5 border border-gray-200 text-gray-700 text-sm rounded-xl hover:bg-gray-50">
+                    Cancel
+                  </button>
+                  <button onClick={handleAddCar}
+                    className="flex-1 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-xl hover:bg-indigo-700">
+                    Add rental car
                   </button>
                 </div>
               </div>

@@ -139,6 +139,7 @@ model Trip {
   destinations   TripDestination[]
   travelers      TripTraveler[]
   hotels         Hotel[]
+  rentalCars     RentalCar[]
   flights        Flight[]
   activities     Activity[]
   itineraryItems ItineraryItem[]
@@ -203,6 +204,36 @@ model Hotel {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([tripId])
+}
+
+// ─── Rental Cars ──────────────────────────────────────────────────────────────
+
+model RentalCar {
+  id                 String   @id @default(cuid())
+  tripId             String
+  company            String?  // e.g. "Enterprise", "Hertz", "Turo"
+  confirmationNumber String?
+  vehicleType        String?  // e.g. "Midsize SUV", "Tesla Model 3"
+  pickupLocation     String?
+  pickupAddress      String?
+  pickupTime         DateTime
+  pickupTimezone     String   @default("UTC")
+  dropoffLocation    String?
+  dropoffAddress     String?
+  dropoffTime        DateTime
+  dropoffTimezone    String   @default("UTC")
+  price              Float?
+  priceCurrency      String?  @default("USD")
+  bookingLink        String?
+  notes              String?
+
+  trip               Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  itineraryItems     ItineraryItem[]
+
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
   @@index([tripId])
 }
@@ -292,9 +323,10 @@ model ItineraryItem {
   notes       String?           @db.Text
 
   // Linked source entities (at most one will be set)
-  activityId  String?
-  flightId    String?
-  hotelId     String?
+  activityId   String?
+  flightId     String?
+  hotelId      String?
+  rentalCarId  String?
 
   durationMins         Int     @default(60)
   travelTimeToNextMins Int     @default(0)
@@ -303,9 +335,10 @@ model ItineraryItem {
   isConfirmed          Boolean @default(false)
 
   trip     Trip      @relation(fields: [tripId], references: [id], onDelete: Cascade)
-  activity Activity? @relation(fields: [activityId], references: [id], onDelete: SetNull)
-  flight   Flight?   @relation(fields: [flightId], references: [id], onDelete: SetNull)
-  hotel    Hotel?    @relation(fields: [hotelId], references: [id], onDelete: SetNull)
+  activity  Activity?  @relation(fields: [activityId], references: [id], onDelete: SetNull)
+  flight    Flight?    @relation(fields: [flightId], references: [id], onDelete: SetNull)
+  hotel     Hotel?     @relation(fields: [hotelId], references: [id], onDelete: SetNull)
+  rentalCar RentalCar? @relation(fields: [rentalCarId], references: [id], onDelete: SetNull)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -431,6 +464,8 @@ enum ItineraryItemType {
   FLIGHT
   HOTEL_CHECK_IN
   HOTEL_CHECK_OUT
+  RENTAL_CAR_PICKUP
+  RENTAL_CAR_DROPOFF
   ACTIVITY
   MEAL
   TRANSIT

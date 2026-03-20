@@ -6,7 +6,7 @@ import { getTripCostSummary } from "@/lib/actions/costs"
 import { getItinerary, type ItineraryItemFull } from "@/lib/actions/itinerary"
 import { getSmartSuggestions } from "@/lib/actions/affiliates"
 import { formatDate, formatTime, tripDuration, formatCurrency } from "@/lib/utils"
-import { AffiliateSmartSuggestions } from "@/components/affiliate-links"
+import { AffiliateSmartSuggestions, BookingReturnPrompt } from "@/components/affiliate-links"
 import {
   Plane,
   Hotel,
@@ -270,10 +270,15 @@ export default async function TripOverviewPage({ params }: { params: Promise<{ t
         </div>
       )}
 
+      {/* Booking return prompt (shown when user returns from affiliate click) */}
+      <div className="mb-4">
+        <BookingReturnPrompt tripId={tripId} />
+      </div>
+
       {/* Contextual suggestions */}
       {smartSuggestions.length > 0 && (
         <div className="mb-6">
-          <AffiliateSmartSuggestions suggestions={smartSuggestions} />
+          <AffiliateSmartSuggestions suggestions={smartSuggestions} tripId={tripId} />
         </div>
       )}
 

@@ -51,6 +51,7 @@ export async function getSmartSuggestions(tripId: string) {
     description: string
     link: AffiliateLink
     variant: "blue" | "green" | "amber" | "purple"
+    trackType?: "car" | "hotel" | "flight"
   }[] = []
 
   const destination = trip.destination
@@ -68,6 +69,7 @@ export async function getSmartSuggestions(tripId: string) {
       description: `Find accommodations in ${destination} for your trip`,
       link,
       variant: "blue",
+      trackType: "hotel",
     })
   }
 
@@ -81,6 +83,7 @@ export async function getSmartSuggestions(tripId: string) {
       description: "Rent a car from the airport for easy travel between activities",
       link,
       variant: "green",
+      trackType: "car",
     })
   }
 

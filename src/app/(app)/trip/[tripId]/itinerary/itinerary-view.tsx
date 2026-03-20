@@ -71,6 +71,13 @@ function typeIcon(type: string) {
   }
 }
 
+function formatDuration(mins: number) {
+  if (mins < 60) return `${mins}m`
+  const h = Math.floor(mins / 60)
+  const m = mins % 60
+  return m > 0 ? `${h}h ${m}m` : `${h}h`
+}
+
 function typeColor(type: string) {
   switch (type) {
     case "FLIGHT": return "bg-blue-50 text-blue-600 border-blue-100"
@@ -144,7 +151,7 @@ function SortableItineraryItem({
                 {item.startTime && (
                   <span>{formatTime(item.startTime)}</span>
                 )}
-                <span>{item.durationMins} min</span>
+                <span>{formatDuration(item.durationMins)}</span>
                 {item.costEstimate > 0 && (
                   <span>${item.costEstimate.toFixed(0)}</span>
                 )}
@@ -170,7 +177,7 @@ function SortableItineraryItem({
         <div className="flex items-center gap-2 ml-14 my-0.5">
           <Bus className="w-3 h-3 text-gray-300" />
           <span className="text-[11px] text-gray-400">
-            {item.travelTimeToNextMins} min travel
+            {formatDuration(item.travelTimeToNextMins)} travel
           </span>
         </div>
       )}
@@ -214,17 +221,25 @@ export function ItineraryView({ tripId, initialItems, tripStartDate, tripEndDate
 
   const days = groupByDay(items)
 
-  // If no itinerary items yet, build empty day placeholders
-  const allDays: GroupedDay<ItineraryItem>[] = days.length > 0 ? days : (() => {
+  // Always show all trip days, merging in items where they exist
+  const allDays: GroupedDay<ItineraryItem>[] = (() => {
+    const dayMap = new Map(days.map((d) => [d.dateStr, d]))
     const result: GroupedDay<ItineraryItem>[] = []
     const start = new Date(tripStartDate)
     const end = new Date(tripEndDate)
     const cur = new Date(start)
     while (cur <= end) {
       const dateStr = cur.toISOString().split("T")[0]
-      result.push({ date: new Date(cur), dateStr, items: [] })
+      result.push(dayMap.get(dateStr) || { date: new Date(cur), dateStr, items: [] })
       cur.setDate(cur.getDate() + 1)
     }
+    // Also include any days with items that fall outside the trip date range
+    for (const day of days) {
+      if (!result.some((r) => r.dateStr === day.dateStr)) {
+        result.push(day)
+      }
+    }
+    result.sort((a, b) => a.dateStr.localeCompare(b.dateStr))
     return result
   })()
 

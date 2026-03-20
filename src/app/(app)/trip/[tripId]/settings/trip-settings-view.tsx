@@ -110,6 +110,7 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles }: Pro
     airline: string; flightNumber: string; departureAirport: string;
     departureTime: string; departureTimezone: string; arrivalAirport: string;
     arrivalTime: string; arrivalTimezone: string; confirmationNumber: string; cabin: string;
+    durationMins?: number;
   }>>([])
   const [addingBatchFlights, setAddingBatchFlights] = useState(false)
 
@@ -159,6 +160,7 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles }: Pro
           arrivalTimezone: f.arrivalTimezone || "UTC",
           confirmationNumber: f.confirmationNumber || "",
           cabin: f.cabin || "",
+          durationMins: f.durationMins,
         }))
         setParsedFlights(allFlights)
         setParsedFlight(result as unknown as Record<string, string>)

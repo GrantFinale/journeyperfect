@@ -22,6 +22,7 @@ const flightSchema = z.object({
   bookingLink: z.string().optional(),
   cabin: z.string().optional(),
   notes: z.string().optional(),
+  durationMins: z.number().optional(),
 })
 
 export async function parseAndPreviewFlight(text: string) {
@@ -67,19 +68,22 @@ export async function createFlight(tripId: string, data: z.infer<typeof flightSc
     },
   })
 
-  // Auto-create itinerary items for departure and arrival
+  // Auto-create itinerary item
+  const depTime = new Date(parsed.departureTime)
+  const arrTime = new Date(parsed.arrivalTime)
+  const calcDuration = Math.ceil((arrTime.getTime() - depTime.getTime()) / 60000)
+  const durationMins = parsed.durationMins || calcDuration
+  const route = [parsed.departureAirport, parsed.arrivalAirport].filter(Boolean).join(" → ")
   await prisma.itineraryItem.createMany({
     data: [
       {
         tripId,
         flightId: flight.id,
-        date: new Date(parsed.departureTime),
-        startTime: new Date(parsed.departureTime).toTimeString().slice(0, 5),
+        date: depTime,
+        startTime: depTime.toTimeString().slice(0, 5),
         type: "FLIGHT",
-        title: `✈ ${parsed.flightNumber || "Flight"} ${parsed.departureAirport || ""} → ${parsed.arrivalAirport || ""}`,
-        durationMins: Math.ceil(
-          (new Date(parsed.arrivalTime).getTime() - new Date(parsed.departureTime).getTime()) / 60000
-        ),
+        title: `${parsed.airline || ""} ${parsed.flightNumber || "Flight"}${route ? ` · ${route}` : ""}`.trim(),
+        durationMins,
         position: 0,
         isConfirmed: true,
       },
@@ -105,6 +109,9 @@ export async function createFlightsBatch(tripId: string, flights: z.infer<typeof
       const parsed = flightSchema.parse(flight)
       const depTime = new Date(parsed.departureTime)
       const arrTime = new Date(parsed.arrivalTime)
+      const calcDuration = Math.round((arrTime.getTime() - depTime.getTime()) / 60000)
+      const durationMins = parsed.durationMins || calcDuration
+      const route = [parsed.departureAirport, parsed.arrivalAirport].filter(Boolean).join(" → ")
       return prisma.flight.create({
         data: {
           tripId,
@@ -118,10 +125,8 @@ export async function createFlightsBatch(tripId: string, flights: z.infer<typeof
               startTime: depTime.toTimeString().slice(0, 5),
               endTime: arrTime.toTimeString().slice(0, 5),
               type: "FLIGHT",
-              title: `${parsed.airline || ""} ${parsed.flightNumber || "Flight"}`.trim(),
-              durationMins: Math.round(
-                (arrTime.getTime() - depTime.getTime()) / 60000
-              ),
+              title: `${parsed.airline || ""} ${parsed.flightNumber || "Flight"}${route ? ` · ${route}` : ""}`.trim(),
+              durationMins,
               position: 0,
               isConfirmed: true,
               costEstimate: 0,

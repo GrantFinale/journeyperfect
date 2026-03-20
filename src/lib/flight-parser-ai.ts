@@ -28,14 +28,15 @@ Return a JSON object:
       "flightNumber": "AA1234",
       "departureAirport": "JFK",
       "departureCity": "New York",
-      "departureTime": "2025-03-15T10:30:00",
+      "departureTime": "2025-03-15T14:30:00Z",
       "departureTimezone": "America/New_York",
       "arrivalAirport": "DFW",
       "arrivalCity": "Dallas",
-      "arrivalTime": "2025-03-15T13:45:00",
+      "arrivalTime": "2025-03-15T17:45:00Z",
       "arrivalTimezone": "America/Chicago",
       "confirmationNumber": "ABC123",
       "cabin": "Economy",
+      "durationMins": 195,
       "passengers": ["John Doe"]
     },
     {
@@ -43,14 +44,15 @@ Return a JSON object:
       "flightNumber": "AA5678",
       "departureAirport": "DFW",
       "departureCity": "Dallas",
-      "departureTime": "2025-03-15T15:00:00",
+      "departureTime": "2025-03-15T20:00:00Z",
       "departureTimezone": "America/Chicago",
       "arrivalAirport": "LAX",
       "arrivalCity": "Los Angeles",
-      "arrivalTime": "2025-03-15T16:30:00",
+      "arrivalTime": "2025-03-15T21:30:00Z",
       "arrivalTimezone": "America/Los_Angeles",
       "confirmationNumber": "ABC123",
       "cabin": "Economy",
+      "durationMins": 90,
       "passengers": ["John Doe"]
     }
   ],
@@ -60,7 +62,8 @@ Return a JSON object:
 Rules:
 - IATA 3-letter airport codes (JFK, LAX, LHR)
 - IANA timezone names (America/New_York, not EST)
-- ISO 8601 datetime format
+- CRITICAL: All times MUST be in UTC (with Z suffix). Convert local times to UTC using the airport timezone. Example: 3:43 PM Eastern = 2025-03-31T19:43:00Z
+- durationMins: the actual flight duration in minutes as stated in the email. If the email says "2h 58m", durationMins = 178. Do NOT calculate from departure/arrival times (timezone differences make that wrong)
 - Flight number includes 2-letter airline code (AA123, DL456)
 - EVERY segment is a separate entry — outbound legs, connections, return legs, ALL of them
 - If the email shows "Flight 1", "Flight 2" or "Depart" / "Return" sections, extract each one
@@ -148,6 +151,7 @@ ${text}`
       if (f.arrivalTimezone) flight.arrivalTimezone = String(f.arrivalTimezone)
       if (f.confirmationNumber) flight.confirmationNumber = String(f.confirmationNumber)
       if (f.cabin) flight.cabin = String(f.cabin)
+      if (f.durationMins) flight.durationMins = Number(f.durationMins)
 
       // Cap confidence at 0.95
       flight.confidence = Math.min(flight.confidence, 0.95)

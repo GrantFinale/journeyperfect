@@ -11,6 +11,7 @@ export interface ParsedFlight {
   arrivalTimezone?: string
   confirmationNumber?: string
   cabin?: string
+  durationMins?: number
   confidence: number // 0-1
 }
 

@@ -23,6 +23,6 @@ export const config = {
      * - /api/health
      * - _next/static, _next/image, favicon.ico, etc.
      */
-    "/((?!$|login|shared/.*|api/auth/.*|api/health|api/stripe/.*|_next/static|_next/image|favicon\\.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    "/((?!$|login|shared/.*|api/auth/.*|api/health|api/stripe/.*|api/inbound-email|api/trip/.*/calendar|_next/static|_next/image|favicon\\.ico|manifest\\.json|sw\\.js|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 }

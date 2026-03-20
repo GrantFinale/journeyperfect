@@ -1,7 +1,8 @@
 import type { ParseResult, ParsedFlight } from "./flight-parser"
 import { getConfig } from "./config"
+import { logAIUsage } from "./ai-usage"
 
-export async function parseFlightTextWithAI(text: string): Promise<ParseResult | null> {
+export async function parseFlightTextWithAI(text: string, userId?: string): Promise<ParseResult | null> {
   const apiKey = process.env.OPENROUTER_API_KEY
   if (!apiKey) {
     console.error("[flight-parser-ai] OPENROUTER_API_KEY is not set, skipping AI parser")
@@ -108,6 +109,18 @@ ${text}`
     }
 
     const data = await response.json()
+
+    // Log AI usage
+    if (userId && data.usage) {
+      logAIUsage({
+        userId,
+        feature: "flight_parser",
+        model,
+        promptTokens: data.usage.prompt_tokens ?? 0,
+        completionTokens: data.usage.completion_tokens ?? 0,
+      })
+    }
+
     const content = data.choices?.[0]?.message?.content
     if (!content) {
       console.error("[flight-parser-ai] No content in OpenRouter response", JSON.stringify(data).slice(0, 500))

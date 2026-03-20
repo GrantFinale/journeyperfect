@@ -17,6 +17,7 @@ import {
   Map,
   ChevronLeft,
   User,
+  Users,
   Gift,
   Package,
 } from "lucide-react"
@@ -39,6 +40,7 @@ type NavItem = {
 const NAV_ITEMS: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/settings", label: "Settings", icon: Settings },
+  { href: "/settings/travelers", label: "Traveler Profiles", icon: Users },
   { href: "/settings/referrals", label: "Refer a Friend", icon: Gift },
 ]
 

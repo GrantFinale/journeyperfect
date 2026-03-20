@@ -4,6 +4,7 @@ import { requireTripAccess } from "@/lib/auth-trip"
 import { prisma } from "@/lib/db"
 import { getConfig } from "@/lib/config"
 import { hasFeature } from "@/lib/features"
+import { logAIUsage } from "@/lib/ai-usage"
 
 export type DiningRecommendation = {
   name: string
@@ -89,6 +90,18 @@ Return ONLY a JSON array. No other text.`
     if (!response.ok) return []
 
     const data = await response.json()
+
+    // Log AI usage
+    if (data.usage) {
+      logAIUsage({
+        userId,
+        feature: "dining_recs",
+        model,
+        promptTokens: data.usage.prompt_tokens ?? 0,
+        completionTokens: data.usage.completion_tokens ?? 0,
+      })
+    }
+
     const content = data.choices?.[0]?.message?.content || ""
 
     // Extract JSON from response (handle markdown code blocks)

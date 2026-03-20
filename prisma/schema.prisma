@@ -39,6 +39,7 @@ model User {
   collaborations   TripCollaborator[] @relation("userCollaborations")
   notifications    Notification[]
   activityNotes    ActivityNote[]
+  aiUsage          AIUsage[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -82,12 +83,13 @@ model VerificationToken {
 // ─── Traveler Profiles ────────────────────────────────────────────────────────
 
 model TravelerProfile {
-  id        String   @id @default(cuid())
-  userId    String
-  name      String
-  birthDate DateTime?
-  tags      String[] // ["child", "adult", "senior", "stroller-needed", "thrill-seeker"]
-  isDefault Boolean  @default(false)
+  id          String   @id @default(cuid())
+  userId      String
+  name        String
+  birthDate   DateTime?
+  tags        String[] // ["child", "adult", "senior", "stroller-needed", "thrill-seeker"]
+  isDefault   Boolean  @default(false)
+  preferences Json?    // TravelerPreferences object stored as JSON
 
   user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   tripTravelers TripTraveler[]
@@ -611,6 +613,24 @@ model ActivityNote {
   user       User     @relation(fields: [userId], references: [id])
 
   @@index([activityId])
+}
+
+// ─── AI Usage Tracking ──────────────────────────────────────────────────────
+
+model AIUsage {
+  id        String   @id @default(cuid())
+  userId    String
+  feature   String   // "flight_parser", "hotel_parser", "rental_car_parser", "optimizer", "dining_recs", "packing"
+  model     String   // model ID used
+  tokens    Int      @default(0) // total tokens (prompt + completion)
+  costUsd   Float    @default(0) // estimated cost in USD
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([feature])
+  @@index([createdAt])
 }
 
 enum BudgetCategory {

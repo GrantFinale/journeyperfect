@@ -224,6 +224,7 @@ export async function runAIOptimizer(tripId: string) {
   }
 
   const aiResult = await optimizeItineraryWithAI({
+    userId,
     destination: trip.destination,
     startDate: trip.startDate.toISOString().split("T")[0],
     endDate: trip.endDate.toISOString().split("T")[0],

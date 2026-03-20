@@ -135,7 +135,7 @@ export async function parseAndPreviewHotel(text: string) {
   }
 
   try {
-    const aiResult = await parseHotelTextWithAI(text)
+    const aiResult = await parseHotelTextWithAI(text, session.user.id)
     if (aiResult && aiResult.hotels.length > 0) {
       return aiResult
     }

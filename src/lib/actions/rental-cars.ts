@@ -129,7 +129,7 @@ export async function parseAndPreviewRentalCar(text: string) {
   }
 
   try {
-    const aiResult = await parseRentalCarTextWithAI(text)
+    const aiResult = await parseRentalCarTextWithAI(text, session.user.id)
     if (aiResult && aiResult.rentalCars.length > 0) {
       return aiResult
     }

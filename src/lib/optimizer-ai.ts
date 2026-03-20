@@ -1,4 +1,5 @@
 import { getConfig } from "./config"
+import { logAIUsage } from "./ai-usage"
 
 export interface AIOptimizedDay {
   date: string
@@ -15,6 +16,7 @@ export interface AIOptimizedDay {
 }
 
 export async function optimizeItineraryWithAI(context: {
+  userId?: string
   destination: string
   startDate: string
   endDate: string
@@ -188,6 +190,18 @@ CRITICAL: For items of type "ACTIVITY", the activityId MUST match one of the IDs
     }
 
     const data = await response.json()
+
+    // Log AI usage
+    if (context.userId && data.usage) {
+      logAIUsage({
+        userId: context.userId,
+        feature: "optimizer",
+        model,
+        promptTokens: data.usage.prompt_tokens ?? 0,
+        completionTokens: data.usage.completion_tokens ?? 0,
+      })
+    }
+
     const content = data.choices?.[0]?.message?.content
     if (!content) {
       console.error(

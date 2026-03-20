@@ -43,7 +43,7 @@ export async function parseAndPreviewFlight(text: string) {
   }
 
   try {
-    const aiResult = await parseFlightTextWithAI(text)
+    const aiResult = await parseFlightTextWithAI(text, session.user.id)
     if (aiResult && aiResult.flights.length > 0) {
       return aiResult
     }

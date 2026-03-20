@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db"
 import { requireTripAccess } from "@/lib/auth-trip"
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
+import type { Prisma } from "@prisma/client"
 
 const travelerSchema = z.object({
   name: z.string().min(1).max(100),
@@ -85,6 +86,23 @@ export async function deleteTravelerProfile(profileId: string) {
 
   await prisma.travelerProfile.delete({ where: { id: profileId } })
   revalidatePath("/settings")
+}
+
+export async function updateTravelerPreferences(profileId: string, preferences: Prisma.InputJsonValue) {
+  const session = await auth()
+  if (!session?.user?.id) throw new Error("Unauthorized")
+
+  await prisma.travelerProfile.findFirstOrThrow({
+    where: { id: profileId, userId: session.user.id },
+  })
+
+  const updated = await prisma.travelerProfile.update({
+    where: { id: profileId },
+    data: { preferences },
+  })
+
+  revalidatePath("/settings/travelers")
+  return updated
 }
 
 export type TravelerProfileResult = Awaited<ReturnType<typeof createTravelerProfile>>

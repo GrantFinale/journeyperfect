@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/db"
 import { requireTripAccess } from "@/lib/auth-trip"
 import { getConfig } from "@/lib/config"
+import { logAIUsage } from "@/lib/ai-usage"
 import { revalidatePath } from "next/cache"
 
 export async function getPackingList(tripId: string) {
@@ -346,6 +347,18 @@ Generate 20-35 practical items. Be specific about quantities where relevant. Ret
     }
 
     const data = await response.json()
+
+    // Log AI usage
+    if (data.usage) {
+      logAIUsage({
+        userId,
+        feature: "packing",
+        model,
+        promptTokens: data.usage.prompt_tokens ?? 0,
+        completionTokens: data.usage.completion_tokens ?? 0,
+      })
+    }
+
     const content = data.choices?.[0]?.message?.content || ""
 
     // Extract JSON from response (may be wrapped in markdown code blocks)

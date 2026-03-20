@@ -1,4 +1,5 @@
 import { getConfig } from "./config"
+import { logAIUsage } from "./ai-usage"
 
 export interface ParsedHotel {
   name?: string
@@ -20,7 +21,7 @@ export interface HotelParseResult {
   parsedBy: "ai"
 }
 
-export async function parseHotelTextWithAI(text: string): Promise<HotelParseResult | null> {
+export async function parseHotelTextWithAI(text: string, userId?: string): Promise<HotelParseResult | null> {
   const apiKey = process.env.OPENROUTER_API_KEY
   if (!apiKey) {
     console.error("[hotel-parser-ai] OPENROUTER_API_KEY not set")
@@ -92,6 +93,18 @@ ${text}`
     }
 
     const data = await response.json()
+
+    // Log AI usage
+    if (userId && data.usage) {
+      logAIUsage({
+        userId,
+        feature: "hotel_parser",
+        model,
+        promptTokens: data.usage.prompt_tokens ?? 0,
+        completionTokens: data.usage.completion_tokens ?? 0,
+      })
+    }
+
     const content = data.choices?.[0]?.message?.content
     if (!content) {
       console.error("[hotel-parser-ai] No content in response")

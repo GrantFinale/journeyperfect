@@ -172,6 +172,28 @@ export async function getApiStatuses(): Promise<ApiStatus[]> {
   return statuses
 }
 
+export async function getAIUsageStats(days: number = 30) {
+  await requireAdmin()
+  const since = days > 0 ? new Date(Date.now() - days * 86400000) : new Date(0)
+
+  const usage = await prisma.aIUsage.groupBy({
+    by: ["feature", "model"],
+    where: { createdAt: { gte: since } },
+    _count: true,
+    _sum: { tokens: true, costUsd: true },
+  })
+
+  const total = await prisma.aIUsage.aggregate({
+    where: { createdAt: { gte: since } },
+    _count: true,
+    _sum: { tokens: true, costUsd: true },
+  })
+
+  return { byFeature: usage, total }
+}
+
+export type AIUsageStats = Awaited<ReturnType<typeof getAIUsageStats>>
+
 export type Deployment = {
   id: string
   phase: string

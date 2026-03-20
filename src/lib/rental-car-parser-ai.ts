@@ -1,4 +1,5 @@
 import { getConfig } from "./config"
+import { logAIUsage } from "./ai-usage"
 
 export interface ParsedRentalCar {
   company?: string
@@ -24,14 +25,14 @@ export interface RentalCarParseResult {
   parsedBy: "ai"
 }
 
-export async function parseRentalCarTextWithAI(text: string): Promise<RentalCarParseResult | null> {
+export async function parseRentalCarTextWithAI(text: string, userId?: string): Promise<RentalCarParseResult | null> {
   const apiKey = process.env.OPENROUTER_API_KEY
   if (!apiKey) {
     console.error("[rental-car-parser-ai] OPENROUTER_API_KEY not set")
     return null
   }
 
-  const model = await getConfig("ai.hotelParserModel", "anthropic/claude-haiku-4.5")
+  const model = await getConfig("ai.rentalCarParserModel", "anthropic/claude-haiku-4.5")
 
   const prompt = `You are parsing a car rental booking confirmation email. These emails contain marketing content, loyalty program info, and upsell offers — IGNORE all of that. Focus ONLY on the rental booking details.
 
@@ -102,6 +103,18 @@ ${text}`
     }
 
     const data = await response.json()
+
+    // Log AI usage
+    if (userId && data.usage) {
+      logAIUsage({
+        userId,
+        feature: "rental_car_parser",
+        model,
+        promptTokens: data.usage.prompt_tokens ?? 0,
+        completionTokens: data.usage.completion_tokens ?? 0,
+      })
+    }
+
     const content = data.choices?.[0]?.message?.content
     if (!content) {
       console.error("[rental-car-parser-ai] No content in response")

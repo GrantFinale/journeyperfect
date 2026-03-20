@@ -108,3 +108,58 @@ export async function deleteAdminConfig(key: string) {
   await prisma.appConfig.delete({ where: { key } }).catch(() => {})
   revalidatePath("/admin/settings")
 }
+
+export type ApiStatus = { name: string; configured: boolean; detail: string }
+
+export async function getApiStatuses(): Promise<ApiStatus[]> {
+  await requireAdmin()
+
+  const statuses: ApiStatus[] = []
+
+  // Google OAuth
+  const hasOAuthId = !!process.env.GOOGLE_CLIENT_ID
+  const hasOAuthSecret = !!process.env.GOOGLE_CLIENT_SECRET
+  statuses.push({
+    name: "Google OAuth",
+    configured: hasOAuthId && hasOAuthSecret,
+    detail: !hasOAuthId && !hasOAuthSecret
+      ? "GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET missing"
+      : !hasOAuthId ? "GOOGLE_CLIENT_ID missing"
+      : !hasOAuthSecret ? "GOOGLE_CLIENT_SECRET missing"
+      : "Both credentials set",
+  })
+
+  // Google Places API
+  const hasPlacesKey = !!process.env.NEXT_PUBLIC_GOOGLE_PLACES_KEY
+  statuses.push({
+    name: "Google Places",
+    configured: hasPlacesKey,
+    detail: hasPlacesKey ? "API key set" : "NEXT_PUBLIC_GOOGLE_PLACES_KEY missing",
+  })
+
+  // OpenRouter (AI)
+  const hasOpenRouter = !!process.env.OPENROUTER_API_KEY
+  statuses.push({
+    name: "OpenRouter AI",
+    configured: hasOpenRouter,
+    detail: hasOpenRouter ? "API key set" : "OPENROUTER_API_KEY missing",
+  })
+
+  // NextAuth
+  const hasAuthSecret = !!process.env.AUTH_SECRET || !!process.env.NEXTAUTH_SECRET
+  statuses.push({
+    name: "NextAuth Secret",
+    configured: hasAuthSecret,
+    detail: hasAuthSecret ? "Secret set" : "AUTH_SECRET / NEXTAUTH_SECRET missing",
+  })
+
+  // Database
+  const hasDb = !!process.env.DATABASE_URL
+  statuses.push({
+    name: "Database",
+    configured: hasDb,
+    detail: hasDb ? "DATABASE_URL set" : "DATABASE_URL missing",
+  })
+
+  return statuses
+}

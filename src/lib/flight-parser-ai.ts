@@ -84,6 +84,7 @@ ${text}`
       body: JSON.stringify({
         model,
         max_tokens: 2048,
+        temperature: 0,
         messages: [{ role: "user", content: prompt }],
       }),
       signal: controller.signal,

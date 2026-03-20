@@ -7,7 +7,7 @@ WORKDIR /app
 COPY package*.json ./
 # Override any injected NODE_ENV=production so devDependencies are installed
 ENV NODE_ENV=development
-RUN npm ci
+RUN npm ci --legacy-peer-deps
 
 # Stage 2: Build
 FROM node:22-slim AS builder

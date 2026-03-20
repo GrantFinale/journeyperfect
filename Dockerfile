@@ -43,8 +43,11 @@ RUN groupadd --system --gid 1001 nodejs && \
 COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
-# Copy all production node_modules (includes prisma CLI and its full dep tree)
-COPY --from=builder /app/node_modules ./node_modules
+# Copy ONLY Prisma files — do NOT copy full node_modules over standalone output
+# (standalone already includes its own traced node_modules with correct React)
+COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
+COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/docker-entrypoint.sh ./docker-entrypoint.sh
 USER nextjs

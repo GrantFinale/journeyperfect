@@ -31,6 +31,7 @@ export default async function TripSettingsPage({
     })
 
     const isOwner = session?.user?.id === trip.userId
+    const placesApiKey = process.env.GOOGLE_PLACES_KEY || process.env.NEXT_PUBLIC_GOOGLE_PLACES_KEY || ""
 
     return (
       <TripSettingsView
@@ -42,6 +43,7 @@ export default async function TripSettingsPage({
         ownerName={owner?.name}
         ownerEmail={owner?.email}
         initialCollaborators={collaborators}
+        placesApiKey={placesApiKey}
       />
     )
   } catch {

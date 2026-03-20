@@ -117,6 +117,7 @@ interface Props {
   ownerName?: string | null
   ownerEmail?: string | null
   initialCollaborators?: Collaborator[]
+  placesApiKey?: string
 }
 
 const TABS = ["Flights", "Hotels", "Cars", "Travelers", "Sharing", "General"] as const
@@ -129,7 +130,7 @@ function tabFromParam(param?: string): Tab {
   return match || "Flights"
 }
 
-export function TripSettingsView({ tripId, trip: initialTrip, allProfiles, initialTab, isOwner = true, ownerName, ownerEmail, initialCollaborators = [] }: Props) {
+export function TripSettingsView({ tripId, trip: initialTrip, allProfiles, initialTab, isOwner = true, ownerName, ownerEmail, initialCollaborators = [], placesApiKey }: Props) {
   const router = useRouter()
   const [activeTab, setActiveTab] = useState<Tab>(tabFromParam(initialTab))
   const [trip, setTrip] = useState<Trip>(initialTrip)
@@ -1662,6 +1663,7 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles, initi
                       }}
                       placeholder="Search for a city..."
                       className="w-full pl-8 pr-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      apiKey={placesApiKey}
                     />
                   </div>
                   <button

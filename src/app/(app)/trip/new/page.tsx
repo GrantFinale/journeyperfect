@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { createTrip } from "@/lib/actions/trips"
 import { parseAndPreviewFlight, createFlightsBatch } from "@/lib/actions/flights"
-import { getUserPlan } from "@/lib/actions/user"
+import { getUserPlan, getPlacesApiKey } from "@/lib/actions/user"
 import { hasFeature } from "@/lib/features"
 import { toast } from "sonner"
 import { MapPin, Calendar, ArrowRight, ArrowLeft, Plus, X, Plane, ChevronDown, ChevronUp, Loader2, Sparkles } from "lucide-react"
@@ -31,9 +31,11 @@ export default function NewTripPage() {
   const [step, setStep] = useState(1)
   const [loading, setLoading] = useState(false)
   const [userPlan, setUserPlan] = useState<string>("FREE")
+  const [placesKey, setPlacesKey] = useState<string>("")
 
   useEffect(() => {
     getUserPlan().then(setUserPlan)
+    getPlacesApiKey().then(setPlacesKey)
   }, [])
 
   const isPaid = hasFeature(userPlan, "aiFlightParsing")
@@ -255,6 +257,7 @@ export default function NewTripPage() {
                       placeholder={isPaid ? "Search for a city..." : "Type a city name..."}
                       className="w-full pl-9 pr-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                       disabled={!isPaid}
+                      apiKey={placesKey}
                     />
                   </div>
                   {form.destinations.length > 1 && (

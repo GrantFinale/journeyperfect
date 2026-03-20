@@ -16,19 +16,18 @@ interface PlacesAutocompleteProps {
   placeholder?: string
   className?: string
   disabled?: boolean
+  apiKey?: string // passed from server to avoid build-time env var issue
 }
 
-function loadGoogleMaps(): Promise<void> {
+function loadGoogleMaps(apiKey: string): Promise<void> {
   if (window.google?.maps?.places) return Promise.resolve()
 
-  const apiKey = process.env.NEXT_PUBLIC_GOOGLE_PLACES_KEY
   if (!apiKey || apiKey === "build-placeholder") {
     return Promise.reject(new Error("Google Places API key not available"))
   }
 
   return new Promise((resolve, reject) => {
     if (document.querySelector('script[src*="maps.googleapis.com"]')) {
-      // Script already loading, wait for it with a timeout
       let elapsed = 0
       const check = setInterval(() => {
         elapsed += 100
@@ -59,7 +58,9 @@ export default function PlacesAutocomplete({
   placeholder,
   className,
   disabled,
+  apiKey: propApiKey,
 }: PlacesAutocompleteProps) {
+  const resolvedApiKey = propApiKey || process.env.NEXT_PUBLIC_GOOGLE_PLACES_KEY || ""
   const inputRef = useRef<HTMLInputElement>(null)
   const autocompleteRef = useRef<any>(null)
   const onSelectRef = useRef(onSelect)
@@ -73,7 +74,7 @@ export default function PlacesAutocomplete({
   useEffect(() => {
     if (disabled || apiFailed) return
 
-    loadGoogleMaps()
+    loadGoogleMaps(resolvedApiKey)
       .then(() => {
         if (!inputRef.current || autocompleteRef.current) return
 

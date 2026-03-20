@@ -2,13 +2,14 @@
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/db"
 import { revalidatePath } from "next/cache"
+import { sendCollaboratorInvite } from "@/lib/email"
 
 export async function inviteCollaborator(tripId: string, email: string, role: "VIEWER" | "EDITOR") {
   const session = await auth()
   if (!session?.user?.id) throw new Error("Unauthorized")
 
   // Must be owner to invite
-  await prisma.trip.findFirstOrThrow({ where: { id: tripId, userId: session.user.id } })
+  const trip = await prisma.trip.findFirstOrThrow({ where: { id: tripId, userId: session.user.id } })
 
   // Check if already invited
   const existing = await prisma.tripCollaborator.findUnique({
@@ -29,6 +30,13 @@ export async function inviteCollaborator(tripId: string, email: string, role: "V
       invitedBy: session.user.id,
     },
   })
+
+  // Send email invitation (fire and forget)
+  const inviterName = session.user.name || session.user.email || "Someone"
+  const tripTitle = trip.title || trip.destination || "a trip"
+  sendCollaboratorInvite(email.toLowerCase(), inviterName, tripTitle, role).catch(
+    (err) => console.error("[collaborators] Failed to send invite email:", err)
+  )
 
   revalidatePath(`/trip/${tripId}/settings`)
   return { success: true }

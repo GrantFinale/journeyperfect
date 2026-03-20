@@ -10,6 +10,11 @@ export async function getUserPlan(): Promise<string> {
   return user?.plan || "FREE"
 }
 
+export async function getUserId(): Promise<string | null> {
+  const session = await auth()
+  return session?.user?.id ?? null
+}
+
 export async function getPlacesApiKey(): Promise<string> {
   // Return the server-side key for client-side Google Maps
   return process.env.GOOGLE_PLACES_KEY || process.env.NEXT_PUBLIC_GOOGLE_PLACES_KEY || ""

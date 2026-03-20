@@ -40,6 +40,7 @@ model User {
   notifications    Notification[]
   activityNotes    ActivityNote[]
   aiUsage          AIUsage[]
+  pendingEmails    PendingEmail[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -613,6 +614,24 @@ model ActivityNote {
   user       User     @relation(fields: [userId], references: [id])
 
   @@index([activityId])
+}
+
+// ─── Pending Emails (inbound email queue) ───────────────────────────────────
+
+model PendingEmail {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  from       String
+  subject    String
+  body       String   @db.Text
+  parsedData Json?    // Parsed flight/hotel/car data
+  type       String?  // "flight", "hotel", "rental_car", "restaurant", "event"
+  processed  Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  @@index([userId])
+  @@index([userId, processed])
 }
 
 // ─── AI Usage Tracking ──────────────────────────────────────────────────────

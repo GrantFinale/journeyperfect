@@ -330,6 +330,13 @@ export async function POST(request: NextRequest) {
     // Include subject in content for better parsing context
     const fullContent = subject ? `Subject: ${subject}\n\n${emailContent}` : emailContent
 
+    // Detect what types of confirmation this email contains
+    const detectedTypes = detectEmailTypes(fullContent)
+
+    // Always store as PendingEmail for the "new trip" email-first flow
+    // We'll parse it and store the parsed data alongside the raw email
+    const fromAddress = (formData.get("from") as string) || ""
+
     // Get user's most recent upcoming trip
     const now = new Date()
     const trip = await prisma.trip.findFirst({
@@ -340,13 +347,45 @@ export async function POST(request: NextRequest) {
       orderBy: { startDate: "asc" },
     })
 
+    // If no trip exists, store as pending email for the "new trip" flow
     if (!trip) {
-      console.log("[inbound-email] No upcoming trips found for user:", userId)
-      return NextResponse.json({ status: "ignored", reason: "no trips" })
-    }
+      console.log("[inbound-email] No upcoming trips, storing as pending for user:", userId)
 
-    // Detect what types of confirmation this email contains
-    const detectedTypes = detectEmailTypes(fullContent)
+      for (const emailType of detectedTypes.length > 0 ? detectedTypes : [null]) {
+        // Parse the email based on type
+        let parsedData: Record<string, unknown> | null = null
+
+        if (emailType === "flight") {
+          try {
+            const result = await parseFlightTextWithAI(fullContent, userId)
+            if (result?.flights?.length) parsedData = { flights: result.flights }
+          } catch { /* ignore parse errors for pending */ }
+        } else if (emailType === "hotel") {
+          try {
+            const result = await parseHotelTextWithAI(fullContent, userId)
+            if (result?.hotels?.length) parsedData = { hotels: result.hotels }
+          } catch { /* ignore */ }
+        } else if (emailType === "rental_car") {
+          try {
+            const result = await parseRentalCarTextWithAI(fullContent, userId)
+            if (result?.rentalCars?.length) parsedData = { rentalCars: result.rentalCars }
+          } catch { /* ignore */ }
+        }
+
+        await prisma.pendingEmail.create({
+          data: {
+            userId,
+            from: fromAddress,
+            subject,
+            body: fullContent.slice(0, 50000), // cap body size
+            type: emailType,
+            parsedData: parsedData ? JSON.parse(JSON.stringify(parsedData)) : undefined,
+          },
+        })
+      }
+
+      return NextResponse.json({ status: "pending", message: "Stored as pending email" })
+    }
 
     if (detectedTypes.length === 0) {
       console.log("[inbound-email] Could not detect email type for user:", userId)

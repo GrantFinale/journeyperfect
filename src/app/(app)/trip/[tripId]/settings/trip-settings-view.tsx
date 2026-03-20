@@ -3,7 +3,7 @@
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
-import { createFlight, deleteFlight, parseAndPreviewFlight } from "@/lib/actions/flights"
+import { createFlight, createFlightsBatch, deleteFlight, parseAndPreviewFlight } from "@/lib/actions/flights"
 import { createHotel, deleteHotel } from "@/lib/actions/hotels"
 import { addTravelerToTrip, removeTravelerFromTrip } from "@/lib/actions/travelers"
 import { updateTrip, deleteTrip, shareTrip, unshareTrip, addDestination, removeDestination } from "@/lib/actions/trips"
@@ -23,6 +23,7 @@ import {
   AlertTriangle,
   Clipboard,
   MapPin,
+  CheckCircle2,
 } from "lucide-react"
 import PlacesAutocomplete from "@/components/places-autocomplete"
 
@@ -105,6 +106,12 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles }: Pro
     confirmationNumber: "",
     cabin: "",
   })
+  const [parsedFlights, setParsedFlights] = useState<Array<{
+    airline: string; flightNumber: string; departureAirport: string;
+    departureTime: string; departureTimezone: string; arrivalAirport: string;
+    arrivalTime: string; arrivalTimezone: string; confirmationNumber: string; cabin: string;
+  }>>([])
+  const [addingBatchFlights, setAddingBatchFlights] = useState(false)
 
   // Hotel state
   const [showHotelForm, setShowHotelForm] = useState(false)
@@ -140,9 +147,8 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles }: Pro
     try {
       const result = await parseAndPreviewFlight(flightPasteText)
       if (result && result.flights.length > 0) {
-        const f = result.flights[0]
-        setParsedFlight(result as unknown as Record<string, string>)
-        setFlightForm({
+        // Map all flights into form objects
+        const allFlights = result.flights.map((f) => ({
           airline: f.airline || "",
           flightNumber: f.flightNumber || "",
           departureAirport: f.departureAirport || "",
@@ -153,15 +159,56 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles }: Pro
           arrivalTimezone: f.arrivalTimezone || "UTC",
           confirmationNumber: f.confirmationNumber || "",
           cabin: f.cabin || "",
-        })
-        toast.success("Flight parsed successfully!")
+        }))
+        setParsedFlights(allFlights)
+        setParsedFlight(result as unknown as Record<string, string>)
+        // Set the manual form to the first flight as fallback
+        setFlightForm(allFlights[0])
+        toast.success(`Found ${result.flights.length} flight segment(s)!`)
       } else {
+        setParsedFlights([])
         toast.error("Could not parse flight info — fill in manually below")
       }
     } catch {
       toast.error("Failed to parse flight")
     } finally {
       setParsingFlight(false)
+    }
+  }
+
+  function clearFlightState() {
+    setShowFlightForm(false)
+    setFlightPasteText("")
+    setParsedFlight(null)
+    setParsedFlights([])
+    setFlightForm({ airline: "", flightNumber: "", departureAirport: "", departureTime: "", departureTimezone: "UTC", arrivalAirport: "", arrivalTime: "", arrivalTimezone: "UTC", confirmationNumber: "", cabin: "" })
+  }
+
+  async function handleAddAllFlights() {
+    if (parsedFlights.length === 0) return
+    setAddingBatchFlights(true)
+    try {
+      const batchData = parsedFlights.map((f) => ({
+        ...f,
+        departureTime: new Date(f.departureTime).toISOString(),
+        arrivalTime: new Date(f.arrivalTime).toISOString(),
+        departureTimezone: f.departureTimezone || "UTC",
+        arrivalTimezone: f.arrivalTimezone || "UTC",
+        airline: f.airline || undefined,
+        flightNumber: f.flightNumber || undefined,
+        departureAirport: f.departureAirport || undefined,
+        arrivalAirport: f.arrivalAirport || undefined,
+        confirmationNumber: f.confirmationNumber || undefined,
+        cabin: f.cabin || undefined,
+      }))
+      await createFlightsBatch(tripId, batchData)
+      clearFlightState()
+      router.refresh()
+      toast.success(`Added ${batchData.length} flight(s)!`)
+    } catch {
+      toast.error("Failed to add flights")
+    } finally {
+      setAddingBatchFlights(false)
     }
   }
 
@@ -185,10 +232,7 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles }: Pro
         cabin: flightForm.cabin || undefined,
       })
       setTrip((prev) => ({ ...prev, flights: [...prev.flights, flight as unknown as Trip["flights"][0]] }))
-      setShowFlightForm(false)
-      setFlightPasteText("")
-      setParsedFlight(null)
-      setFlightForm({ airline: "", flightNumber: "", departureAirport: "", departureTime: "", departureTimezone: "UTC", arrivalAirport: "", arrivalTime: "", arrivalTimezone: "UTC", confirmationNumber: "", cabin: "" })
+      clearFlightState()
       toast.success("Flight added!")
     } catch {
       toast.error("Failed to add flight")
@@ -415,7 +459,7 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles }: Pro
             <div className="bg-white border border-indigo-200 rounded-2xl p-5">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="font-semibold text-gray-900">Add Flight</h3>
-                <button onClick={() => setShowFlightForm(false)}>
+                <button onClick={clearFlightState}>
                   <X className="w-4 h-4 text-gray-400" />
                 </button>
               </div>
@@ -441,6 +485,52 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles }: Pro
                   {parsingFlight ? "Parsing..." : "Parse flight info"}
                 </button>
               </div>
+
+              {/* Parsed flights preview */}
+              {parsedFlights.length > 1 && (
+                <div className="mb-4 bg-gray-50 border border-gray-200 rounded-2xl p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <CheckCircle2 className="w-4 h-4 text-green-600" />
+                    <span className="text-sm font-medium text-gray-900">
+                      Found {parsedFlights.length} flight segments
+                    </span>
+                  </div>
+                  <div className="space-y-2 mb-4">
+                    {parsedFlights.map((f, i) => (
+                      <div
+                        key={i}
+                        className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-100 rounded-xl"
+                      >
+                        <Plane className="w-3.5 h-3.5 text-indigo-500 flex-shrink-0" />
+                        <span className="text-sm text-gray-900 font-medium">
+                          {f.flightNumber || "Flight"}
+                        </span>
+                        <span className="text-sm text-gray-500">
+                          {f.departureAirport || "???"} &rarr; {f.arrivalAirport || "???"}
+                        </span>
+                        {f.departureTime && (
+                          <span className="text-xs text-gray-400 ml-auto">
+                            {new Date(f.departureTime).toLocaleDateString("en-US", { month: "short", day: "numeric" })},{" "}
+                            {new Date(f.departureTime).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  <button
+                    onClick={handleAddAllFlights}
+                    disabled={addingBatchFlights}
+                    className="w-full py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                  >
+                    {addingBatchFlights ? "Adding flights..." : `Add all ${parsedFlights.length} flights`}
+                  </button>
+                  <div className="flex items-center gap-3 mt-3">
+                    <div className="flex-1 border-t border-gray-200" />
+                    <span className="text-xs text-gray-400">or edit individually below</span>
+                    <div className="flex-1 border-t border-gray-200" />
+                  </div>
+                </div>
+              )}
 
               <div className="border-t border-gray-100 pt-4 space-y-3">
                 <div className="grid grid-cols-2 gap-3">
@@ -506,7 +596,7 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles }: Pro
                   </div>
                 </div>
                 <div className="flex gap-3 pt-1">
-                  <button onClick={() => setShowFlightForm(false)}
+                  <button onClick={clearFlightState}
                     className="flex-1 py-2.5 border border-gray-200 text-gray-700 text-sm rounded-xl hover:bg-gray-50">
                     Cancel
                   </button>

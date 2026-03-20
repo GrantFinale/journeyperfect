@@ -7,7 +7,7 @@ import { createFlight, createFlightsBatch, deleteFlight, parseAndPreviewFlight }
 import { createHotel, createHotelsBatch, deleteHotel, parseAndPreviewHotel } from "@/lib/actions/hotels"
 import { createRentalCar, deleteRentalCar, parseAndPreviewRentalCar } from "@/lib/actions/rental-cars"
 import { getCompanyInfo, RENTAL_CAR_COMPANIES } from "@/lib/rental-car-logos"
-import { addTravelerToTrip, removeTravelerFromTrip } from "@/lib/actions/travelers"
+import { addTravelerToTrip, removeTravelerFromTrip, updateTravelerProfile, deleteTravelerProfile } from "@/lib/actions/travelers"
 import { updateTrip, deleteTrip, shareTrip, unshareTrip, addDestination, removeDestination } from "@/lib/actions/trips"
 import { inviteCollaborator, removeCollaborator, updateCollaboratorRole } from "@/lib/actions/collaborators"
 import { formatDate } from "@/lib/utils"
@@ -98,7 +98,7 @@ type Trip = {
   }[]
 }
 
-type TravelerProfile = { id: string; name: string; tags: string[]; isDefault: boolean }
+type TravelerProfile = { id: string; name: string; tags: string[]; isDefault: boolean; birthDate?: Date | string | null }
 
 type Collaborator = {
   id: string
@@ -128,6 +128,137 @@ function tabFromParam(param?: string): Tab {
   const lower = param.toLowerCase()
   const match = TABS.find((t) => t.toLowerCase() === lower)
   return match || "Flights"
+}
+
+function TravelerCard({ profile, added, tripId, onToggle }: { profile: TravelerProfile; added: boolean; tripId: string; onToggle: () => void }) {
+  const [editing, setEditing] = useState(false)
+  const [name, setName] = useState(profile.name)
+  const [birthDate, setBirthDate] = useState(profile.birthDate ? new Date(profile.birthDate).toISOString().split("T")[0] : "")
+  const [tags, setTags] = useState(profile.tags.join(", "))
+  const [saving, setSaving] = useState(false)
+
+  const TAG_OPTIONS = ["adult", "child", "infant", "senior"]
+
+  async function handleSave() {
+    setSaving(true)
+    try {
+      await updateTravelerProfile(profile.id, {
+        name: name.trim(),
+        birthDate: birthDate || undefined,
+        tags: tags.split(",").map(t => t.trim()).filter(Boolean),
+      })
+      setEditing(false)
+      toast.success("Traveler updated")
+    } catch {
+      toast.error("Failed to update traveler")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleDelete() {
+    if (!confirm(`Delete traveler profile "${profile.name}"? This cannot be undone.`)) return
+    try {
+      await deleteTravelerProfile(profile.id)
+      toast.success("Traveler deleted")
+    } catch {
+      toast.error("Failed to delete traveler")
+    }
+  }
+
+  if (editing) {
+    return (
+      <div className="bg-white border border-indigo-200 rounded-2xl p-4 space-y-3">
+        <input
+          type="text"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Name"
+          className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+        />
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Birth date</label>
+            <input
+              type="date"
+              value={birthDate}
+              onChange={(e) => setBirthDate(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Tags</label>
+            <div className="flex flex-wrap gap-1">
+              {TAG_OPTIONS.map(tag => (
+                <button
+                  key={tag}
+                  type="button"
+                  onClick={() => {
+                    const current = tags.split(",").map(t => t.trim()).filter(Boolean)
+                    if (current.includes(tag)) {
+                      setTags(current.filter(t => t !== tag).join(", "))
+                    } else {
+                      setTags([...current, tag].join(", "))
+                    }
+                  }}
+                  className={cn(
+                    "px-2 py-1 text-xs rounded-lg border transition-colors",
+                    tags.split(",").map(t => t.trim()).includes(tag)
+                      ? "bg-indigo-50 border-indigo-200 text-indigo-700"
+                      : "bg-white border-gray-200 text-gray-500"
+                  )}
+                >
+                  {tag}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center justify-between pt-1">
+          <button onClick={handleDelete} className="text-xs text-red-500 hover:text-red-700">Delete profile</button>
+          <div className="flex gap-2">
+            <button onClick={() => setEditing(false)} className="px-3 py-1.5 text-xs text-gray-600 hover:text-gray-800">Cancel</button>
+            <button onClick={handleSave} disabled={saving || !name.trim()} className="px-3 py-1.5 text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg disabled:opacity-50">
+              {saving ? "Saving..." : "Save"}
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="bg-white border border-gray-100 rounded-2xl p-4 flex items-center gap-3 group">
+      <div className="w-9 h-9 bg-gray-100 rounded-full flex items-center justify-center text-sm font-semibold text-gray-600 shrink-0">
+        {profile.name.charAt(0).toUpperCase()}
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="font-medium text-sm text-gray-900">{profile.name}</div>
+        {profile.tags.length > 0 && (
+          <div className="flex gap-1 mt-0.5 flex-wrap">
+            {profile.tags.map((tag) => (
+              <span key={tag} className="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded">{tag}</span>
+            ))}
+          </div>
+        )}
+      </div>
+      <button
+        onClick={() => setEditing(true)}
+        className="px-2 py-1.5 text-xs text-gray-400 hover:text-gray-600 transition-colors"
+      >
+        Edit
+      </button>
+      <button
+        onClick={onToggle}
+        className={cn(
+          "px-3 py-2 text-xs font-medium rounded-lg transition-colors",
+          added ? "bg-gray-100 text-gray-600 hover:bg-red-50 hover:text-red-600" : "bg-indigo-600 text-white hover:bg-indigo-700"
+        )}
+      >
+        {added ? "Remove" : "Add"}
+      </button>
+    </div>
+  )
 }
 
 export function TripSettingsView({ tripId, trip: initialTrip, allProfiles, initialTab, isOwner = true, ownerName, ownerEmail, initialCollaborators = [], placesApiKey }: Props) {
@@ -985,6 +1116,30 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles, initi
       {/* HOTELS TAB */}
       {activeTab === "Hotels" && (
         <div>
+          {/* Booking.com affiliate suggestion */}
+          {hotelAffiliateLink && (
+            <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 mb-4">
+              <div className="flex items-start gap-3">
+                <span className="text-xl">🏨</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-blue-900">Need a place to stay?</p>
+                  <p className="text-xs text-blue-700 mt-0.5">Find hotels in {trip.destination} for your trip</p>
+                  <a
+                    href={hotelAffiliateLink.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={() => {
+                      try { localStorage.setItem("jp_affiliate_click", JSON.stringify({ type: "hotel", tripId, timestamp: Date.now() })) } catch {}
+                    }}
+                    className="inline-flex items-center gap-1.5 mt-2 px-3 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+                  >
+                    Search on Booking.com →
+                  </a>
+                </div>
+              </div>
+            </div>
+          )}
+
           {trip.hotels.length === 0 && !showHotelForm && !showHotelParse && (
             <div className="text-center py-12">
               <Hotel className="w-10 h-10 text-gray-200 mx-auto mb-3" />
@@ -1185,6 +1340,30 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles, initi
       {/* CARS TAB */}
       {activeTab === "Cars" && (
         <div>
+          {/* Booking.com affiliate suggestion */}
+          {carRentalLink && (
+            <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-4 mb-4">
+              <div className="flex items-start gap-3">
+                <span className="text-xl">🚗</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-emerald-900">Don&apos;t have a rental car yet?</p>
+                  <p className="text-xs text-emerald-700 mt-0.5">Find the best deals for your trip to {trip.destination}</p>
+                  <a
+                    href={carRentalLink.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={() => {
+                      try { localStorage.setItem("jp_affiliate_click", JSON.stringify({ type: "car", tripId, timestamp: Date.now() })) } catch {}
+                    }}
+                    className="inline-flex items-center gap-1.5 mt-2 px-3 py-1.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-colors"
+                  >
+                    Book on Booking.com →
+                  </a>
+                </div>
+              </div>
+            </div>
+          )}
+
           {trip.rentalCars.length === 0 && !showCarForm && !showCarParse && (
             <div className="text-center py-12">
               <Car className="w-10 h-10 text-gray-200 mx-auto mb-3" />
@@ -1438,37 +1617,13 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles, initi
               {allProfiles.map((profile) => {
                 const added = trip.travelers.some((t) => t.traveler.id === profile.id)
                 return (
-                  <div
+                  <TravelerCard
                     key={profile.id}
-                    className="bg-white border border-gray-100 rounded-2xl p-4 flex items-center gap-3"
-                  >
-                    <div className="w-9 h-9 bg-gray-100 rounded-full flex items-center justify-center text-sm font-semibold text-gray-600 shrink-0">
-                      {profile.name.charAt(0).toUpperCase()}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="font-medium text-sm text-gray-900">{profile.name}</div>
-                      {profile.tags.length > 0 && (
-                        <div className="flex gap-1 mt-0.5 flex-wrap">
-                          {profile.tags.map((tag) => (
-                            <span key={tag} className="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded">
-                              {tag}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                    <button
-                      onClick={() => handleToggleTraveler(profile.id, added)}
-                      className={cn(
-                        "px-3 py-2 text-xs font-medium rounded-lg transition-colors",
-                        added
-                          ? "bg-gray-100 text-gray-600 hover:bg-red-50 hover:text-red-600"
-                          : "bg-indigo-600 text-white hover:bg-indigo-700"
-                      )}
-                    >
-                      {added ? "Remove" : "Add"}
-                    </button>
-                  </div>
+                    profile={profile}
+                    added={added}
+                    tripId={tripId}
+                    onToggle={() => handleToggleTraveler(profile.id, added)}
+                  />
                 )
               })}
             </div>

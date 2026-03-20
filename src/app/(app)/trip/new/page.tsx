@@ -20,36 +20,44 @@ function generateTripName(destinations: string[], startDate?: string): string {
   if (destinations.length === 0) return "My Trip"
 
   // Clean destination names (take city name only)
-  const cities = destinations.map((d) => {
-    // Strip state/country suffixes like "Austin, TX" -> "Austin"
-    return d.split(",")[0].trim()
-  })
+  const cities = destinations.map((d) => d.split(",")[0].trim())
+
+  // Check if all destinations are in the same state — use state name instead
+  const states = cities.map((c) => CITY_TO_STATE[c]).filter(Boolean)
+  const uniqueStates = [...new Set(states)]
+  const allSameState = uniqueStates.length === 1 && states.length === cities.length
 
   // Determine season/occasion from start date
   let seasonTag = ""
   if (startDate) {
-    const date = new Date(startDate)
-    const month = date.getMonth() // 0-indexed
+    const date = new Date(startDate + "T12:00:00") // avoid timezone issues
+    const month = date.getMonth()
+    const day = date.getDate()
     const year = date.getFullYear()
     const currentYear = new Date().getFullYear()
 
-    // Holiday detection
-    if (month === 11 && date.getDate() >= 20) seasonTag = "Holiday"
-    else if (month === 2 && date.getDate() >= 10 && date.getDate() <= 25) seasonTag = "Spring Break"
+    // Holiday detection (more specific first)
+    if (month === 11 && day >= 20) seasonTag = "Holiday"
+    else if (month === 2 && day >= 7 && day <= 25) seasonTag = "Spring Break"
+    else if (month === 10 && day >= 20 && day <= 30) seasonTag = "Thanksgiving"
     else if (month === 5 || month === 6 || month === 7) seasonTag = "Summer"
     else if (month === 8 || month === 9) seasonTag = "Fall"
     else if (month === 11 || month === 0 || month === 1) seasonTag = "Winter"
     else if (month === 2 || month === 3 || month === 4) seasonTag = "Spring"
 
-    // Add year if trip is next year or later
     if (year > currentYear) {
       seasonTag = seasonTag ? `${seasonTag} ${year}` : `${year}`
     }
   }
 
-  // Fun suffixes
   const suffixes = ["Getaway", "Adventure", "Trip", "Escape", "Journey"]
-  const suffix = suffixes[Math.floor(Math.random() * 3)] // bias toward first 3
+  const suffix = suffixes[Math.floor(Math.random() * 3)]
+
+  // If all destinations are in the same state, use state name
+  if (allSameState && uniqueStates[0]) {
+    const state = uniqueStates[0]
+    return seasonTag ? `${state} ${seasonTag}` : `${state} ${suffix}`
+  }
 
   if (cities.length === 1) {
     return seasonTag ? `${cities[0]} ${seasonTag} ${suffix}` : `${cities[0]} ${suffix}`
@@ -59,7 +67,6 @@ function generateTripName(destinations: string[], startDate?: string): string {
       ? `${cities[0]} & ${cities[1]} ${seasonTag}`
       : `${cities[0]} & ${cities[1]} ${suffix}`
   }
-  // 3+ cities
   return seasonTag
     ? `${cities[0]}, ${cities[1]} & More — ${seasonTag}`
     : `${cities.slice(0, 2).join(", ")} & More`
@@ -130,30 +137,107 @@ function emailSummary(email: PendingEmailItem): string {
   return email.subject || "Confirmation email"
 }
 
+// ─── US state lookup for smart naming ────────────────────────────────────────
+
+const AIRPORT_TO_STATE: Record<string, string> = {
+  AUS: "Texas", SAT: "Texas", DFW: "Texas", IAH: "Texas", HOU: "Texas",
+  LAX: "California", SFO: "California", SAN: "California", SJC: "California",
+  JFK: "New York", LGA: "New York", EWR: "New Jersey",
+  ORD: "Illinois", MDW: "Illinois", MIA: "Florida", FLL: "Florida", MCO: "Florida", TPA: "Florida",
+  ATL: "Georgia", SEA: "Washington", DEN: "Colorado", LAS: "Nevada",
+  PHX: "Arizona", MSP: "Minnesota", DTW: "Michigan", GRR: "Michigan",
+  BOS: "Massachusetts", DCA: "Virginia", IAD: "Virginia", BWI: "Maryland",
+  SLC: "Utah", PDX: "Oregon", BNA: "Tennessee", MEM: "Tennessee",
+  STL: "Missouri", CLE: "Ohio", PIT: "Pennsylvania", PHL: "Pennsylvania",
+  IND: "Indiana", MKE: "Wisconsin", RDU: "North Carolina", CLT: "North Carolina",
+  ANC: "Alaska", HNL: "Hawaii", OGG: "Hawaii", SNA: "California",
+  ONT: "California", BUR: "California", OAK: "California",
+}
+
+const CITY_TO_STATE: Record<string, string> = {
+  "San Antonio": "Texas", "Austin": "Texas", "Houston": "Texas", "Dallas": "Texas",
+  "Los Angeles": "California", "San Francisco": "California", "San Diego": "California",
+  "New York": "New York", "Chicago": "Illinois", "Miami": "Florida", "Orlando": "Florida",
+  "Atlanta": "Georgia", "Seattle": "Washington", "Denver": "Colorado", "Las Vegas": "Nevada",
+  "Phoenix": "Arizona", "Minneapolis": "Minnesota", "Detroit": "Michigan", "Grand Rapids": "Michigan",
+  "Boston": "Massachusetts", "Nashville": "Tennessee", "Portland": "Oregon",
+  "Salt Lake City": "Utah", "Honolulu": "Hawaii", "Anchorage": "Alaska",
+}
+
 // ─── Extract destinations & dates from pending emails ───────────────────────
 
 function extractAutoFillData(emails: PendingEmailItem[]) {
-  const destinations: string[] = []
+  const allFlightLegs: Array<Record<string, string>> = []
+  const destinationCities: string[] = []
   const dates: Date[] = []
+  let homeCity: string | null = null
+  let homeAirport: string | null = null
 
+  // First pass: collect all flight legs in order
   for (const email of emails) {
     const data = email.parsedData
     if (!data) continue
-
     if (email.type === "flight" && data.flights) {
       const flights = data.flights as Array<Record<string, string>>
-      for (const f of flights) {
-        if (f.arrivalCity && !destinations.includes(f.arrivalCity)) {
-          destinations.push(f.arrivalCity)
-        }
-        if (f.departureTime) dates.push(new Date(f.departureTime))
-        if (f.arrivalTime) dates.push(new Date(f.arrivalTime))
+      allFlightLegs.push(...flights)
+    }
+  }
+
+  // Sort flight legs by departure time
+  allFlightLegs.sort((a, b) => {
+    const ta = a.departureTime ? new Date(a.departureTime).getTime() : 0
+    const tb = b.departureTime ? new Date(b.departureTime).getTime() : 0
+    return ta - tb
+  })
+
+  // Identify home city: departure city of the very first leg
+  if (allFlightLegs.length > 0) {
+    homeCity = allFlightLegs[0].departureCity || null
+    homeAirport = allFlightLegs[0].departureAirport || null
+  }
+
+  // Collect destination cities: arrival cities that aren't home, and aren't layovers (<3h)
+  for (let i = 0; i < allFlightLegs.length; i++) {
+    const f = allFlightLegs[i]
+    const arrCity = f.arrivalCity
+    const arrAirport = f.arrivalAirport
+
+    // Skip if this is the home city (return flight)
+    if (arrCity && homeCity && arrCity.toLowerCase() === homeCity.toLowerCase()) continue
+    if (arrAirport && homeAirport && arrAirport.toLowerCase() === homeAirport.toLowerCase()) continue
+
+    // Check if this is a layover (next flight departs from same airport within 3 hours)
+    if (i < allFlightLegs.length - 1) {
+      const nextLeg = allFlightLegs[i + 1]
+      const nextDeptAirport = nextLeg.departureAirport
+      if (arrAirport && nextDeptAirport && arrAirport === nextDeptAirport) {
+        const arrTime = f.arrivalTime ? new Date(f.arrivalTime).getTime() : 0
+        const nextDeptTime = nextLeg.departureTime ? new Date(nextLeg.departureTime).getTime() : 0
+        const layoverHours = (nextDeptTime - arrTime) / (1000 * 60 * 60)
+        if (layoverHours > 0 && layoverHours < 3) continue // Skip layover city
       }
     }
+
+    if (arrCity && !destinationCities.includes(arrCity)) {
+      destinationCities.push(arrCity)
+    }
+
+    if (f.departureTime) dates.push(new Date(f.departureTime))
+    if (f.arrivalTime) dates.push(new Date(f.arrivalTime))
+  }
+
+  // Also add hotel cities (if not already in destinations and not home)
+  for (const email of emails) {
+    const data = email.parsedData
+    if (!data) continue
     if (email.type === "hotel" && data.hotels) {
       const hotels = data.hotels as Array<Record<string, string>>
       for (const h of hotels) {
-        if (h.city && !destinations.includes(h.city)) destinations.push(h.city)
+        if (h.city && !destinationCities.includes(h.city)) {
+          if (!homeCity || h.city.toLowerCase() !== homeCity.toLowerCase()) {
+            destinationCities.push(h.city)
+          }
+        }
         if (h.checkIn) dates.push(new Date(h.checkIn))
         if (h.checkOut) dates.push(new Date(h.checkOut))
       }
@@ -175,7 +259,7 @@ function extractAutoFillData(emails: PendingEmailItem[]) {
     ? new Date(Math.max(...validDates.map((d) => d.getTime()))).toISOString().slice(0, 10)
     : undefined
 
-  return { destinations, startDate, endDate }
+  return { destinations: destinationCities, startDate, endDate, allFlightLegs }
 }
 
 // ─── Parsed flight preview interface ────────────────────────────────────────

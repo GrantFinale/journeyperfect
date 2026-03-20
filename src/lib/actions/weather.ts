@@ -47,6 +47,34 @@ export async function getTripWeather(tripId: string): Promise<TripWeatherData | 
     lng = dest?.lng ?? null
   }
 
+  // Fallback: geocode the destination name using Open-Meteo geocoding (free, no key)
+  if (lat == null || lng == null) {
+    const searchName = trip.destinations[0]?.name || trip.destination
+    if (searchName) {
+      try {
+        const geoRes = await fetch(
+          `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(searchName)}&count=1&language=en&format=json`
+        )
+        if (geoRes.ok) {
+          const geoData = await geoRes.json()
+          if (geoData.results?.[0]) {
+            lat = geoData.results[0].latitude
+            lng = geoData.results[0].longitude
+            // Save coordinates for next time
+            if (trip.destinations[0] && lat != null && lng != null) {
+              await prisma.tripDestination.update({
+                where: { id: trip.destinations[0].id },
+                data: { lat, lng },
+              }).catch(() => {}) // non-critical, don't fail
+            }
+          }
+        }
+      } catch {
+        // Geocoding failed, no weather
+      }
+    }
+  }
+
   if (lat == null || lng == null) return null
 
   const tripStart = trip.startDate.toISOString().split("T")[0]

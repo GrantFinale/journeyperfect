@@ -77,6 +77,10 @@ export async function getActivities(tripId: string) {
   })
 }
 
+// Places search cache — 15 min TTL, keyed by query+location
+const placesSearchCache = new Map<string, { results: any[]; expiry: number }>()
+const PLACES_CACHE_TTL = 15 * 60 * 1000 // 15 minutes
+
 // Google Places search — runs server-side to keep API key secret
 // Uses the Places API (New) endpoint: places:searchText
 export async function searchPlaces(query: string, locationBias?: string) {
@@ -86,6 +90,13 @@ export async function searchPlaces(query: string, locationBias?: string) {
   const apiKey = process.env.GOOGLE_PLACES_KEY || process.env.NEXT_PUBLIC_GOOGLE_PLACES_KEY
   if (!apiKey || apiKey === "build-placeholder") {
     return { results: [], error: "Places API not configured" }
+  }
+
+  // Check cache
+  const cacheKey = `${query}|${locationBias || ""}`
+  const cached = placesSearchCache.get(cacheKey)
+  if (cached && Date.now() < cached.expiry) {
+    return { results: cached.results, error: null }
   }
 
   try {
@@ -149,6 +160,9 @@ export async function searchPlaces(query: string, locationBias?: string) {
       openNow: place.currentOpeningHours?.openNow,
       weekdayHours: place.currentOpeningHours?.weekdayDescriptions,
     }))
+
+    // Cache results
+    placesSearchCache.set(cacheKey, { results, expiry: Date.now() + PLACES_CACHE_TTL })
 
     return { results, error: null }
   } catch (err) {

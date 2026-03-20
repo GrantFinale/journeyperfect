@@ -2,9 +2,19 @@
 
 import { auth } from "@/lib/auth"
 
+// Cache place details for 1 hour (place data doesn't change often)
+const placeDetailsCache = new Map<string, { data: any; expiry: number }>()
+const DETAIL_CACHE_TTL = 60 * 60 * 1000 // 1 hour
+
 export async function getPlaceDetails(placeId: string) {
   const session = await auth()
   if (!session?.user?.id) throw new Error("Unauthorized")
+
+  // Check cache
+  const cached = placeDetailsCache.get(placeId)
+  if (cached && Date.now() < cached.expiry) {
+    return cached.data
+  }
 
   const apiKey = process.env.GOOGLE_PLACES_KEY || process.env.NEXT_PUBLIC_GOOGLE_PLACES_KEY
   if (!apiKey || apiKey === "build-placeholder") return null
@@ -20,7 +30,7 @@ export async function getPlaceDetails(placeId: string) {
     if (!res.ok) return null
     const data = await res.json()
 
-    return {
+    const result = {
       name: data.displayName?.text,
       address: data.formattedAddress,
       lat: data.location?.latitude,
@@ -37,6 +47,11 @@ export async function getPlaceDetails(placeId: string) {
         data.currentOpeningHours?.weekdayDescriptions,
       openNow: data.currentOpeningHours?.openNow,
     }
+
+    // Cache it
+    placeDetailsCache.set(placeId, { data: result, expiry: Date.now() + DETAIL_CACHE_TTL })
+
+    return result
   } catch {
     return null
   }

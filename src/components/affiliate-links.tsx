@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react"
 import type { AffiliateLink } from "@/lib/affiliates"
-import { getActivityAffiliates } from "@/lib/actions/affiliates"
+import { getActivityAffiliates, getViatorDestinationAffiliate } from "@/lib/actions/affiliates"
 import { X, Car, Plane, Hotel } from "lucide-react"
 
 // Track which booking type the user clicked so we can prompt on return
@@ -225,6 +225,30 @@ export function ActivityBookingLinks({
       {links.map((link) => (
         <AffiliateBadge key={link.provider} link={link} />
       ))}
+    </div>
+  )
+}
+
+// Viator destination-level banner for search results area
+export function ViatorDestinationBanner({ destination }: { destination: string }) {
+  const [link, setLink] = useState<AffiliateLink | null>(null)
+
+  useEffect(() => {
+    if (!destination) return
+    let cancelled = false
+    getViatorDestinationAffiliate(destination).then((result) => {
+      if (!cancelled) setLink(result)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [destination])
+
+  if (!link) return null
+
+  return (
+    <div className="mb-4">
+      <AffiliateBadge link={link} trackType="hotel" />
     </div>
   )
 }

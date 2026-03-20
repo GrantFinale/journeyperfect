@@ -25,7 +25,7 @@ import {
   Send,
   Receipt,
 } from "lucide-react"
-import { ActivityBookingLinks } from "@/components/affiliate-links"
+import { ActivityBookingLinks, ViatorDestinationBanner } from "@/components/affiliate-links"
 
 type Activity = {
   id: string
@@ -523,6 +523,11 @@ export function ActivitiesView({ tripId, initialActivities, destination, destina
         <div className="flex items-center justify-center py-16">
           <Loader2 className="w-8 h-8 text-indigo-500 animate-spin" />
         </div>
+      )}
+
+      {/* Viator destination banner */}
+      {!loading && searchResults.length > 0 && effectiveLocation && (
+        <ViatorDestinationBanner destination={effectiveLocation} />
       )}
 
       {/* Search results */}

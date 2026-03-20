@@ -14,6 +14,7 @@ import {
   ChevronDown,
   Check,
 } from "lucide-react"
+import { ViatorDestinationBanner } from "@/components/affiliate-links"
 
 /* ─── Quick-filter categories ──────────────────────────────────────────────── */
 const QUICK_FILTERS = [
@@ -273,6 +274,11 @@ export function DiscoverView({ tripId, destination, destinations, arrivalCities 
             Results powered by Google Places
           </p>
         </div>
+      )}
+
+      {/* Viator destination banner */}
+      {!loading && results.length > 0 && effectiveLocation && (
+        <ViatorDestinationBanner destination={effectiveLocation} />
       )}
 
       {/* Results grid */}

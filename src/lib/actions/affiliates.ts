@@ -8,6 +8,7 @@ import {
   getRentalCarLink,
   getTravelInsuranceLink,
   getAmazonPackingLink,
+  getViatorDestinationLink,
   type AffiliateLink,
 } from "@/lib/affiliates"
 import { prisma } from "@/lib/db"
@@ -146,4 +147,10 @@ export async function getCarRentalAffiliate(
   dropoffDate?: string
 ): Promise<AffiliateLink> {
   return getRentalCarLink(location, pickupDate, dropoffDate)
+}
+
+export async function getViatorDestinationAffiliate(
+  destination: string
+): Promise<AffiliateLink> {
+  return getViatorDestinationLink(destination)
 }

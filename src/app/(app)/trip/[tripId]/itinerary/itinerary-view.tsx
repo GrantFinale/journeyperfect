@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef } from "react"
+import { useState, useRef, useMemo } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { runOptimizer, runAIOptimizer, deleteItineraryItem, createItineraryItem, reorderItineraryItems, updateItineraryItemNotes } from "@/lib/actions/itinerary"
@@ -38,6 +38,8 @@ import {
   PenLine,
   Check,
   X,
+  ToggleLeft,
+  ToggleRight,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { WeatherBar } from "@/components/weather-bar"
@@ -64,6 +66,153 @@ type ItineraryItem = {
     departureAirport: string | null
     arrivalAirport: string | null
   } | null
+}
+
+type FreeTimeBlock = {
+  startTime: string
+  endTime: string
+  durationMins: number
+  date: string
+  afterItemIndex: number // index in the day's items array, -1 means before first item
+}
+
+const DAY_START_HOUR = 8
+const DAY_END_HOUR = 22
+
+function timeToMinutes(time: string): number {
+  const [h, m] = time.split(":").map(Number)
+  return h * 60 + (m || 0)
+}
+
+function minutesToTime(mins: number): string {
+  const h = Math.floor(mins / 60)
+  const m = mins % 60
+  return `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`
+}
+
+function computeFreeTimeBlocks(
+  dayItems: ItineraryItem[],
+  minGapMinutes: number = 120
+): FreeTimeBlock[] {
+  const blocks: FreeTimeBlock[] = []
+  const dayStartMins = DAY_START_HOUR * 60
+  const dayEndMins = DAY_END_HOUR * 60
+
+  // Only consider items with start times, sorted by start time
+  const timed = dayItems
+    .map((item, idx) => ({ item, idx }))
+    .filter(({ item }) => item.startTime)
+    .sort((a, b) => timeToMinutes(a.item.startTime!) - timeToMinutes(b.item.startTime!))
+
+  if (timed.length === 0) {
+    // Entire day is free
+    const gap = dayEndMins - dayStartMins
+    if (gap >= minGapMinutes) {
+      blocks.push({
+        startTime: minutesToTime(dayStartMins),
+        endTime: minutesToTime(dayEndMins),
+        durationMins: gap,
+        date: "",
+        afterItemIndex: -1,
+      })
+    }
+    return blocks
+  }
+
+  // Gap from day start to first item
+  const firstStart = timeToMinutes(timed[0].item.startTime!)
+  if (firstStart - dayStartMins >= minGapMinutes) {
+    blocks.push({
+      startTime: minutesToTime(dayStartMins),
+      endTime: minutesToTime(firstStart),
+      durationMins: firstStart - dayStartMins,
+      date: "",
+      afterItemIndex: -1,
+    })
+  }
+
+  // Gaps between consecutive items
+  for (let i = 0; i < timed.length - 1; i++) {
+    const currentEnd = timed[i].item.endTime
+      ? timeToMinutes(timed[i].item.endTime!)
+      : timeToMinutes(timed[i].item.startTime!) + timed[i].item.durationMins
+    const nextStart = timeToMinutes(timed[i + 1].item.startTime!)
+    const gap = nextStart - currentEnd
+    if (gap >= minGapMinutes) {
+      blocks.push({
+        startTime: minutesToTime(currentEnd),
+        endTime: minutesToTime(nextStart),
+        durationMins: gap,
+        date: "",
+        afterItemIndex: timed[i].idx,
+      })
+    }
+  }
+
+  // Gap from last item to day end
+  const lastItem = timed[timed.length - 1]
+  const lastEnd = lastItem.item.endTime
+    ? timeToMinutes(lastItem.item.endTime!)
+    : timeToMinutes(lastItem.item.startTime!) + lastItem.item.durationMins
+  if (dayEndMins - lastEnd >= minGapMinutes) {
+    blocks.push({
+      startTime: minutesToTime(lastEnd),
+      endTime: minutesToTime(dayEndMins),
+      durationMins: dayEndMins - lastEnd,
+      date: "",
+      afterItemIndex: lastItem.idx,
+    })
+  }
+
+  return blocks
+}
+
+function formatFreeTimeDuration(mins: number): string {
+  const h = Math.floor(mins / 60)
+  const m = mins % 60
+  if (h === 0) return `${m} min`
+  if (m === 0) return `${h} hour${h !== 1 ? "s" : ""}`
+  return `${h}.${Math.round((m / 60) * 10)} hours`
+}
+
+function FreeTimeBlockCard({
+  block,
+  onAddActivity,
+}: {
+  block: FreeTimeBlock
+  onAddActivity: (startTime: string) => void
+}) {
+  return (
+    <div className="flex items-start gap-3">
+      {/* Spacer for drag handle column */}
+      <div className="w-5" />
+      {/* Timeline dot */}
+      <div className="flex flex-col items-center mt-1">
+        <div className="w-7 h-7 rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center shrink-0 bg-gray-50">
+          <Clock className="w-3.5 h-3.5 text-gray-400" />
+        </div>
+      </div>
+      <div className="flex-1 min-w-0 pb-2">
+        <div className="flex items-center justify-between gap-2 px-3 py-2.5 bg-gray-50 border border-dashed border-gray-200 rounded-xl">
+          <div className="flex items-center gap-2 text-sm text-gray-500">
+            <span className="font-medium">Free Time</span>
+            <span className="text-gray-300">·</span>
+            <span>{formatFreeTimeDuration(block.durationMins)}</span>
+            <span className="text-[11px] text-gray-400">
+              {formatTime(block.startTime)} – {formatTime(block.endTime)}
+            </span>
+          </div>
+          <button
+            onClick={() => onAddActivity(block.startTime)}
+            className="flex items-center gap-1 px-2 py-1 text-xs text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors font-medium"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            Add
+          </button>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 import { groupByDay } from "@/lib/itinerary-utils"
@@ -312,6 +461,8 @@ export function ItineraryView({ tripId, initialItems, tripStartDate, tripEndDate
   const [optimizing, setOptimizing] = useState(false)
   const [collapsedDays, setCollapsedDays] = useState<Set<string>>(new Set())
   const [addingToDay, setAddingToDay] = useState<string | null>(null)
+  const [showFreeTime, setShowFreeTime] = useState(false)
+  const [minGapHours, setMinGapHours] = useState<number>(2)
   const [newItemForm, setNewItemForm] = useState({
     title: "",
     type: "CUSTOM",
@@ -493,6 +644,32 @@ export function ItineraryView({ tripId, initialItems, tripStartDate, tripEndDate
           <p className="text-gray-500 text-sm mt-0.5">{items.length} items planned</p>
         </div>
         <div className="flex items-center gap-2">
+          {/* Free time toggle */}
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => setShowFreeTime(!showFreeTime)}
+              className={cn(
+                "flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium rounded-xl border transition-colors",
+                showFreeTime
+                  ? "bg-gray-900 text-white border-gray-900"
+                  : "bg-white text-gray-600 border-gray-200 hover:border-gray-300"
+              )}
+            >
+              <Clock className="w-4 h-4" />
+              <span className="hidden sm:inline">Free time</span>
+            </button>
+            {showFreeTime && (
+              <select
+                value={minGapHours}
+                onChange={(e) => setMinGapHours(Number(e.target.value))}
+                className="px-2 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              >
+                <option value={1}>1h+</option>
+                <option value={2}>2h+</option>
+                <option value={3}>3h+</option>
+              </select>
+            )}
+          </div>
           {isPaid && (
             <button
               onClick={handleAIOptimize}
@@ -585,16 +762,51 @@ export function ItineraryView({ tripId, initialItems, tripStartDate, tripEndDate
                       strategy={verticalListSortingStrategy}
                     >
                       <div className="space-y-2 mb-3">
-                        {day.items.map((item, i) => (
-                          <SortableItineraryItem
-                            key={item.id}
-                            item={item}
-                            isLast={i === day.items.length - 1}
-                            onDelete={handleDelete}
-                            tripId={tripId}
-                            onUpdateNotes={handleUpdateNotes}
-                          />
-                        ))}
+                        {(() => {
+                          const freeBlocks = showFreeTime
+                            ? computeFreeTimeBlocks(day.items, minGapHours * 60)
+                            : []
+
+                          // Render free time block before first item (afterItemIndex === -1)
+                          const beforeFirst = freeBlocks.filter((b) => b.afterItemIndex === -1)
+
+                          const handleFreeTimeAdd = (startTime: string) => {
+                            setAddingToDay(day.dateStr)
+                            setNewItemForm((f) => ({ ...f, startTime, title: "", type: "ACTIVITY", durationMins: 60 }))
+                          }
+
+                          return (
+                            <>
+                              {beforeFirst.map((block, bi) => (
+                                <FreeTimeBlockCard
+                                  key={`free-before-${bi}`}
+                                  block={block}
+                                  onAddActivity={handleFreeTimeAdd}
+                                />
+                              ))}
+                              {day.items.map((item, i) => (
+                                <div key={item.id}>
+                                  <SortableItineraryItem
+                                    item={item}
+                                    isLast={i === day.items.length - 1 && freeBlocks.filter((b) => b.afterItemIndex === i).length === 0}
+                                    onDelete={handleDelete}
+                                    tripId={tripId}
+                                    onUpdateNotes={handleUpdateNotes}
+                                  />
+                                  {freeBlocks
+                                    .filter((b) => b.afterItemIndex === i)
+                                    .map((block, bi) => (
+                                      <FreeTimeBlockCard
+                                        key={`free-${i}-${bi}`}
+                                        block={block}
+                                        onAddActivity={handleFreeTimeAdd}
+                                      />
+                                    ))}
+                                </div>
+                              ))}
+                            </>
+                          )
+                        })()}
                       </div>
                     </SortableContext>
                   </DndContext>

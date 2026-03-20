@@ -66,7 +66,7 @@ export async function getRentalCarLink(
   }
 }
 
-// Viator for activities
+// Viator for activities (deep link to search results)
 export async function getActivityBookingLink(
   activityName: string,
   destination: string
@@ -80,6 +80,30 @@ export async function getActivityBookingLink(
     provider: "Viator",
     url: `https://www.viator.com/searchResults/all?${params}`,
     label: "Book on Viator",
+    icon: "\u{1F39F}\uFE0F",
+    commission: "8%",
+  }
+}
+
+// Viator destination-level deep link
+export async function getViatorDestinationLink(
+  destination: string
+): Promise<AffiliateLink> {
+  const viatorPid = await getConfig("affiliate.viator.pid", "")
+  // Viator uses URL-friendly destination slugs
+  const slug = destination
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+  const params = new URLSearchParams({
+    ...(viatorPid && { pid: viatorPid, mcid: "42383", medium: "link" }),
+  })
+  const qs = params.toString()
+  return {
+    provider: "Viator",
+    url: `https://www.viator.com/${slug}-tours/${qs ? `?${qs}` : ""}`,
+    label: `Tours in ${destination}`,
     icon: "\u{1F39F}\uFE0F",
     commission: "8%",
   }

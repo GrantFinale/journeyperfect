@@ -8,7 +8,7 @@ interface Program {
   key: string
   name: string
   description: string
-  signupUrl: string
+  dashboardUrl: string
   icon: string
   currentValue: string
   isConfigured: boolean
@@ -89,12 +89,12 @@ function AffiliateCard({ program }: { program: Program }) {
 
         <div className="flex items-center justify-between">
           <a
-            href={program.signupUrl}
+            href={program.dashboardUrl}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800"
           >
-            Sign up for program
+            View commissions
             <ExternalLink className="w-3 h-3" />
           </a>
 

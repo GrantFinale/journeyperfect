@@ -3,9 +3,9 @@ import Link from "next/link"
 import { getTrip } from "@/lib/actions/trips"
 import { getBudgetSummary } from "@/lib/actions/budget"
 import { getItinerary, type ItineraryItemFull } from "@/lib/actions/itinerary"
-import { getTripAffiliates } from "@/lib/actions/affiliates"
+import { getSmartSuggestions } from "@/lib/actions/affiliates"
 import { formatDate, formatTime, tripDuration, formatCurrency } from "@/lib/utils"
-import { AffiliateBar } from "@/components/affiliate-links"
+import { AffiliateSmartSuggestions } from "@/components/affiliate-links"
 import {
   Plane,
   Hotel,
@@ -27,14 +27,14 @@ export default async function TripOverviewPage({ params }: { params: Promise<{ t
   let trip: Awaited<ReturnType<typeof getTrip>>
   let budget: Awaited<ReturnType<typeof getBudgetSummary>>
   let allItems: ItineraryItemFull[] = []
-  let affiliateLinks: Awaited<ReturnType<typeof getTripAffiliates>> = []
+  let smartSuggestions: Awaited<ReturnType<typeof getSmartSuggestions>> = []
 
   try {
-    ;[trip, budget, allItems, affiliateLinks] = await Promise.all([
+    ;[trip, budget, allItems, smartSuggestions] = await Promise.all([
       getTrip(tripId),
       getBudgetSummary(tripId),
       getItinerary(tripId),
-      getTripAffiliates(tripId),
+      getSmartSuggestions(tripId),
     ])
   } catch {
     notFound()
@@ -209,10 +209,10 @@ export default async function TripOverviewPage({ params }: { params: Promise<{ t
         </div>
       </div>
 
-      {/* Affiliate booking links */}
-      {affiliateLinks.length > 0 && (
+      {/* Contextual suggestions */}
+      {smartSuggestions.length > 0 && (
         <div className="mb-6">
-          <AffiliateBar links={affiliateLinks} />
+          <AffiliateSmartSuggestions suggestions={smartSuggestions} />
         </div>
       )}
 

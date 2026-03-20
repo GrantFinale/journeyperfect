@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react"
 import type { AffiliateLink } from "@/lib/affiliates"
 import { getActivityAffiliates } from "@/lib/actions/affiliates"
+import { X } from "lucide-react"
 
 // Compact inline link (for activity cards, hotel cards)
 export function AffiliateBadge({ link }: { link: AffiliateLink }) {
@@ -32,43 +33,53 @@ export function AffiliateBadge({ link }: { link: AffiliateLink }) {
   )
 }
 
-// Full affiliate bar (for trip dashboard sidebar)
-export function AffiliateBar({ links }: { links: AffiliateLink[] }) {
-  const [dismissed, setDismissed] = useState(false)
-  if (dismissed || links.length === 0) return null
+// Smart contextual affiliate suggestions (for trip dashboard)
+interface SmartSuggestion {
+  id: string
+  icon: string
+  title: string
+  description: string
+  link: AffiliateLink
+  variant: "blue" | "green" | "amber" | "purple"
+}
+
+export function AffiliateSmartSuggestions({ suggestions }: { suggestions: SmartSuggestion[] }) {
+  const [dismissed, setDismissed] = useState<Set<string>>(new Set())
+
+  const visible = suggestions.filter(s => !dismissed.has(s.id))
+  if (visible.length === 0) return null
 
   return (
-    <div className="bg-gradient-to-r from-indigo-50 to-blue-50 rounded-xl border border-indigo-100 p-4">
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-semibold text-gray-900">
-          Book for your trip
-        </h3>
-        <button
-          onClick={() => setDismissed(true)}
-          className="text-gray-400 hover:text-gray-600 text-xs"
-        >
-          Dismiss
-        </button>
-      </div>
-      <div className="grid grid-cols-2 gap-2">
-        {links.map((link) => (
-          <a
-            key={link.provider}
-            href={link.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-2 px-3 py-2.5 bg-white rounded-lg border border-gray-100 hover:border-indigo-200 hover:shadow-sm transition-all text-sm"
-          >
-            <span className="text-lg">{link.icon}</span>
-            <div className="min-w-0">
-              <p className="font-medium text-gray-900 truncate">
-                {link.provider}
-              </p>
-              <p className="text-xs text-gray-500 truncate">{link.label}</p>
+    <div className="space-y-3">
+      {visible.map((s) => {
+        const colors = {
+          blue: "bg-blue-50 border-blue-100 text-blue-800",
+          green: "bg-emerald-50 border-emerald-100 text-emerald-800",
+          amber: "bg-amber-50 border-amber-100 text-amber-800",
+          purple: "bg-purple-50 border-purple-100 text-purple-800",
+        }
+        return (
+          <div key={s.id} className={`flex items-start gap-3 px-4 py-3 rounded-xl border ${colors[s.variant]}`}>
+            <span className="text-xl mt-0.5 flex-shrink-0">{s.icon}</span>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium">{s.title}</p>
+              <p className="text-xs opacity-75 mt-0.5">{s.description}</p>
+              <a
+                href={s.link.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 mt-2 text-xs font-semibold hover:underline"
+              >
+                {s.link.label}
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+              </a>
             </div>
-          </a>
-        ))}
-      </div>
+            <button onClick={() => setDismissed(prev => new Set(prev).add(s.id))} className="text-current opacity-40 hover:opacity-70 flex-shrink-0">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -103,18 +114,3 @@ export function ActivityBookingLinks({
   )
 }
 
-// Static activity booking links (when links are already fetched server-side)
-export function ActivityBookingLinksStatic({
-  links,
-}: {
-  links: AffiliateLink[]
-}) {
-  if (links.length === 0) return null
-  return (
-    <div className="flex flex-wrap gap-1.5 mt-2">
-      {links.map((link) => (
-        <AffiliateBadge key={link.provider} link={link} />
-      ))}
-    </div>
-  )
-}

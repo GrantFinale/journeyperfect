@@ -89,10 +89,10 @@ export function AppShell({ children, user }: AppShellProps) {
       <aside className="hidden md:flex flex-col w-60 border-r border-border bg-card shrink-0">
         {/* Logo + notifications */}
         <div className="flex items-center justify-between px-4 py-4 border-b border-border">
-          <div className="flex items-center gap-2">
+          <Link href="/dashboard" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
             <img src="/jp-icon.png" alt="JourneyPerfect" className="w-8 h-8" />
             <span className="font-semibold text-foreground">JourneyPerfect</span>
-          </div>
+          </Link>
           <NotificationBell />
         </div>
 
@@ -163,10 +163,10 @@ export function AppShell({ children, user }: AppShellProps) {
           <div className="absolute inset-0 bg-black/40" onClick={() => setSidebarOpen(false)} />
           <aside className="absolute left-0 top-0 bottom-0 w-72 bg-card border-r border-border flex flex-col z-50">
             <div className="flex items-center justify-between px-4 py-4 border-b border-border">
-              <div className="flex items-center gap-2">
+              <Link href="/dashboard" className="flex items-center gap-2 hover:opacity-80 transition-opacity" onClick={() => setSidebarOpen(false)}>
                 <img src="/jp-icon.png" alt="JourneyPerfect" className="w-8 h-8" />
                 <span className="font-semibold">JourneyPerfect</span>
-              </div>
+              </Link>
               <button onClick={() => setSidebarOpen(false)}>
                 <X className="w-5 h-5 text-muted-foreground" />
               </button>
@@ -201,10 +201,10 @@ export function AppShell({ children, user }: AppShellProps) {
           <button onClick={() => setSidebarOpen(true)} className="text-muted-foreground">
             <Menu className="w-5 h-5" />
           </button>
-          <div className="flex items-center gap-2 flex-1">
+          <Link href="/dashboard" className="flex items-center gap-2 flex-1 hover:opacity-80 transition-opacity">
             <img src="/jp-icon.png" alt="JourneyPerfect" className="w-6 h-6" />
             <span className="font-semibold text-sm">JourneyPerfect</span>
-          </div>
+          </Link>
           <NotificationBell />
         </header>
 

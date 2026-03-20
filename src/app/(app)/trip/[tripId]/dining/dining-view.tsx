@@ -4,35 +4,37 @@ import { useState } from "react"
 import { toast } from "sonner"
 import { searchPlaces, createActivity } from "@/lib/actions/activities"
 import { cn } from "@/lib/utils"
-import { Utensils, Search, Star, MapPin, Plus, Loader2, Coffee } from "lucide-react"
+import {
+  Utensils,
+  Search,
+  Star,
+  MapPin,
+  Plus,
+  Loader2,
+  ChevronDown,
+  Clock,
+  Check,
+} from "lucide-react"
 
-const MEAL_TYPES = [
-  { label: "All", value: "restaurant" },
-  { label: "Breakfast", value: "breakfast brunch cafe" },
-  { label: "Lunch", value: "lunch restaurant bistro" },
-  { label: "Dinner", value: "dinner restaurant" },
-  { label: "Coffee", value: "coffee shop cafe" },
-  { label: "Dessert", value: "dessert bakery ice cream" },
-  { label: "Bars", value: "bar pub cocktail" },
+/* ─── Quick-filter categories ──────────────────────────────────────────────── */
+const QUICK_FILTERS = [
+  { label: "Quick / Fast food", query: "fast food quick service" },
+  { label: "Sit-down", query: "casual dining sit-down restaurant" },
+  { label: "Fine Dining", query: "fine dining upscale restaurant" },
+  { label: "Cafe / Coffee", query: "cafe coffee shop" },
+  { label: "Bar / Pub", query: "bar pub cocktail lounge" },
+  { label: "Dessert / Bakery", query: "dessert bakery ice cream" },
 ]
 
-const STYLE_FILTERS = [
-  { label: "All styles", value: "" },
-  { label: "Quick", value: "fast casual quick" },
-  { label: "Sit-down", value: "casual dining" },
-  { label: "Upscale", value: "fine dining upscale" },
-  { label: "Kid-friendly", value: "family friendly kid" },
-  { label: "Outdoor seating", value: "outdoor patio" },
-  { label: "Local favorites", value: "local popular" },
-]
-
-const PRICE_RANGES: Record<string, string> = {
-  "1": "$",
-  "2": "$$",
-  "3": "$$$",
-  "4": "$$$$",
+const PRICE_LABEL: Record<string, string> = {
+  PRICE_LEVEL_FREE: "Free",
+  PRICE_LEVEL_INEXPENSIVE: "$",
+  PRICE_LEVEL_MODERATE: "$$",
+  PRICE_LEVEL_EXPENSIVE: "$$$",
+  PRICE_LEVEL_VERY_EXPENSIVE: "$$$$",
 }
 
+/* ─── Types ────────────────────────────────────────────────────────────────── */
 type Place = {
   googlePlaceId: string
   name: string
@@ -40,28 +42,56 @@ type Place = {
   lat?: number
   lng?: number
   rating?: number
+  ratingCount?: number
   imageUrl?: string | null
   types: string[]
+  primaryType?: string
+  priceLevel?: string
+  goodForChildren?: boolean
+  dineIn?: boolean
+  delivery?: boolean
+  takeout?: boolean
+  servesVegetarianFood?: boolean
+  servesBeer?: boolean
+  servesWine?: boolean
+  openNow?: boolean
+  weekdayHours?: string[]
 }
+
+type Destination = { name: string; lat?: number | null; lng?: number | null }
 
 interface Props {
   tripId: string
   destination: string
+  destinations: Destination[]
+  arrivalCities: string[]
 }
 
-export function DiningView({ tripId, destination }: Props) {
-  const [activeMeal, setActiveMeal] = useState("restaurant")
-  const [activeStyle, setActiveStyle] = useState("")
+/* ─── Component ────────────────────────────────────────────────────────────── */
+export function DiningView({ tripId, destination, destinations, arrivalCities }: Props) {
+  // Build location options: destinations first, then unique arrival cities, then "Other"
+  const locationOptions = buildLocationOptions(destinations, arrivalCities, destination)
+
+  const [selectedLocation, setSelectedLocation] = useState(locationOptions[0]?.value ?? destination)
+  const [customLocation, setCustomLocation] = useState("")
+  const [activeFilter, setActiveFilter] = useState<string | null>(null)
   const [customQuery, setCustomQuery] = useState("")
   const [results, setResults] = useState<Place[]>([])
   const [loading, setLoading] = useState(false)
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set())
+  const [expandedHours, setExpandedHours] = useState<string | null>(null)
 
-  async function handleSearch(mealType: string, style: string, query?: string) {
-    const parts = [query || mealType, style, destination].filter(Boolean)
+  const effectiveLocation = selectedLocation === "__other__" ? customLocation : selectedLocation
+  const locationBias = getLocationBias(selectedLocation, locationOptions)
+
+  async function handleSearch(filterQuery?: string, keyword?: string) {
+    const city = effectiveLocation || destination
+    const parts = [filterQuery, keyword, city].filter(Boolean)
+    if (parts.length === 0) return
+
     setLoading(true)
     try {
-      const result = await searchPlaces(parts.join(" "))
+      const result = await searchPlaces(parts.join(" "), locationBias || undefined)
       setResults(result.results)
       if (result.error && result.results.length === 0) {
         toast.error(result.error || "No results found")
@@ -73,18 +103,19 @@ export function DiningView({ tripId, destination }: Props) {
     }
   }
 
-  function handleMealSelect(meal: (typeof MEAL_TYPES)[0]) {
-    setActiveMeal(meal.value)
-    handleSearch(meal.value, activeStyle)
+  function handleFilterSelect(filter: (typeof QUICK_FILTERS)[number]) {
+    const next = activeFilter === filter.query ? null : filter.query
+    setActiveFilter(next)
+    handleSearch(next || undefined, customQuery || undefined)
   }
 
-  function handleStyleSelect(style: (typeof STYLE_FILTERS)[0]) {
-    setActiveStyle(style.value)
-    handleSearch(activeMeal, style.value)
+  function handleSearchSubmit() {
+    handleSearch(activeFilter || undefined, customQuery || undefined)
   }
 
-  async function handleSave(place: Place) {
-    if (savedIds.has(place.googlePlaceId)) return
+  async function handleSave(place: Place, category: string) {
+    const key = `${place.googlePlaceId}-${category}`
+    if (savedIds.has(key)) return
     try {
       await createActivity(tripId, {
         name: place.name,
@@ -95,18 +126,18 @@ export function DiningView({ tripId, destination }: Props) {
         rating: place.rating,
         imageUrl: place.imageUrl || undefined,
         priority: "MEDIUM",
-        durationMins: 90,
+        durationMins: category === "restaurant" ? 90 : 60,
         costPerAdult: 0,
         costPerChild: 0,
-        category: "restaurant",
+        category,
         indoorOutdoor: "BOTH",
         reservationNeeded: false,
         isFixed: false,
       })
-      setSavedIds((prev) => new Set([...prev, place.googlePlaceId]))
-      toast.success(`${place.name} added to wishlist!`)
+      setSavedIds((prev) => new Set([...prev, key]))
+      toast.success(`${place.name} added to ${category === "restaurant" ? "dining" : "activities"}!`)
     } catch {
-      toast.error("Failed to save restaurant")
+      toast.error("Failed to save")
     }
   }
 
@@ -115,63 +146,75 @@ export function DiningView({ tripId, destination }: Props) {
       {/* Header */}
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Dining</h1>
-        <p className="text-gray-500 text-sm mt-0.5">Find restaurants & cafes in {destination}</p>
+        <p className="text-gray-500 text-sm mt-0.5">
+          Find restaurants &amp; cafes for your trip
+        </p>
       </div>
 
-      {/* Custom search */}
-      <div className="flex gap-2 mb-5">
+      {/* Location selector */}
+      <div className="mb-4">
+        <label className="block text-xs font-medium text-gray-500 mb-1.5">Search in</label>
+        <div className="relative inline-block w-full sm:w-72">
+          <select
+            value={selectedLocation}
+            onChange={(e) => setSelectedLocation(e.target.value)}
+            className="w-full appearance-none pl-3 pr-8 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          >
+            {locationOptions.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+          <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+        </div>
+        {selectedLocation === "__other__" && (
+          <input
+            type="text"
+            placeholder="Enter a city or area..."
+            value={customLocation}
+            onChange={(e) => setCustomLocation(e.target.value)}
+            className="mt-2 w-full sm:w-72 pl-3 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          />
+        )}
+      </div>
+
+      {/* Search field */}
+      <div className="flex gap-2 mb-4">
         <div className="flex-1 relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
           <input
             type="text"
-            placeholder={`Search restaurants in ${destination}...`}
+            placeholder={`Search "sushi", "Italian", "BBQ"...`}
             value={customQuery}
             onChange={(e) => setCustomQuery(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleSearch(activeMeal, activeStyle, customQuery)}
+            onKeyDown={(e) => e.key === "Enter" && handleSearchSubmit()}
             className="w-full pl-9 pr-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
           />
         </div>
         <button
-          onClick={() => handleSearch(activeMeal, activeStyle, customQuery)}
+          onClick={handleSearchSubmit}
           disabled={loading}
-          className="px-4 py-3 bg-gray-900 text-white text-sm font-medium rounded-xl hover:bg-gray-800 disabled:opacity-50 transition-colors"
+          className="px-5 py-3 bg-gray-900 text-white text-sm font-medium rounded-xl hover:bg-gray-800 disabled:opacity-50 transition-colors"
         >
           Search
         </button>
       </div>
 
-      {/* Meal type pills */}
-      <div className="flex gap-2 flex-wrap mb-3">
-        {MEAL_TYPES.map((meal) => (
+      {/* Quick filter pills */}
+      <div className="flex gap-2 flex-wrap mb-6">
+        {QUICK_FILTERS.map((filter) => (
           <button
-            key={meal.value}
-            onClick={() => handleMealSelect(meal)}
+            key={filter.query}
+            onClick={() => handleFilterSelect(filter)}
             className={cn(
               "px-3 py-1.5 text-xs font-medium rounded-full border transition-colors",
-              activeMeal === meal.value
+              activeFilter === filter.query
                 ? "bg-orange-500 text-white border-orange-500"
                 : "bg-white text-gray-600 border-gray-200 hover:border-orange-300 hover:text-orange-600"
             )}
           >
-            {meal.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Style filter */}
-      <div className="flex gap-2 flex-wrap mb-6">
-        {STYLE_FILTERS.map((style) => (
-          <button
-            key={style.value}
-            onClick={() => handleStyleSelect(style)}
-            className={cn(
-              "px-3 py-1.5 text-xs font-medium rounded-full border transition-colors",
-              activeStyle === style.value
-                ? "bg-gray-900 text-white border-gray-900"
-                : "bg-white text-gray-500 border-gray-200 hover:border-gray-400 hover:text-gray-700"
-            )}
-          >
-            {style.label}
+            {filter.label}
           </button>
         ))}
       </div>
@@ -187,8 +230,12 @@ export function DiningView({ tripId, destination }: Props) {
       {!loading && results.length === 0 && (
         <div className="text-center py-20">
           <Utensils className="w-12 h-12 text-gray-200 mx-auto mb-3" />
-          <p className="text-gray-500 text-sm">Select a meal type to discover restaurants</p>
-          <p className="text-gray-400 text-xs mt-1">Results are powered by Google Places</p>
+          <p className="text-gray-500 text-sm">
+            Pick a category or type a keyword to discover restaurants
+          </p>
+          <p className="text-gray-400 text-xs mt-1">
+            Results powered by Google Places
+          </p>
         </div>
       )}
 
@@ -200,37 +247,91 @@ export function DiningView({ tripId, destination }: Props) {
               key={place.googlePlaceId}
               className="bg-white border border-gray-100 rounded-2xl overflow-hidden hover:border-gray-200 hover:shadow-sm transition-all"
             >
+              {/* Image */}
               {place.imageUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={place.imageUrl}
-                  alt=""
-                  className="w-full h-36 object-cover"
-                />
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img src={place.imageUrl} alt="" className="w-full h-40 object-cover" />
               ) : (
-                <div className="w-full h-36 bg-gradient-to-br from-orange-50 to-amber-50 flex items-center justify-center">
+                <div className="w-full h-40 bg-gradient-to-br from-orange-50 to-amber-50 flex items-center justify-center">
                   <Utensils className="w-8 h-8 text-orange-200" />
                 </div>
               )}
-              <div className="p-4">
-                <h3 className="font-semibold text-gray-900 text-sm leading-tight">{place.name}</h3>
-                <div className="flex items-center gap-2 mt-1 text-xs text-gray-500 flex-wrap">
-                  <span className="flex items-center gap-1 truncate">
-                    <MapPin className="w-3 h-3 shrink-0" />
-                    <span className="truncate">{place.address}</span>
-                  </span>
-                  {place.rating && (
-                    <span className="flex items-center gap-0.5 text-yellow-600 shrink-0">
-                      <Star className="w-3 h-3 fill-current" />
-                      {place.rating}
+
+              <div className="p-4 space-y-2.5">
+                {/* Name + rating row */}
+                <div className="flex items-start justify-between gap-2">
+                  <h3 className="font-semibold text-gray-900 text-sm leading-tight">
+                    {place.name}
+                  </h3>
+                  {place.rating != null && (
+                    <span className="flex items-center gap-0.5 text-yellow-600 text-xs shrink-0 font-medium">
+                      <Star className="w-3.5 h-3.5 fill-current" />
+                      {place.rating.toFixed(1)}
+                      {place.ratingCount != null && (
+                        <span className="text-gray-400 font-normal ml-0.5">
+                          ({place.ratingCount.toLocaleString()})
+                        </span>
+                      )}
                     </span>
                   )}
                 </div>
+
+                {/* Address */}
+                <div className="flex items-start gap-1 text-xs text-gray-500">
+                  <MapPin className="w-3 h-3 shrink-0 mt-0.5" />
+                  <span className="line-clamp-2">{place.address}</span>
+                </div>
+
+                {/* Price + open status */}
+                <div className="flex items-center gap-2 text-xs">
+                  {place.priceLevel && PRICE_LABEL[place.priceLevel] && (
+                    <span className="font-semibold text-gray-700">
+                      {PRICE_LABEL[place.priceLevel]}
+                    </span>
+                  )}
+                  {place.openNow != null && (
+                    <span
+                      className={cn(
+                        "font-medium",
+                        place.openNow ? "text-green-600" : "text-red-500"
+                      )}
+                    >
+                      {place.openNow ? "Open now" : "Closed"}
+                    </span>
+                  )}
+                </div>
+
+                {/* Kids-friendly banner */}
+                {place.goodForChildren && (
+                  <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-green-50 border border-green-100 rounded-lg text-xs font-medium text-green-700">
+                    <span>Kids friendly</span>
+                  </div>
+                )}
+
+                {/* Attribute tags */}
+                <div className="flex gap-1.5 flex-wrap">
+                  {place.servesWine && <Tag text="Wine" />}
+                  {place.servesBeer && <Tag text="Beer" />}
+                  {place.servesVegetarianFood && <Tag text="Vegetarian" />}
+                  {place.dineIn && <Tag text="Dine-in" />}
+                  {place.delivery && <Tag text="Delivery" />}
+                  {place.takeout && <Tag text="Takeout" />}
+                </div>
+
+                {/* Type tags */}
                 {place.types.length > 0 && (
-                  <div className="flex gap-1 mt-1.5 flex-wrap">
+                  <div className="flex gap-1 flex-wrap">
                     {place.types
-                      .filter((t) => !["point_of_interest", "establishment"].includes(t))
-                      .slice(0, 2)
+                      .filter(
+                        (t) =>
+                          ![
+                            "point_of_interest",
+                            "establishment",
+                            "food",
+                            "store",
+                          ].includes(t)
+                      )
+                      .slice(0, 3)
                       .map((type) => (
                         <span
                           key={type}
@@ -241,28 +342,45 @@ export function DiningView({ tripId, destination }: Props) {
                       ))}
                   </div>
                 )}
-                <button
-                  onClick={() => handleSave(place)}
-                  disabled={savedIds.has(place.googlePlaceId)}
-                  className={cn(
-                    "mt-3 w-full flex items-center justify-center gap-1.5 py-2 text-xs font-medium rounded-xl transition-colors",
-                    savedIds.has(place.googlePlaceId)
-                      ? "bg-green-50 text-green-700 cursor-default"
-                      : "bg-orange-500 text-white hover:bg-orange-600"
-                  )}
-                >
-                  {savedIds.has(place.googlePlaceId) ? (
-                    <>
-                      <Star className="w-3.5 h-3.5 fill-current" />
-                      Saved
-                    </>
-                  ) : (
-                    <>
-                      <Plus className="w-3.5 h-3.5" />
-                      Save to wishlist
-                    </>
-                  )}
-                </button>
+
+                {/* Hours (expandable) */}
+                {place.weekdayHours && place.weekdayHours.length > 0 && (
+                  <div>
+                    <button
+                      onClick={() =>
+                        setExpandedHours(
+                          expandedHours === place.googlePlaceId ? null : place.googlePlaceId
+                        )
+                      }
+                      className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700"
+                    >
+                      <Clock className="w-3 h-3" />
+                      {expandedHours === place.googlePlaceId ? "Hide hours" : "Show hours"}
+                    </button>
+                    {expandedHours === place.googlePlaceId && (
+                      <div className="mt-1.5 pl-4 space-y-0.5 text-[11px] text-gray-500">
+                        {place.weekdayHours.map((line, i) => (
+                          <div key={i}>{line}</div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Action buttons */}
+                <div className="flex gap-2 pt-1">
+                  <SaveButton
+                    label="Add to dining"
+                    saved={savedIds.has(`${place.googlePlaceId}-restaurant`)}
+                    onClick={() => handleSave(place, "restaurant")}
+                    primary
+                  />
+                  <SaveButton
+                    label="Add to activities"
+                    saved={savedIds.has(`${place.googlePlaceId}-activity`)}
+                    onClick={() => handleSave(place, "activity")}
+                  />
+                </div>
               </div>
             </div>
           ))}
@@ -270,4 +388,102 @@ export function DiningView({ tripId, destination }: Props) {
       )}
     </div>
   )
+}
+
+/* ─── Helper components ────────────────────────────────────────────────────── */
+
+function Tag({ text }: { text: string }) {
+  return (
+    <span className="px-2 py-0.5 text-[10px] font-medium bg-gray-100 text-gray-600 rounded-full">
+      {text}
+    </span>
+  )
+}
+
+function SaveButton({
+  label,
+  saved,
+  onClick,
+  primary,
+}: {
+  label: string
+  saved: boolean
+  onClick: () => void
+  primary?: boolean
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={saved}
+      className={cn(
+        "flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium rounded-xl transition-colors",
+        saved
+          ? "bg-green-50 text-green-700 cursor-default"
+          : primary
+            ? "bg-orange-500 text-white hover:bg-orange-600"
+            : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+      )}
+    >
+      {saved ? (
+        <>
+          <Check className="w-3.5 h-3.5" />
+          Saved
+        </>
+      ) : (
+        <>
+          <Plus className="w-3.5 h-3.5" />
+          {label}
+        </>
+      )}
+    </button>
+  )
+}
+
+/* ─── Helpers ──────────────────────────────────────────────────────────────── */
+
+type LocationOption = { label: string; value: string; lat?: number | null; lng?: number | null }
+
+function buildLocationOptions(
+  destinations: Destination[],
+  arrivalCities: string[],
+  fallbackDestination: string
+): LocationOption[] {
+  const seen = new Set<string>()
+  const options: LocationOption[] = []
+
+  // Add destinations
+  for (const d of destinations) {
+    const key = d.name.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    options.push({ label: d.name, value: d.name, lat: d.lat, lng: d.lng })
+  }
+
+  // Add arrival cities not already present
+  for (const city of arrivalCities) {
+    const key = city.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    options.push({ label: city, value: city })
+  }
+
+  // If no options yet, use the fallback destination string
+  if (options.length === 0 && fallbackDestination) {
+    options.push({ label: fallbackDestination, value: fallbackDestination })
+  }
+
+  options.push({ label: "Other location...", value: "__other__" })
+
+  return options
+}
+
+function getLocationBias(
+  selectedLocation: string,
+  options: LocationOption[]
+): string | undefined {
+  const opt = options.find((o) => o.value === selectedLocation)
+  if (opt?.lat != null && opt?.lng != null) {
+    return `${opt.lat},${opt.lng}`
+  }
+  return undefined
 }

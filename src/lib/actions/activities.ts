@@ -78,54 +78,81 @@ export async function getActivities(tripId: string) {
 }
 
 // Google Places search — runs server-side to keep API key secret
+// Uses the Places API (New) endpoint: places:searchText
 export async function searchPlaces(query: string, locationBias?: string) {
   const session = await auth()
   if (!session?.user?.id) throw new Error("Unauthorized")
 
-  // Prefer server-only env var; fall back to NEXT_PUBLIC_ for local dev
   const apiKey = process.env.GOOGLE_PLACES_KEY || process.env.NEXT_PUBLIC_GOOGLE_PLACES_KEY
   if (!apiKey || apiKey === "build-placeholder") {
     return { results: [], error: "Places API not configured" }
   }
 
   try {
-    const params = new URLSearchParams({
-      query,
-      key: apiKey,
-      ...(locationBias && { location: locationBias }),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const body: any = {
+      textQuery: query,
+      maxResultCount: 10,
+    }
+
+    // Add location bias if provided (lat,lng string)
+    if (locationBias && locationBias.includes(",")) {
+      const [lat, lng] = locationBias.split(",").map(Number)
+      if (!isNaN(lat) && !isNaN(lng)) {
+        body.locationBias = {
+          circle: { center: { latitude: lat, longitude: lng }, radius: 50000 }
+        }
+      }
+    }
+
+    const res = await fetch("https://places.googleapis.com/v1/places:searchText", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": apiKey,
+        "X-Goog-FieldMask": "places.id,places.displayName,places.formattedAddress,places.location,places.rating,places.userRatingCount,places.types,places.photos,places.priceLevel,places.currentOpeningHours,places.servesVegetarianFood,places.goodForChildren,places.servesBeer,places.servesWine,places.dineIn,places.delivery,places.takeout,places.primaryType",
+      },
+      body: JSON.stringify(body),
     })
 
-    const res = await fetch(
-      `https://maps.googleapis.com/maps/api/place/textsearch/json?${params}`,
-      { next: { revalidate: 60 } }
-    )
-
     if (!res.ok) {
-      return { results: [], error: "Places API request failed" }
+      const errText = await res.text().catch(() => "")
+      console.error("[searchPlaces] API error:", res.status, errText)
+      return { results: [], error: "Places search failed" }
     }
 
     const data = await res.json()
 
-    if (data.status === "REQUEST_DENIED") {
-      return { results: [], error: "Places API key invalid or restricted" }
-    }
-
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const results = (data.results || []).slice(0, 10).map((place: any) => ({
-      googlePlaceId: place.place_id,
-      name: place.name,
-      address: place.formatted_address,
-      lat: place.geometry?.location?.lat,
-      lng: place.geometry?.location?.lng,
+    const results = (data.places || []).map((place: any) => ({
+      googlePlaceId: place.id,
+      name: place.displayName?.text || "",
+      address: place.formattedAddress || "",
+      lat: place.location?.latitude,
+      lng: place.location?.longitude,
       rating: place.rating,
-      imageUrl: place.photos?.[0]?.photo_reference
-        ? `https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photo_reference=${place.photos[0].photo_reference}&key=${apiKey}`
-        : null,
+      ratingCount: place.userRatingCount,
       types: place.types || [],
+      primaryType: place.primaryType,
+      priceLevel: place.priceLevel,
+      imageUrl: place.photos?.[0]?.name
+        ? `https://places.googleapis.com/v1/${place.photos[0].name}/media?maxWidthPx=400&key=${apiKey}`
+        : null,
+      // Dining-specific attributes
+      goodForChildren: place.goodForChildren,
+      dineIn: place.dineIn,
+      delivery: place.delivery,
+      takeout: place.takeout,
+      servesVegetarianFood: place.servesVegetarianFood,
+      servesBeer: place.servesBeer,
+      servesWine: place.servesWine,
+      openNow: place.currentOpeningHours?.openNow,
+      weekdayHours: place.currentOpeningHours?.weekdayDescriptions,
     }))
 
     return { results, error: null }
-  } catch {
+  } catch (err) {
+    console.error("[searchPlaces] Error:", err)
     return { results: [], error: "Failed to search places" }
   }
 }

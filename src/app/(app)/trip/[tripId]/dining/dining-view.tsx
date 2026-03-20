@@ -1,8 +1,9 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useRef } from "react"
 import { toast } from "sonner"
 import { searchPlaces, createActivity } from "@/lib/actions/activities"
+import { getPlaceDetails } from "@/lib/actions/places-detail"
 import { getAIDiningRecommendations, type DiningRecommendation } from "@/lib/actions/dining-ai"
 import { cn } from "@/lib/utils"
 import {
@@ -18,6 +19,7 @@ import {
   Sparkles,
   Leaf,
   Baby,
+  X,
 } from "lucide-react"
 
 /* ─── Quick-filter categories ──────────────────────────────────────────────── */
@@ -77,10 +79,12 @@ interface Props {
   destinations: Destination[]
   arrivalCities: string[]
   isPaid?: boolean
+  travelerTags?: string[]
+  dietaryRestrictions?: string[]
 }
 
 /* ─── Component ────────────────────────────────────────────────────────────── */
-export function DiningView({ tripId, destination, destinations, arrivalCities, isPaid }: Props) {
+export function DiningView({ tripId, destination, destinations, arrivalCities, isPaid, travelerTags = [], dietaryRestrictions = [] }: Props) {
   // Build location options: destinations first, then unique arrival cities, then "Other"
   const locationOptions = buildLocationOptions(destinations, arrivalCities, destination)
 
@@ -91,6 +95,7 @@ export function DiningView({ tripId, destination, destinations, arrivalCities, i
   const [results, setResults] = useState<Place[]>([])
   const [loading, setLoading] = useState(false)
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set())
+  const [savingIds, setSavingIds] = useState<Set<string>>(new Set())
   const [expandedHours, setExpandedHours] = useState<string | null>(null)
 
   // AI recommendations state
@@ -98,8 +103,51 @@ export function DiningView({ tripId, destination, destinations, arrivalCities, i
   const [aiLoading, setAiLoading] = useState(false)
   const [aiLoaded, setAiLoaded] = useState(false)
 
+  // Auto-suggest state
+  const [suggestions, setSuggestions] = useState<Place[]>([])
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false)
+  const [suggestionsDismissed, setSuggestionsDismissed] = useState(false)
+  const suggestionsLoaded = useRef(false)
+
   const effectiveLocation = selectedLocation === "__other__" ? customLocation : selectedLocation
   const locationBias = getLocationBias(selectedLocation, locationOptions)
+
+  // Auto-suggest on mount
+  useEffect(() => {
+    if (suggestionsLoaded.current) return
+    suggestionsLoaded.current = true
+
+    const city = locationOptions[0]?.value || destination
+    if (!city) return
+
+    // Build a search query based on dietary restrictions
+    let queryPrefix = "best restaurants"
+    if (dietaryRestrictions.length > 0) {
+      // Use the first couple dietary restrictions in the query
+      const dietaryTerms = dietaryRestrictions.slice(0, 2).join(" ")
+      queryPrefix = `${dietaryTerms} restaurants`
+    }
+    const query = `${queryPrefix} in ${city}`
+
+    setSuggestionsLoading(true)
+    const bias = locationOptions[0]?.lat != null && locationOptions[0]?.lng != null
+      ? `${locationOptions[0].lat},${locationOptions[0].lng}`
+      : undefined
+
+    searchPlaces(query, bias)
+      .then((result) => {
+        if (result.results.length > 0) {
+          setSuggestions(result.results)
+        }
+      })
+      .catch(() => {
+        // Silently fail — suggestions are optional
+      })
+      .finally(() => {
+        setSuggestionsLoading(false)
+      })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   async function handleSearch(filterQuery?: string, keyword?: string) {
     const city = effectiveLocation || destination
@@ -157,8 +205,13 @@ export function DiningView({ tripId, destination, destinations, arrivalCities, i
 
   async function handleSave(place: Place, category: string) {
     const key = `${place.googlePlaceId}-${category}`
-    if (savedIds.has(key)) return
+    if (savedIds.has(key) || savingIds.has(key)) return
+
+    setSavingIds((prev) => new Set([...prev, key]))
     try {
+      // Fetch additional details from Google Places
+      const details = await getPlaceDetails(place.googlePlaceId)
+
       await createActivity(tripId, {
         name: place.name,
         address: place.address,
@@ -175,11 +228,20 @@ export function DiningView({ tripId, destination, destinations, arrivalCities, i
         indoorOutdoor: "BOTH",
         reservationNeeded: false,
         isFixed: false,
+        // Include details from Places Detail API
+        websiteUrl: details?.website || undefined,
+        hoursJson: details?.hours ? JSON.stringify(details.hours) : undefined,
       })
       setSavedIds((prev) => new Set([...prev, key]))
       toast.success(`${place.name} added to ${category === "restaurant" ? "dining" : "activities"}!`)
     } catch {
       toast.error("Failed to save")
+    } finally {
+      setSavingIds((prev) => {
+        const next = new Set(prev)
+        next.delete(key)
+        return next
+      })
     }
   }
 
@@ -208,6 +270,111 @@ export function DiningView({ tripId, destination, destinations, arrivalCities, i
           </button>
         )}
       </div>
+
+      {/* Auto-suggested restaurants */}
+      {!suggestionsDismissed && (suggestionsLoading || suggestions.length > 0) && (
+        <div className="mb-8">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-orange-500" />
+              <h2 className="text-sm font-semibold text-orange-900">Suggested restaurants</h2>
+              <span className="text-xs text-orange-500">
+                in {locationOptions[0]?.value || destination}
+              </span>
+            </div>
+            <button
+              onClick={() => setSuggestionsDismissed(true)}
+              className="text-xs text-gray-400 hover:text-gray-600 transition-colors flex items-center gap-1"
+            >
+              <X className="w-3 h-3" />
+              Dismiss
+            </button>
+          </div>
+          {suggestionsLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="w-6 h-6 text-orange-400 animate-spin" />
+            </div>
+          ) : (
+            <div className="grid sm:grid-cols-2 gap-4">
+              {suggestions.map((place) => (
+                <div
+                  key={place.googlePlaceId}
+                  className="bg-gradient-to-br from-orange-50 to-amber-50 border border-orange-100 rounded-2xl overflow-hidden hover:border-orange-200 hover:shadow-sm transition-all"
+                >
+                  {/* Image */}
+                  {place.imageUrl ? (
+                    /* eslint-disable-next-line @next/next/no-img-element */
+                    <img src={place.imageUrl} alt="" className="w-full h-36 object-cover" />
+                  ) : (
+                    <div className="w-full h-36 bg-gradient-to-br from-orange-100 to-amber-100 flex items-center justify-center">
+                      <Utensils className="w-8 h-8 text-orange-200" />
+                    </div>
+                  )}
+
+                  <div className="p-4 space-y-2.5">
+                    {/* Name + rating */}
+                    <div className="flex items-start justify-between gap-2">
+                      <h3 className="font-semibold text-gray-900 text-sm leading-tight">
+                        {place.name}
+                      </h3>
+                      {place.rating != null && (
+                        <span className="flex items-center gap-0.5 text-yellow-600 text-xs shrink-0 font-medium">
+                          <Star className="w-3.5 h-3.5 fill-current" />
+                          {place.rating.toFixed(1)}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Address */}
+                    <div className="flex items-start gap-1 text-xs text-gray-500">
+                      <MapPin className="w-3 h-3 shrink-0 mt-0.5" />
+                      <span className="line-clamp-1">{place.address}</span>
+                    </div>
+
+                    {/* Price + open status */}
+                    <div className="flex items-center gap-2 text-xs">
+                      {place.priceLevel && PRICE_LABEL[place.priceLevel] && (
+                        <span className="font-semibold text-gray-700">
+                          {PRICE_LABEL[place.priceLevel]}
+                        </span>
+                      )}
+                      {place.openNow != null && (
+                        <span
+                          className={cn(
+                            "font-medium",
+                            place.openNow ? "text-green-600" : "text-red-500"
+                          )}
+                        >
+                          {place.openNow ? "Open now" : "Closed"}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Attribute tags */}
+                    <div className="flex gap-1.5 flex-wrap">
+                      {place.servesVegetarianFood && <Tag text="Vegetarian" />}
+                      {place.goodForChildren && <Tag text="Kids friendly" />}
+                      {place.dineIn && <Tag text="Dine-in" />}
+                      {place.delivery && <Tag text="Delivery" />}
+                    </div>
+
+                    {/* Save buttons */}
+                    <div className="flex gap-2 pt-1">
+                      <SaveButton
+                        label="Add to dining"
+                        saved={savedIds.has(`${place.googlePlaceId}-restaurant`)}
+                        saving={savingIds.has(`${place.googlePlaceId}-restaurant`)}
+                        onClick={() => handleSave(place, "restaurant")}
+                        primary
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* AI Recommendations section */}
       {aiLoaded && aiRecommendations.length > 0 && (
@@ -349,7 +516,7 @@ export function DiningView({ tripId, destination, destinations, arrivalCities, i
       )}
 
       {/* Empty state */}
-      {!loading && results.length === 0 && !aiLoaded && (
+      {!loading && results.length === 0 && !aiLoaded && suggestions.length === 0 && !suggestionsLoading && (
         <div className="text-center py-20">
           <Utensils className="w-12 h-12 text-gray-200 mx-auto mb-3" />
           <p className="text-gray-500 text-sm">
@@ -494,12 +661,14 @@ export function DiningView({ tripId, destination, destinations, arrivalCities, i
                   <SaveButton
                     label="Add to dining"
                     saved={savedIds.has(`${place.googlePlaceId}-restaurant`)}
+                    saving={savingIds.has(`${place.googlePlaceId}-restaurant`)}
                     onClick={() => handleSave(place, "restaurant")}
                     primary
                   />
                   <SaveButton
                     label="Add to activities"
                     saved={savedIds.has(`${place.googlePlaceId}-activity`)}
+                    saving={savingIds.has(`${place.googlePlaceId}-activity`)}
                     onClick={() => handleSave(place, "activity")}
                   />
                 </div>
@@ -525,31 +694,40 @@ function Tag({ text }: { text: string }) {
 function SaveButton({
   label,
   saved,
+  saving,
   onClick,
   primary,
 }: {
   label: string
   saved: boolean
+  saving?: boolean
   onClick: () => void
   primary?: boolean
 }) {
   return (
     <button
       onClick={onClick}
-      disabled={saved}
+      disabled={saved || saving}
       className={cn(
         "flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium rounded-xl transition-colors",
         saved
           ? "bg-green-50 text-green-700 cursor-default"
-          : primary
-            ? "bg-orange-500 text-white hover:bg-orange-600"
-            : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+          : saving
+            ? "bg-orange-100 text-orange-500 cursor-wait"
+            : primary
+              ? "bg-orange-500 text-white hover:bg-orange-600"
+              : "bg-gray-100 text-gray-700 hover:bg-gray-200"
       )}
     >
       {saved ? (
         <>
           <Check className="w-3.5 h-3.5" />
           Saved
+        </>
+      ) : saving ? (
+        <>
+          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+          Adding...
         </>
       ) : (
         <>

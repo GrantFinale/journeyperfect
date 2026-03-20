@@ -33,6 +33,22 @@ export default async function ActivitiesPage({ params }: { params: Promise<{ tri
   )
   const arrivalCities = filterLayoverCities(trip.flights || [], allArrivalCities)
 
+  // Extract traveler tags and dietary restrictions for auto-suggestions
+  const travelerTags: string[] = []
+  const dietaryRestrictions: string[] = []
+  for (const tt of trip.travelers || []) {
+    const traveler = tt.traveler
+    if (traveler.tags) {
+      travelerTags.push(...traveler.tags)
+    }
+    if (traveler.preferences && typeof traveler.preferences === "object") {
+      const prefs = traveler.preferences as Record<string, unknown>
+      if (Array.isArray(prefs.dietaryRestrictions)) {
+        dietaryRestrictions.push(...(prefs.dietaryRestrictions as string[]))
+      }
+    }
+  }
+
   return (
     <ActivitiesView
       tripId={tripId}
@@ -40,6 +56,8 @@ export default async function ActivitiesPage({ params }: { params: Promise<{ tri
       destination={trip.destination}
       destinations={destinations}
       arrivalCities={arrivalCities}
+      travelerTags={[...new Set(travelerTags)]}
+      dietaryRestrictions={[...new Set(dietaryRestrictions)]}
     />
   )
 }

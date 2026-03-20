@@ -20,6 +20,8 @@ import {
   Users,
   Gift,
   Package,
+  BarChart3,
+  Navigation,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { signOut } from "next-auth/react"
@@ -41,12 +43,14 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/settings", label: "Settings", icon: Settings },
   { href: "/settings/travelers", label: "Traveler Profiles", icon: Users },
+  { href: "/settings/stats", label: "Travel Stats", icon: BarChart3 },
   { href: "/settings/referrals", label: "Refer a Friend", icon: Gift },
 ]
 
 const TRIP_NAV_ITEMS = (tripId: string): NavItem[] => [
   { href: `/trip/${tripId}`, label: "Overview", icon: Map, exact: true },
   { href: `/trip/${tripId}/itinerary`, label: "Itinerary", icon: CalendarDays },
+  { href: `/trip/${tripId}/map`, label: "Map", icon: Navigation },
   { href: `/trip/${tripId}/activities`, label: "Activities", icon: Star },
   { href: `/trip/${tripId}/discover`, label: "Discover", icon: Compass },
   { href: `/trip/${tripId}/dining`, label: "Dining", icon: Utensils },

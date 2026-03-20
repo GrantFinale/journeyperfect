@@ -1,8 +1,9 @@
 "use client"
 
-import { useState, useRef } from "react"
+import { useState, useRef, useEffect } from "react"
 import { toast } from "sonner"
 import { createActivity, deleteActivity, updateActivity, searchPlaces } from "@/lib/actions/activities"
+import { getPlaceDetails } from "@/lib/actions/places-detail"
 import { getActivityNotes, addActivityNote, deleteActivityNote, addActivityExpense } from "@/lib/actions/activity-notes"
 import { priorityColor, priorityLabel, formatCurrency } from "@/lib/utils"
 import { cn } from "@/lib/utils"
@@ -24,6 +25,9 @@ import {
   MessageSquare,
   Send,
   Receipt,
+  Globe,
+  Phone,
+  Sparkles,
 } from "lucide-react"
 import { ActivityBookingLinks, ViatorDestinationBanner } from "@/components/affiliate-links"
 
@@ -42,6 +46,8 @@ type Activity = {
   imageUrl: string | null
   reservationNeeded: boolean
   bookingLink: string | null
+  websiteUrl?: string | null
+  hoursJson?: string | null
   notes: string | null
   indoorOutdoor: string
   isFixed: boolean
@@ -101,6 +107,8 @@ interface Props {
   destination: string
   destinations: Destination[]
   arrivalCities: string[]
+  travelerTags?: string[]
+  dietaryRestrictions?: string[]
 }
 
 /* ─── Helpers ──────────────────────────────────────────────────────────────── */
@@ -150,7 +158,7 @@ function getLocationBias(
 
 /* ─── Component ────────────────────────────────────────────────────────────── */
 
-export function ActivitiesView({ tripId, initialActivities, destination, destinations, arrivalCities }: Props) {
+export function ActivitiesView({ tripId, initialActivities, destination, destinations, arrivalCities, travelerTags = [], dietaryRestrictions = [] }: Props) {
   const locationOptions = buildLocationOptions(destinations, arrivalCities, destination)
 
   const [activities, setActivities] = useState<Activity[]>(initialActivities)
@@ -161,6 +169,7 @@ export function ActivitiesView({ tripId, initialActivities, destination, destina
   const [searchResults, setSearchResults] = useState<Place[]>([])
   const [loading, setLoading] = useState(false)
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set())
+  const [savingIds, setSavingIds] = useState<Set<string>>(new Set())
   const [showAddForm, setShowAddForm] = useState(false)
   const [filterPriority, setFilterPriority] = useState<string>("ALL")
   const [filterStatus, setFilterStatus] = useState<string>("ALL")
@@ -177,6 +186,15 @@ export function ActivitiesView({ tripId, initialActivities, destination, destina
     isFixed: false,
     fixedDateTime: "",
   })
+
+  // Auto-suggest state
+  const [suggestions, setSuggestions] = useState<Place[]>([])
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false)
+  const [suggestionsDismissed, setSuggestionsDismissed] = useState(false)
+  const suggestionsLoaded = useRef(false)
+
+  // Hours expand state for activities with hoursJson
+  const [expandedActivityHours, setExpandedActivityHours] = useState<string | null>(null)
 
   // Notes state
   const [expandedNotes, setExpandedNotes] = useState<Set<string>>(new Set())
@@ -202,6 +220,38 @@ export function ActivitiesView({ tripId, initialActivities, destination, destina
     if (filterStatus !== "ALL" && a.status !== filterStatus) return false
     return true
   })
+
+  // Auto-suggest on mount
+  useEffect(() => {
+    if (suggestionsLoaded.current) return
+    suggestionsLoaded.current = true
+
+    const city = locationOptions[0]?.value || destination
+    if (!city) return
+
+    const hasChildren = travelerTags.some((t) => t === "child" || t === "toddler" || t === "infant")
+    const queryPrefix = hasChildren ? "family friendly activities" : "top things to do"
+    const query = `${queryPrefix} in ${city}`
+
+    setSuggestionsLoading(true)
+    const bias = locationOptions[0]?.lat != null && locationOptions[0]?.lng != null
+      ? `${locationOptions[0].lat},${locationOptions[0].lng}`
+      : undefined
+
+    searchPlaces(query, bias)
+      .then((result) => {
+        if (result.results.length > 0) {
+          setSuggestions(result.results)
+        }
+      })
+      .catch(() => {
+        // Silently fail — suggestions are optional
+      })
+      .finally(() => {
+        setSuggestionsLoading(false)
+      })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   async function handleSearch(filterQuery?: string, keyword?: string) {
     const city = effectiveLocation || destination
@@ -234,8 +284,13 @@ export function ActivitiesView({ tripId, initialActivities, destination, destina
 
   async function handleSaveFromSearch(place: Place) {
     const key = place.googlePlaceId
-    if (savedIds.has(key)) return
+    if (savedIds.has(key) || savingIds.has(key)) return
+
+    setSavingIds((prev) => new Set([...prev, key]))
     try {
+      // Fetch additional details from Google Places
+      const details = await getPlaceDetails(place.googlePlaceId)
+
       const activity = await createActivity(tripId, {
         name: place.name,
         address: place.address,
@@ -252,12 +307,21 @@ export function ActivitiesView({ tripId, initialActivities, destination, destina
         indoorOutdoor: "BOTH",
         reservationNeeded: false,
         isFixed: false,
+        // Include details from Places Detail API
+        websiteUrl: details?.website || undefined,
+        hoursJson: details?.hours ? JSON.stringify(details.hours) : undefined,
       })
       setActivities((prev) => [activity as unknown as Activity, ...prev])
       setSavedIds((prev) => new Set([...prev, key]))
       toast.success(`${place.name} added to activities`)
     } catch {
       toast.error("Failed to save activity")
+    } finally {
+      setSavingIds((prev) => {
+        const next = new Set(prev)
+        next.delete(key)
+        return next
+      })
     }
   }
 
@@ -430,6 +494,17 @@ export function ActivitiesView({ tripId, initialActivities, destination, destina
     }
   }
 
+  function parseHoursJson(hoursJson: string | null | undefined): string[] | null {
+    if (!hoursJson) return null
+    try {
+      const parsed = JSON.parse(hoursJson)
+      if (Array.isArray(parsed)) return parsed
+      return null
+    } catch {
+      return null
+    }
+  }
+
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8">
       {/* Header */}
@@ -449,6 +524,111 @@ export function ActivitiesView({ tripId, initialActivities, destination, destina
           <span className="sm:hidden">Add</span>
         </button>
       </div>
+
+      {/* Auto-suggested activities */}
+      {!suggestionsDismissed && (suggestionsLoading || suggestions.length > 0) && (
+        <div className="mb-8">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-indigo-600" />
+              <h2 className="text-sm font-semibold text-indigo-900">Suggested for your trip</h2>
+              <span className="text-xs text-indigo-500">
+                in {locationOptions[0]?.value || destination}
+              </span>
+            </div>
+            <button
+              onClick={() => setSuggestionsDismissed(true)}
+              className="text-xs text-gray-400 hover:text-gray-600 transition-colors flex items-center gap-1"
+            >
+              <X className="w-3 h-3" />
+              Dismiss
+            </button>
+          </div>
+          {suggestionsLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="w-6 h-6 text-indigo-400 animate-spin" />
+            </div>
+          ) : (
+            <div className="grid sm:grid-cols-2 gap-4">
+              {suggestions.map((place) => (
+                <div
+                  key={place.googlePlaceId}
+                  className="bg-gradient-to-br from-indigo-50 to-purple-50 border border-indigo-100 rounded-2xl overflow-hidden hover:border-indigo-200 hover:shadow-sm transition-all"
+                >
+                  {/* Image */}
+                  {place.imageUrl ? (
+                    /* eslint-disable-next-line @next/next/no-img-element */
+                    <img src={place.imageUrl} alt="" className="w-full h-36 object-cover" />
+                  ) : (
+                    <div className="w-full h-36 bg-gradient-to-br from-indigo-100 to-purple-100 flex items-center justify-center">
+                      <Star className="w-8 h-8 text-indigo-200" />
+                    </div>
+                  )}
+
+                  <div className="p-4 space-y-2.5">
+                    {/* Name + rating */}
+                    <div className="flex items-start justify-between gap-2">
+                      <h3 className="font-semibold text-gray-900 text-sm leading-tight">
+                        {place.name}
+                      </h3>
+                      {place.rating != null && (
+                        <span className="flex items-center gap-0.5 text-yellow-600 text-xs shrink-0 font-medium">
+                          <Star className="w-3.5 h-3.5 fill-current" />
+                          {place.rating.toFixed(1)}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Address */}
+                    <div className="flex items-start gap-1 text-xs text-gray-500">
+                      <MapPin className="w-3 h-3 shrink-0 mt-0.5" />
+                      <span className="line-clamp-1">{place.address}</span>
+                    </div>
+
+                    {/* Kids-friendly badge */}
+                    {place.goodForChildren && (
+                      <div className="flex items-center gap-1.5 px-2.5 py-1 bg-green-50 border border-green-100 rounded-lg text-xs font-medium text-green-700">
+                        Kids friendly
+                      </div>
+                    )}
+
+                    {/* Add to trip button */}
+                    <button
+                      onClick={() => handleSaveFromSearch(place)}
+                      disabled={savedIds.has(place.googlePlaceId) || savingIds.has(place.googlePlaceId)}
+                      className={cn(
+                        "w-full flex items-center justify-center gap-1.5 py-2 text-xs font-medium rounded-xl transition-colors",
+                        savedIds.has(place.googlePlaceId)
+                          ? "bg-green-50 text-green-700 cursor-default"
+                          : savingIds.has(place.googlePlaceId)
+                            ? "bg-indigo-100 text-indigo-500 cursor-wait"
+                            : "bg-indigo-600 text-white hover:bg-indigo-700"
+                      )}
+                    >
+                      {savedIds.has(place.googlePlaceId) ? (
+                        <>
+                          <Check className="w-3.5 h-3.5" />
+                          Added
+                        </>
+                      ) : savingIds.has(place.googlePlaceId) ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          Adding...
+                        </>
+                      ) : (
+                        <>
+                          <Plus className="w-3.5 h-3.5" />
+                          Add to trip
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Location selector */}
       <div className="mb-4">
@@ -624,18 +804,25 @@ export function ActivitiesView({ tripId, initialActivities, destination, destina
                   {/* Add to trip button */}
                   <button
                     onClick={() => handleSaveFromSearch(place)}
-                    disabled={savedIds.has(place.googlePlaceId)}
+                    disabled={savedIds.has(place.googlePlaceId) || savingIds.has(place.googlePlaceId)}
                     className={cn(
                       "w-full flex items-center justify-center gap-1.5 py-2 text-xs font-medium rounded-xl transition-colors",
                       savedIds.has(place.googlePlaceId)
                         ? "bg-green-50 text-green-700 cursor-default"
-                        : "bg-indigo-600 text-white hover:bg-indigo-700"
+                        : savingIds.has(place.googlePlaceId)
+                          ? "bg-indigo-100 text-indigo-500 cursor-wait"
+                          : "bg-indigo-600 text-white hover:bg-indigo-700"
                     )}
                   >
                     {savedIds.has(place.googlePlaceId) ? (
                       <>
                         <Check className="w-3.5 h-3.5" />
                         Added
+                      </>
+                    ) : savingIds.has(place.googlePlaceId) ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        Adding...
                       </>
                     ) : (
                       <>
@@ -827,7 +1014,9 @@ export function ActivitiesView({ tripId, initialActivities, destination, destina
       )}
 
       <div className="space-y-3">
-        {filtered.map((activity) => (
+        {filtered.map((activity) => {
+          const hours = parseHoursJson(activity.hoursJson)
+          return (
           <div
             key={activity.id}
             className="bg-white border border-gray-100 rounded-2xl p-4 hover:border-gray-200 transition-colors group"
@@ -906,6 +1095,24 @@ export function ActivitiesView({ tripId, initialActivities, destination, destina
                         </span>
                       )}
                     </div>
+
+                    {/* Website & phone from Places Detail */}
+                    {(activity.websiteUrl || activity.bookingLink) && (
+                      <div className="flex items-center gap-3 mt-1 text-xs">
+                        {activity.websiteUrl && (
+                          <a
+                            href={activity.websiteUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-1 text-indigo-600 hover:text-indigo-800 transition-colors"
+                          >
+                            <Globe className="w-3 h-3" />
+                            Website
+                          </a>
+                        )}
+                      </div>
+                    )}
+
                     {activity.notes && (
                       <p className="text-xs text-gray-400 mt-1 line-clamp-2">{activity.notes}</p>
                     )}
@@ -929,6 +1136,30 @@ export function ActivitiesView({ tripId, initialActivities, destination, destina
                     </button>
                   </div>
                 </div>
+
+                {/* Hours section (collapsible) */}
+                {hours && hours.length > 0 && (
+                  <div className="mt-2">
+                    <button
+                      onClick={() =>
+                        setExpandedActivityHours(
+                          expandedActivityHours === activity.id ? null : activity.id
+                        )
+                      }
+                      className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700"
+                    >
+                      <Clock className="w-3 h-3" />
+                      {expandedActivityHours === activity.id ? "Hide hours" : "Show hours"}
+                    </button>
+                    {expandedActivityHours === activity.id && (
+                      <div className="mt-1.5 pl-4 space-y-0.5 text-[11px] text-gray-500">
+                        {hours.map((line, i) => (
+                          <div key={i}>{line}</div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Priority selector + lock toggle */}
                 <div className="flex items-center gap-2 mt-2 flex-wrap">
@@ -1144,7 +1375,8 @@ export function ActivitiesView({ tripId, initialActivities, destination, destina
               </div>
             </div>
           </div>
-        ))}
+          )
+        })}
       </div>
     </div>
   )

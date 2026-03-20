@@ -40,6 +40,22 @@ export default async function DiningPage({ params }: { params: Promise<{ tripId:
       isPaid = !!user && hasFeature(user.plan, "aiFlightParsing")
     }
 
+    // Extract traveler tags and dietary restrictions for auto-suggestions
+    const travelerTags: string[] = []
+    const dietaryRestrictions: string[] = []
+    for (const tt of trip.travelers || []) {
+      const traveler = tt.traveler
+      if (traveler.tags) {
+        travelerTags.push(...traveler.tags)
+      }
+      if (traveler.preferences && typeof traveler.preferences === "object") {
+        const prefs = traveler.preferences as Record<string, unknown>
+        if (Array.isArray(prefs.dietaryRestrictions)) {
+          dietaryRestrictions.push(...(prefs.dietaryRestrictions as string[]))
+        }
+      }
+    }
+
     return (
       <DiningView
         tripId={tripId}
@@ -47,6 +63,8 @@ export default async function DiningPage({ params }: { params: Promise<{ tripId:
         destinations={destinations}
         arrivalCities={arrivalCities}
         isPaid={isPaid}
+        travelerTags={[...new Set(travelerTags)]}
+        dietaryRestrictions={[...new Set(dietaryRestrictions)]}
       />
     )
   } catch {

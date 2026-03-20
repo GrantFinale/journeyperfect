@@ -44,6 +44,7 @@ import {
 import { cn } from "@/lib/utils"
 import { WeatherBar } from "@/components/weather-bar"
 import { FlightStatusBadge } from "@/components/flight-status-badge"
+import { AirportMapLink } from "@/components/airport-info"
 import type { TripWeatherData } from "@/lib/weather"
 
 type ItineraryItem = {
@@ -404,6 +405,16 @@ function SortableItineraryItem({
                 }
                 return null
               })()}
+              {item.type === "FLIGHT" && item.flight && (
+                <div className="flex items-center gap-3 mt-1">
+                  {item.flight.departureAirport && (
+                    <AirportMapLink airportCode={item.flight.departureAirport} className="inline-flex items-center gap-1 text-[11px] text-indigo-600 hover:text-indigo-700 font-medium" />
+                  )}
+                  {item.flight.arrivalAirport && (
+                    <AirportMapLink airportCode={item.flight.arrivalAirport} className="inline-flex items-center gap-1 text-[11px] text-indigo-600 hover:text-indigo-700 font-medium" />
+                  )}
+                </div>
+              )}
             </div>
             <div className="flex items-center gap-0.5 shrink-0">
               <button

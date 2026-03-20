@@ -5,8 +5,10 @@ import { getBudgetSummary } from "@/lib/actions/budget"
 import { getTripCostSummary } from "@/lib/actions/costs"
 import { getItinerary, type ItineraryItemFull } from "@/lib/actions/itinerary"
 import { getSmartSuggestions } from "@/lib/actions/affiliates"
+import { getPlacesApiKey } from "@/lib/actions/user"
 import { formatDate, formatTime, tripDuration, formatCurrency } from "@/lib/utils"
 import { AffiliateSmartSuggestions, BookingReturnPrompt } from "@/components/affiliate-links"
+import { TripOverviewMap } from "./overview-map"
 import {
   Plane,
   Hotel,
@@ -23,6 +25,7 @@ import {
   ArrowRight,
   Calendar,
   Package,
+  Navigation,
 } from "lucide-react"
 
 export default async function TripOverviewPage({ params }: { params: Promise<{ tripId: string }> }) {
@@ -34,13 +37,16 @@ export default async function TripOverviewPage({ params }: { params: Promise<{ t
   let allItems: ItineraryItemFull[] = []
   let smartSuggestions: Awaited<ReturnType<typeof getSmartSuggestions>> = []
 
+  let apiKey = ""
+
   try {
-    ;[trip, budget, costSummary, allItems, smartSuggestions] = await Promise.all([
+    ;[trip, budget, costSummary, allItems, smartSuggestions, apiKey] = await Promise.all([
       getTrip(tripId),
       getBudgetSummary(tripId),
       getTripCostSummary(tripId),
       getItinerary(tripId),
       getSmartSuggestions(tripId),
+      getPlacesApiKey(),
     ])
   } catch {
     notFound()
@@ -58,12 +64,42 @@ export default async function TripOverviewPage({ params }: { params: Promise<{ t
     (new Date(trip.startDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
   )
 
+  // Build map markers from activities and hotels
+  const mapMarkers: { lat: number; lng: number; label: string; type: "activity" | "hotel" | "flight" | "restaurant" | "transit"; day?: number }[] = []
+  const tripStart = new Date(trip.startDate)
+
+  for (const hotel of trip.hotels) {
+    if (hotel.lat && hotel.lng) {
+      mapMarkers.push({ lat: hotel.lat, lng: hotel.lng, label: hotel.name, type: "hotel" })
+    }
+  }
+
+  for (const item of allItems) {
+    const it = item as any
+    if (it.activity?.lat && it.activity?.lng) {
+      const dayIdx = Math.floor((new Date(it.date).getTime() - tripStart.getTime()) / (1000 * 60 * 60 * 24))
+      mapMarkers.push({
+        lat: it.activity.lat,
+        lng: it.activity.lng,
+        label: it.title,
+        type: it.type === "MEAL" ? "restaurant" : "activity",
+        day: dayIdx,
+      })
+    }
+  }
+
   const quickLinks = [
     {
       href: `/trip/${tripId}/itinerary`,
       icon: CalendarDays,
       label: "Itinerary",
       desc: `${trip._count.itineraryItems} items`,
+    },
+    {
+      href: `/trip/${tripId}/map`,
+      icon: Navigation,
+      label: "Map",
+      desc: `${mapMarkers.length} locations`,
     },
     {
       href: `/trip/${tripId}/activities`,
@@ -291,6 +327,34 @@ export default async function TripOverviewPage({ params }: { params: Promise<{ t
       {smartSuggestions.length > 0 && (
         <div className="mb-6">
           <AffiliateSmartSuggestions suggestions={smartSuggestions} tripId={tripId} />
+        </div>
+      )}
+
+      {/* Trip Map Preview */}
+      {mapMarkers.length > 0 && apiKey && (
+        <div className="bg-white border border-gray-100 rounded-2xl p-5 mb-6">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+              <Navigation className="w-4 h-4 text-indigo-500" />
+              Trip Map
+            </h2>
+            <Link
+              href={`/trip/${tripId}/map`}
+              className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-700 font-medium p-2 -m-2"
+            >
+              Full map
+              <ArrowRight className="w-3 h-3" />
+            </Link>
+          </div>
+          <TripOverviewMap
+            markers={mapMarkers}
+            apiKey={apiKey}
+            center={
+              trip.destinationLat && trip.destinationLng
+                ? { lat: trip.destinationLat, lng: trip.destinationLng }
+                : undefined
+            }
+          />
         </div>
       )}
 

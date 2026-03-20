@@ -37,6 +37,7 @@ model User {
   preferences      UserPreferences?
   subscription     Subscription?
   collaborations   TripCollaborator[] @relation("userCollaborations")
+  notifications    Notification[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -387,9 +388,12 @@ model BudgetItem {
   category   BudgetCategory
   title      String
   amount     Float
+  currency   String         @default("USD")
   isEstimate Boolean        @default(true)
   paidAt     DateTime?
   notes      String?
+  paidBy     String?        // userId or traveler name who paid
+  splitAmong String[]       // userIds or traveler names to split between
 
   trip Trip @relation(fields: [tripId], references: [id], onDelete: Cascade)
 
@@ -568,6 +572,24 @@ enum DocumentType {
   INSURANCE
   RENTAL_CAR
   OTHER
+}
+
+// ─── Notifications ──────────────────────────────────────────────────────────
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  type      String   // "collab_invite", "flight_alert", "weather_warning", "referral_reward"
+  title     String
+  message   String
+  link      String?  // URL to navigate to
+  read      Boolean  @default(false)
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, read])
 }
 
 enum BudgetCategory {

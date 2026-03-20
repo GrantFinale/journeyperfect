@@ -51,6 +51,7 @@ export default async function AdminOverviewPage() {
     { label: "Plan Limits", description: "Manage plan quotas and features", href: "/admin/plans" },
     { label: "Users", description: "View and manage user accounts", href: "/admin/users" },
     { label: "Settings", description: "Feature flags and app configuration", href: "/admin/settings" },
+    { label: "Billing", description: "Stripe configuration and subscription setup", href: "/admin/billing" },
   ]
 
   const configuredCount = apiStatuses.filter((s) => s.configured).length

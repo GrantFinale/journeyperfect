@@ -9,9 +9,12 @@ const budgetItemSchema = z.object({
   category: z.enum(["FLIGHTS","LODGING","ACTIVITIES","DINING","TRANSPORT","SHOPPING","OTHER"]),
   title: z.string().min(1),
   amount: z.number().min(0),
+  currency: z.string().default("USD"),
   isEstimate: z.boolean().default(true),
   paidAt: z.string().optional(),
   notes: z.string().optional(),
+  paidBy: z.string().optional(),
+  splitAmong: z.array(z.string()).optional(),
 })
 
 export async function getBudgetSummary(tripId: string) {
@@ -41,7 +44,14 @@ export async function createBudgetItem(tripId: string, data: z.infer<typeof budg
   const item = await prisma.budgetItem.create({
     data: {
       tripId,
-      ...parsed,
+      category: parsed.category,
+      title: parsed.title,
+      amount: parsed.amount,
+      isEstimate: parsed.isEstimate,
+      notes: parsed.notes,
+      paidBy: parsed.paidBy,
+      splitAmong: parsed.splitAmong || [],
+      currency: parsed.currency || "USD",
       ...(parsed.paidAt && { paidAt: new Date(parsed.paidAt) }),
     },
   })

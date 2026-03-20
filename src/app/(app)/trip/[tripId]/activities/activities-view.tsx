@@ -18,6 +18,8 @@ import {
   ChevronDown,
   Lock,
   CalendarDays,
+  Check,
+  Loader2,
 } from "lucide-react"
 import { ActivityBookingLinks } from "@/components/affiliate-links"
 
@@ -42,35 +44,115 @@ type Activity = {
   fixedDateTime: Date | string | null
 }
 
-type SearchResult = {
+type Place = {
   googlePlaceId: string
   name: string
   address: string
   lat?: number
   lng?: number
   rating?: number
+  ratingCount?: number
   imageUrl?: string | null
   types: string[]
+  primaryType?: string
+  priceLevel?: string
+  goodForChildren?: boolean
+  openNow?: boolean
+  weekdayHours?: string[]
 }
 
+type Destination = { name: string; lat?: number | null; lng?: number | null }
+
 const PRIORITY_OPTIONS = ["MUST_DO", "HIGH", "MEDIUM", "LOW"] as const
+
+const QUICK_FILTERS = [
+  { label: "Museums", query: "museum art gallery" },
+  { label: "Outdoors/Parks", query: "outdoor park nature garden" },
+  { label: "Tours", query: "guided tour walking tour" },
+  { label: "Shopping", query: "shopping mall market boutique" },
+  { label: "Nightlife", query: "nightlife club bar lounge" },
+  { label: "Family/Kids", query: "family kids children amusement" },
+  { label: "Sports", query: "sports stadium arena recreation" },
+  { label: "Landmarks", query: "landmark monument historic site" },
+]
+
+const PRICE_LABEL: Record<string, string> = {
+  PRICE_LEVEL_FREE: "Free",
+  PRICE_LEVEL_INEXPENSIVE: "$",
+  PRICE_LEVEL_MODERATE: "$$",
+  PRICE_LEVEL_EXPENSIVE: "$$$",
+  PRICE_LEVEL_VERY_EXPENSIVE: "$$$$",
+}
 
 interface Props {
   tripId: string
   initialActivities: Activity[]
   destination: string
-  destinations?: string[]
+  destinations: Destination[]
+  arrivalCities: string[]
 }
 
-export function ActivitiesView({ tripId, initialActivities, destination, destinations = [] }: Props) {
+/* ─── Helpers ──────────────────────────────────────────────────────────────── */
+
+type LocationOption = { label: string; value: string; lat?: number | null; lng?: number | null }
+
+function buildLocationOptions(
+  destinations: Destination[],
+  arrivalCities: string[],
+  fallbackDestination: string
+): LocationOption[] {
+  const seen = new Set<string>()
+  const options: LocationOption[] = []
+
+  for (const d of destinations) {
+    const key = d.name.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    options.push({ label: d.name, value: d.name, lat: d.lat, lng: d.lng })
+  }
+
+  for (const city of arrivalCities) {
+    const key = city.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    options.push({ label: city, value: city })
+  }
+
+  if (options.length === 0 && fallbackDestination) {
+    options.push({ label: fallbackDestination, value: fallbackDestination })
+  }
+
+  options.push({ label: "Other location...", value: "__other__" })
+  return options
+}
+
+function getLocationBias(
+  selectedLocation: string,
+  options: LocationOption[]
+): string | undefined {
+  const opt = options.find((o) => o.value === selectedLocation)
+  if (opt?.lat != null && opt?.lng != null) {
+    return `${opt.lat},${opt.lng}`
+  }
+  return undefined
+}
+
+/* ─── Component ────────────────────────────────────────────────────────────── */
+
+export function ActivitiesView({ tripId, initialActivities, destination, destinations, arrivalCities }: Props) {
+  const locationOptions = buildLocationOptions(destinations, arrivalCities, destination)
+
   const [activities, setActivities] = useState<Activity[]>(initialActivities)
-  const [searchQuery, setSearchQuery] = useState("")
-  const [searchResults, setSearchResults] = useState<SearchResult[]>([])
-  const [searching, setSearching] = useState(false)
+  const [selectedLocation, setSelectedLocation] = useState(locationOptions[0]?.value ?? destination)
+  const [customLocation, setCustomLocation] = useState("")
+  const [activeFilter, setActiveFilter] = useState<string | null>(null)
+  const [customQuery, setCustomQuery] = useState("")
+  const [searchResults, setSearchResults] = useState<Place[]>([])
+  const [loading, setLoading] = useState(false)
+  const [savedIds, setSavedIds] = useState<Set<string>>(new Set())
   const [showAddForm, setShowAddForm] = useState(false)
   const [filterPriority, setFilterPriority] = useState<string>("ALL")
   const [filterStatus, setFilterStatus] = useState<string>("ALL")
-  const [activeDestination, setActiveDestination] = useState(destination)
   const [addForm, setAddForm] = useState({
     name: "",
     address: "",
@@ -85,27 +167,47 @@ export function ActivitiesView({ tripId, initialActivities, destination, destina
     fixedDateTime: "",
   })
 
+  const effectiveLocation = selectedLocation === "__other__" ? customLocation : selectedLocation
+  const locationBias = getLocationBias(selectedLocation, locationOptions)
+
   const filtered = activities.filter((a) => {
     if (filterPriority !== "ALL" && a.priority !== filterPriority) return false
     if (filterStatus !== "ALL" && a.status !== filterStatus) return false
     return true
   })
 
-  async function handleSearch() {
-    if (!searchQuery.trim()) return
-    setSearching(true)
+  async function handleSearch(filterQuery?: string, keyword?: string) {
+    const city = effectiveLocation || destination
+    const parts = [filterQuery, keyword, city].filter(Boolean)
+    if (parts.length === 0) return
+
+    setLoading(true)
     try {
-      const result = await searchPlaces(searchQuery + " " + activeDestination)
+      const result = await searchPlaces(parts.join(" "), locationBias || undefined)
       setSearchResults(result.results)
-      if (result.error) toast.error(result.error)
+      if (result.error && result.results.length === 0) {
+        toast.error(result.error || "No results found")
+      }
     } catch {
       toast.error("Search failed")
     } finally {
-      setSearching(false)
+      setLoading(false)
     }
   }
 
-  async function handleSaveFromSearch(place: SearchResult) {
+  function handleFilterSelect(filter: (typeof QUICK_FILTERS)[number]) {
+    const next = activeFilter === filter.query ? null : filter.query
+    setActiveFilter(next)
+    handleSearch(next || undefined, customQuery || undefined)
+  }
+
+  function handleSearchSubmit() {
+    handleSearch(activeFilter || undefined, customQuery || undefined)
+  }
+
+  async function handleSaveFromSearch(place: Place) {
+    const key = place.googlePlaceId
+    if (savedIds.has(key)) return
     try {
       const activity = await createActivity(tripId, {
         name: place.name,
@@ -125,7 +227,8 @@ export function ActivitiesView({ tripId, initialActivities, destination, destina
         isFixed: false,
       })
       setActivities((prev) => [activity as unknown as Activity, ...prev])
-      toast.success(`${place.name} added to wishlist`)
+      setSavedIds((prev) => new Set([...prev, key]))
+      toast.success(`${place.name} added to activities`)
     } catch {
       toast.error("Failed to save activity")
     }
@@ -221,88 +324,201 @@ export function ActivitiesView({ tripId, initialActivities, destination, destina
         </button>
       </div>
 
-      {/* Destination pills */}
-      {destinations.length > 1 && (
-        <div className="flex gap-2 mb-4 overflow-x-auto pb-1">
-          {destinations.map((dest) => (
-            <button
-              key={dest}
-              onClick={() => setActiveDestination(dest)}
-              className={cn(
-                "px-4 py-2 text-sm font-medium rounded-xl transition-colors whitespace-nowrap shrink-0",
-                activeDestination === dest
-                  ? "bg-indigo-600 text-white"
-                  : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-              )}
-            >
-              <MapPin className="w-3.5 h-3.5 inline mr-1" />
-              {dest}
-            </button>
-          ))}
+      {/* Location selector */}
+      <div className="mb-4">
+        <label className="block text-xs font-medium text-gray-500 mb-1.5">Search in</label>
+        <div className="relative inline-block w-full sm:w-72">
+          <select
+            value={selectedLocation}
+            onChange={(e) => setSelectedLocation(e.target.value)}
+            className="w-full appearance-none pl-3 pr-8 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          >
+            {locationOptions.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+          <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+        </div>
+        {selectedLocation === "__other__" && (
+          <input
+            type="text"
+            placeholder="Enter a city or area..."
+            value={customLocation}
+            onChange={(e) => setCustomLocation(e.target.value)}
+            className="mt-2 w-full sm:w-72 pl-3 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          />
+        )}
+      </div>
+
+      {/* Search field */}
+      <div className="flex gap-2 mb-4">
+        <div className="flex-1 relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <input
+            type="text"
+            placeholder={`Search "museums", "parks", "tours"...`}
+            value={customQuery}
+            onChange={(e) => setCustomQuery(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleSearchSubmit()}
+            className="w-full pl-9 pr-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          />
+        </div>
+        <button
+          onClick={handleSearchSubmit}
+          disabled={loading}
+          className="px-5 py-3 bg-gray-900 text-white text-sm font-medium rounded-xl hover:bg-gray-800 disabled:opacity-50 transition-colors"
+        >
+          Search
+        </button>
+      </div>
+
+      {/* Quick filter pills */}
+      <div className="flex gap-2 flex-wrap mb-6">
+        {QUICK_FILTERS.map((filter) => (
+          <button
+            key={filter.query}
+            onClick={() => handleFilterSelect(filter)}
+            className={cn(
+              "px-3 py-1.5 text-xs font-medium rounded-full border transition-colors",
+              activeFilter === filter.query
+                ? "bg-indigo-600 text-white border-indigo-600"
+                : "bg-white text-gray-600 border-gray-200 hover:border-indigo-300 hover:text-indigo-600"
+            )}
+          >
+            {filter.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Loading */}
+      {loading && (
+        <div className="flex items-center justify-center py-16">
+          <Loader2 className="w-8 h-8 text-indigo-500 animate-spin" />
         </div>
       )}
 
-      {/* Search places */}
-      <div className="bg-white border border-gray-100 rounded-2xl p-4 mb-6">
-        <div className="flex gap-2">
-          <div className="flex-1 relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input
-              type="text"
-              placeholder={`Search places in ${activeDestination}...`}
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-              className="w-full pl-9 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-          </div>
-          <button
-            onClick={handleSearch}
-            disabled={searching}
-            className="px-4 py-2.5 bg-gray-900 text-white text-sm font-medium rounded-xl hover:bg-gray-800 disabled:opacity-50 transition-colors shrink-0"
-          >
-            {searching ? "..." : "Search"}
-          </button>
-        </div>
-
-        {/* Search results */}
-        {searchResults.length > 0 && (
-          <div className="mt-3 space-y-2 max-h-64 overflow-y-auto">
-            {searchResults.map((place) => (
-              <div
-                key={place.googlePlaceId}
-                className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors"
-              >
-                <div className="flex-1 min-w-0">
-                  <div className="font-medium text-sm text-gray-900 truncate">{place.name}</div>
-                  <div className="text-xs text-gray-500 truncate flex items-center gap-1">
-                    <MapPin className="w-3 h-3 shrink-0" />
-                    {place.address}
-                  </div>
-                  {place.rating && (
-                    <div className="text-xs text-yellow-600 flex items-center gap-1 mt-0.5">
-                      <Star className="w-3 h-3 fill-current" />
-                      {place.rating}
-                    </div>
-                  )}
-                </div>
-                <button
-                  onClick={() => handleSaveFromSearch(place)}
-                  className="shrink-0 px-3 py-2 bg-indigo-600 text-white text-xs font-medium rounded-lg hover:bg-indigo-700 transition-colors"
-                >
-                  Save
-                </button>
-              </div>
-            ))}
+      {/* Search results */}
+      {!loading && searchResults.length > 0 && (
+        <div className="mb-8">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-semibold text-gray-900">Search Results</h2>
             <button
               onClick={() => setSearchResults([])}
-              className="text-xs text-gray-400 hover:text-gray-600 transition-colors w-full text-center py-2"
+              className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
             >
               Clear results
             </button>
           </div>
-        )}
-      </div>
+          <div className="grid sm:grid-cols-2 gap-4">
+            {searchResults.map((place) => (
+              <div
+                key={place.googlePlaceId}
+                className="bg-white border border-gray-100 rounded-2xl overflow-hidden hover:border-gray-200 hover:shadow-sm transition-all"
+              >
+                {/* Image */}
+                {place.imageUrl ? (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img src={place.imageUrl} alt="" className="w-full h-40 object-cover" />
+                ) : (
+                  <div className="w-full h-40 bg-gradient-to-br from-indigo-50 to-purple-50 flex items-center justify-center">
+                    <Star className="w-8 h-8 text-indigo-200" />
+                  </div>
+                )}
+
+                <div className="p-4 space-y-2.5">
+                  {/* Name + rating */}
+                  <div className="flex items-start justify-between gap-2">
+                    <h3 className="font-semibold text-gray-900 text-sm leading-tight">
+                      {place.name}
+                    </h3>
+                    {place.rating != null && (
+                      <span className="flex items-center gap-0.5 text-yellow-600 text-xs shrink-0 font-medium">
+                        <Star className="w-3.5 h-3.5 fill-current" />
+                        {place.rating.toFixed(1)}
+                        {place.ratingCount != null && (
+                          <span className="text-gray-400 font-normal ml-0.5">
+                            ({place.ratingCount.toLocaleString()})
+                          </span>
+                        )}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Address */}
+                  <div className="flex items-start gap-1 text-xs text-gray-500">
+                    <MapPin className="w-3 h-3 shrink-0 mt-0.5" />
+                    <span className="line-clamp-2">{place.address}</span>
+                  </div>
+
+                  {/* Price + open status */}
+                  <div className="flex items-center gap-2 text-xs">
+                    {place.priceLevel && PRICE_LABEL[place.priceLevel] && (
+                      <span className="font-semibold text-gray-700">
+                        {PRICE_LABEL[place.priceLevel]}
+                      </span>
+                    )}
+                    {place.openNow != null && (
+                      <span className={cn("font-medium", place.openNow ? "text-green-600" : "text-red-500")}>
+                        {place.openNow ? "Open now" : "Closed"}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Kids-friendly badge */}
+                  {place.goodForChildren && (
+                    <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-green-50 border border-green-100 rounded-lg text-xs font-medium text-green-700">
+                      Kids friendly
+                    </div>
+                  )}
+
+                  {/* Type tags */}
+                  {place.types.length > 0 && (
+                    <div className="flex gap-1 flex-wrap">
+                      {place.types
+                        .filter((t) => !["point_of_interest", "establishment", "food", "store"].includes(t))
+                        .slice(0, 4)
+                        .map((type) => (
+                          <span
+                            key={type}
+                            className="px-1.5 py-0.5 text-[10px] bg-indigo-50 text-indigo-600 rounded capitalize"
+                          >
+                            {type.replace(/_/g, " ")}
+                          </span>
+                        ))}
+                    </div>
+                  )}
+
+                  {/* Add to trip button */}
+                  <button
+                    onClick={() => handleSaveFromSearch(place)}
+                    disabled={savedIds.has(place.googlePlaceId)}
+                    className={cn(
+                      "w-full flex items-center justify-center gap-1.5 py-2 text-xs font-medium rounded-xl transition-colors",
+                      savedIds.has(place.googlePlaceId)
+                        ? "bg-green-50 text-green-700 cursor-default"
+                        : "bg-indigo-600 text-white hover:bg-indigo-700"
+                    )}
+                  >
+                    {savedIds.has(place.googlePlaceId) ? (
+                      <>
+                        <Check className="w-3.5 h-3.5" />
+                        Added
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="w-3.5 h-3.5" />
+                        Add to trip
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Add manual form */}
       {showAddForm && (
@@ -433,7 +649,7 @@ export function ActivitiesView({ tripId, initialActivities, destination, destina
         </div>
       )}
 
-      {/* Filters */}
+      {/* Priority / status filters for saved activities */}
       <div className="flex items-center gap-3 mb-4 overflow-x-auto pb-1">
         <div className="flex gap-1 shrink-0">
           {["ALL", ...PRIORITY_OPTIONS].map((p) => (
@@ -618,7 +834,7 @@ export function ActivitiesView({ tripId, initialActivities, destination, destina
                 </div>
 
                 {/* Affiliate booking links */}
-                <ActivityBookingLinks activityName={activity.name} destination={activeDestination} />
+                <ActivityBookingLinks activityName={activity.name} destination={effectiveLocation} />
               </div>
             </div>
           </div>

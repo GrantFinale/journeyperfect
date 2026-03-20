@@ -3,7 +3,7 @@
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
-import { runOptimizer, deleteItineraryItem, createItineraryItem, reorderItineraryItems } from "@/lib/actions/itinerary"
+import { runOptimizer, runAIOptimizer, deleteItineraryItem, createItineraryItem, reorderItineraryItems } from "@/lib/actions/itinerary"
 import type { ItineraryItemResult } from "@/lib/actions/itinerary"
 import { formatDate, formatTime } from "@/lib/utils"
 import {
@@ -216,9 +216,10 @@ interface Props {
   tripStartDate: Date
   tripEndDate: Date
   weather: TripWeatherData | null
+  isPaid?: boolean
 }
 
-export function ItineraryView({ tripId, initialItems, tripStartDate, tripEndDate, weather }: Props) {
+export function ItineraryView({ tripId, initialItems, tripStartDate, tripEndDate, weather, isPaid }: Props) {
   const router = useRouter()
   const [items, setItems] = useState<ItineraryItem[]>(initialItems)
   const [optimizing, setOptimizing] = useState(false)
@@ -276,6 +277,22 @@ export function ItineraryView({ tripId, initialItems, tripStartDate, tripEndDate
       router.refresh()
     } catch (e) {
       toast.error("Optimization failed. Make sure you have activities on your wishlist.")
+    } finally {
+      setOptimizing(false)
+    }
+  }
+
+  async function handleAIOptimize() {
+    setOptimizing(true)
+    try {
+      const result = await runAIOptimizer(tripId)
+      toast.success(`AI scheduled ${result.scheduledItems.length} activities with meals & travel time!`)
+      router.refresh()
+    } catch (e) {
+      const msg = e instanceof Error && e.message === "UPGRADE_REQUIRED"
+        ? "AI optimizer requires a paid plan. Upgrade to unlock."
+        : "AI optimization failed. Falling back may have been used."
+      toast.error(msg)
     } finally {
       setOptimizing(false)
     }
@@ -381,14 +398,26 @@ export function ItineraryView({ tripId, initialItems, tripStartDate, tripEndDate
           <h1 className="text-2xl font-bold text-gray-900">Itinerary</h1>
           <p className="text-gray-500 text-sm mt-0.5">{items.length} items planned</p>
         </div>
-        <button
-          onClick={handleOptimize}
-          disabled={optimizing}
-          className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition-colors"
-        >
-          <Sparkles className="w-4 h-4" />
-          {optimizing ? "Optimizing..." : "Optimize"}
-        </button>
+        <div className="flex items-center gap-2">
+          {isPaid && (
+            <button
+              onClick={handleAIOptimize}
+              disabled={optimizing}
+              className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-violet-600 to-indigo-600 text-white text-sm font-medium rounded-xl hover:from-violet-700 hover:to-indigo-700 disabled:opacity-50 transition-all shadow-sm"
+            >
+              <Sparkles className="w-4 h-4" />
+              {optimizing ? "Optimizing..." : "AI Optimize"}
+            </button>
+          )}
+          <button
+            onClick={handleOptimize}
+            disabled={optimizing}
+            className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+          >
+            <Sparkles className="w-4 h-4" />
+            {optimizing ? "Optimizing..." : "Optimize"}
+          </button>
+        </div>
       </div>
 
       {/* Weather bar */}

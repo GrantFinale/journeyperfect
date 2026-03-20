@@ -1,0 +1,4 @@
+-- AlterTable
+ALTER TABLE "BudgetItem" ADD COLUMN "paidBy" TEXT,
+ADD COLUMN "splitAmong" TEXT[] DEFAULT ARRAY[]::TEXT[],
+ADD COLUMN "currency" TEXT NOT NULL DEFAULT 'USD';

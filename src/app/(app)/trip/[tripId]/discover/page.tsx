@@ -7,7 +7,31 @@ export default async function DiscoverPage({ params }: { params: Promise<{ tripI
 
   try {
     const trip = await getTrip(tripId)
-    return <DiscoverView tripId={tripId} destination={trip.destination} />
+
+    // Build destinations list from TripDestination records (with lat/lng)
+    const destinations = (trip.destinations || []).map((d) => ({
+      name: d.name,
+      lat: d.lat,
+      lng: d.lng,
+    }))
+
+    // Extract unique arrival cities from flights
+    const arrivalCities = Array.from(
+      new Set(
+        (trip.flights || [])
+          .map((f) => f.arrivalCity)
+          .filter(Boolean) as string[]
+      )
+    )
+
+    return (
+      <DiscoverView
+        tripId={tripId}
+        destination={trip.destination}
+        destinations={destinations}
+        arrivalCities={arrivalCities}
+      />
+    )
   } catch {
     notFound()
   }

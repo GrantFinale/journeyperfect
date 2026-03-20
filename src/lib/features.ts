@@ -2,6 +2,8 @@ import type { Plan } from "./plans"
 
 export const PAID_FEATURES = {
   aiFlightParsing: { name: "AI Flight Parsing", minPlan: "PERSONAL" as Plan },
+  aiItineraryOptimizer: { name: "AI Itinerary Optimizer", minPlan: "PERSONAL" as Plan },
+  aiDiningRecommendations: { name: "AI Dining Recommendations", minPlan: "PERSONAL" as Plan },
   placesSearch: { name: "Activity Discovery", minPlan: "PERSONAL" as Plan },
   placesAutocomplete: { name: "Smart Destination Search", minPlan: "PERSONAL" as Plan },
   weatherAlerts: { name: "Weather Alerts & Rescheduling", minPlan: "PERSONAL" as Plan },

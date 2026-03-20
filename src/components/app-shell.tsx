@@ -22,6 +22,7 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { signOut } from "next-auth/react"
+import { NotificationBell } from "@/components/notification-bell"
 
 interface AppShellProps {
   children: React.ReactNode
@@ -80,10 +81,13 @@ export function AppShell({ children, user }: AppShellProps) {
     <div className="flex h-screen overflow-hidden bg-background">
       {/* Sidebar — desktop */}
       <aside className="hidden md:flex flex-col w-60 border-r border-border bg-card shrink-0">
-        {/* Logo */}
-        <div className="flex items-center gap-2 px-4 py-4 border-b border-border">
-          <img src="/jp-icon.png" alt="JourneyPerfect" className="w-8 h-8" />
-          <span className="font-semibold text-foreground">JourneyPerfect</span>
+        {/* Logo + notifications */}
+        <div className="flex items-center justify-between px-4 py-4 border-b border-border">
+          <div className="flex items-center gap-2">
+            <img src="/jp-icon.png" alt="JourneyPerfect" className="w-8 h-8" />
+            <span className="font-semibold text-foreground">JourneyPerfect</span>
+          </div>
+          <NotificationBell />
         </div>
 
         {/* Back to dashboard if in trip */}
@@ -191,10 +195,11 @@ export function AppShell({ children, user }: AppShellProps) {
           <button onClick={() => setSidebarOpen(true)} className="text-muted-foreground">
             <Menu className="w-5 h-5" />
           </button>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-1">
             <img src="/jp-icon.png" alt="JourneyPerfect" className="w-6 h-6" />
             <span className="font-semibold text-sm">JourneyPerfect</span>
           </div>
+          <NotificationBell />
         </header>
 
         {/* Page content */}

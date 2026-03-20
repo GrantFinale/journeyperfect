@@ -7,6 +7,7 @@ import { getItinerary, type ItineraryItemFull } from "@/lib/actions/itinerary"
 import { getSmartSuggestions } from "@/lib/actions/affiliates"
 import { formatDate, formatTime, tripDuration, formatCurrency } from "@/lib/utils"
 import { AffiliateSmartSuggestions, BookingReturnPrompt } from "@/components/affiliate-links"
+import { calculateTripCarbon } from "@/lib/carbon"
 import {
   Plane,
   Hotel,
@@ -23,6 +24,7 @@ import {
   ArrowRight,
   Calendar,
   Package,
+  Leaf,
 } from "lucide-react"
 
 export default async function TripOverviewPage({ params }: { params: Promise<{ tripId: string }> }) {
@@ -57,6 +59,9 @@ export default async function TripOverviewPage({ params }: { params: Promise<{ t
   const daysUntil = Math.ceil(
     (new Date(trip.startDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
   )
+
+  // Calculate carbon footprint
+  const carbonFootprint = calculateTripCarbon(trip.flights)
 
   const quickLinks = [
     {
@@ -279,6 +284,50 @@ export default async function TripOverviewPage({ params }: { params: Promise<{ t
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Carbon Footprint */}
+      {carbonFootprint.totalKgCO2 > 0 && (
+        <div className="bg-green-50 border border-green-100 rounded-2xl p-5 mb-6">
+          <div className="flex items-center gap-2 mb-3">
+            <Leaf className="w-4 h-4 text-green-600" />
+            <h2 className="text-sm font-semibold text-green-800">Carbon Footprint</h2>
+          </div>
+          <div className="text-2xl font-bold text-green-900 mb-1">
+            {carbonFootprint.totalKgCO2.toLocaleString()} kg CO2
+          </div>
+          <p className="text-xs text-green-700 mb-3">Estimated flight emissions for this trip</p>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-3">
+            <div className="bg-white/60 rounded-xl px-3 py-2">
+              <div className="text-xs text-green-700">Equivalent to driving</div>
+              <div className="text-sm font-semibold text-green-900">
+                {carbonFootprint.equivalents.carKm.toLocaleString()} km
+              </div>
+            </div>
+            <div className="bg-white/60 rounded-xl px-3 py-2">
+              <div className="text-xs text-green-700">Tree absorption days</div>
+              <div className="text-sm font-semibold text-green-900">
+                {carbonFootprint.equivalents.treeDays.toLocaleString()} days
+              </div>
+            </div>
+            <div className="bg-white/60 rounded-xl px-3 py-2">
+              <div className="text-xs text-green-700">% of annual average</div>
+              <div className="text-sm font-semibold text-green-900">
+                {carbonFootprint.equivalents.percentOfAnnual}%
+              </div>
+            </div>
+          </div>
+          {carbonFootprint.flights.length > 0 && (
+            <div className="space-y-1">
+              {carbonFootprint.flights.map((f, i) => (
+                <div key={i} className="flex items-center justify-between text-xs text-green-700">
+                  <span>{f.route} ({f.distanceKm.toLocaleString()} km)</span>
+                  <span className="font-medium">{f.kgCO2.toLocaleString()} kg</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

@@ -4,6 +4,9 @@ import { prisma } from "@/lib/db"
 import { requireTripAccess } from "@/lib/auth-trip"
 import { revalidatePath } from "next/cache"
 import { optimizeItinerary } from "@/lib/optimizer"
+import { optimizeItineraryWithAI } from "@/lib/optimizer-ai"
+import { hasFeature } from "@/lib/features"
+import { getWeatherForecast } from "@/lib/weather"
 import { z } from "zod"
 
 const itemSchema = z.object({
@@ -172,6 +175,164 @@ export async function runOptimizer(tripId: string) {
 
   revalidatePath(`/trip/${tripId}/itinerary`)
   return result
+}
+
+export async function runAIOptimizer(tripId: string) {
+  const { userId } = await requireTripAccess(tripId, "EDITOR")
+
+  // Check paid plan
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { plan: true },
+  })
+  if (!user || !hasFeature(user.plan, "aiFlightParsing")) {
+    throw new Error("UPGRADE_REQUIRED")
+  }
+
+  const trip = await prisma.trip.findFirstOrThrow({
+    where: { id: tripId },
+    include: {
+      activities: { where: { status: { in: ["WISHLIST", "SCHEDULED"] } } },
+      hotels: { orderBy: { checkIn: "asc" } },
+      flights: { orderBy: { departureTime: "asc" } },
+      travelers: { include: { traveler: true } },
+      destinations: { orderBy: { position: "asc" } },
+      user: { include: { preferences: true } },
+    },
+  })
+
+  // Fetch weather forecast if we have coordinates
+  let weatherForecast:
+    | { date: string; weatherLabel: string; tempMax: number; precipitationProbability: number }[]
+    | undefined
+
+  const lat = trip.destinationLat ?? trip.destinations.find((d) => d.lat)?.lat
+  const lng = trip.destinationLng ?? trip.destinations.find((d) => d.lng)?.lng
+
+  if (lat != null && lng != null) {
+    try {
+      const forecasts = await getWeatherForecast(lat, lng)
+      weatherForecast = forecasts.map((f) => ({
+        date: f.date,
+        weatherLabel: f.condition,
+        tempMax: f.highTemp,
+        precipitationProbability: f.precipitationPct,
+      }))
+    } catch {
+      // Weather is optional — continue without it
+    }
+  }
+
+  const aiResult = await optimizeItineraryWithAI({
+    destination: trip.destination,
+    startDate: trip.startDate.toISOString().split("T")[0],
+    endDate: trip.endDate.toISOString().split("T")[0],
+    activities: trip.activities.map((a) => ({
+      id: a.id,
+      name: a.name,
+      durationMins: a.durationMins,
+      lat: a.lat,
+      lng: a.lng,
+      priority: a.priority,
+      indoorOutdoor: a.indoorOutdoor,
+      isFixed: a.isFixed,
+      fixedDateTime: a.fixedDateTime?.toISOString() ?? null,
+      category: a.category,
+    })),
+    flights: trip.flights.map((f) => ({
+      departureTime: f.departureTime.toISOString(),
+      arrivalTime: f.arrivalTime.toISOString(),
+      departureAirport: f.departureAirport,
+      arrivalAirport: f.arrivalAirport,
+    })),
+    hotels: trip.hotels.map((h) => ({
+      name: h.name,
+      lat: h.lat,
+      lng: h.lng,
+      checkIn: h.checkIn.toISOString(),
+      checkOut: h.checkOut.toISOString(),
+    })),
+    travelers: trip.travelers.map((t) => ({
+      name: t.traveler.name,
+      tags: t.traveler.tags as string[],
+    })),
+    weatherForecast,
+  })
+
+  // If AI fails, fall back to rule-based optimizer
+  if (!aiResult) {
+    return runOptimizer(tripId)
+  }
+
+  // Delete existing non-fixed itinerary items and replace with AI schedule
+  await prisma.itineraryItem.deleteMany({
+    where: { tripId, type: { notIn: ["FLIGHT", "HOTEL_CHECK_IN", "HOTEL_CHECK_OUT"] } },
+  })
+
+  const itemsToCreate: {
+    tripId: string
+    activityId?: string
+    date: Date
+    startTime: string
+    endTime: string
+    type: "ACTIVITY" | "MEAL" | "TRANSIT" | "BUFFER"
+    title: string
+    notes?: string
+    durationMins: number
+    travelTimeToNextMins: number
+    costEstimate: number
+    position: number
+  }[] = []
+
+  let position = 0
+  for (const day of aiResult) {
+    for (const item of day.items) {
+      itemsToCreate.push({
+        tripId,
+        activityId: item.activityId || undefined,
+        date: new Date(day.date),
+        startTime: item.startTime,
+        endTime: item.endTime,
+        type: item.type,
+        title: item.title,
+        notes: item.notes || undefined,
+        durationMins: timeDiffMins(item.startTime, item.endTime),
+        travelTimeToNextMins: item.travelTimeFromPrev || 0,
+        costEstimate: 0,
+        position: position++,
+      })
+    }
+  }
+
+  if (itemsToCreate.length > 0) {
+    await prisma.itineraryItem.createMany({ data: itemsToCreate })
+
+    // Update activity statuses for scheduled activities
+    const scheduledActivityIds = itemsToCreate
+      .filter((i) => i.activityId)
+      .map((i) => i.activityId!)
+    if (scheduledActivityIds.length > 0) {
+      await prisma.activity.updateMany({
+        where: { id: { in: scheduledActivityIds } },
+        data: { status: "SCHEDULED" },
+      })
+    }
+  }
+
+  revalidatePath(`/trip/${tripId}/itinerary`)
+
+  return {
+    scheduledItems: itemsToCreate.filter((i) => i.type === "ACTIVITY"),
+    unscheduled: [] as { activityId: string; reason: string }[],
+    totalCost: 0,
+    reasoning: aiResult.map((d) => `${d.date}: ${d.reasoning}`),
+  }
+}
+
+function timeDiffMins(start: string, end: string): number {
+  const [sh, sm] = start.split(":").map(Number)
+  const [eh, em] = end.split(":").map(Number)
+  return (eh * 60 + em) - (sh * 60 + sm)
 }
 
 // Exported types derived from Prisma return types

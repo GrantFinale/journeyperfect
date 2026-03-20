@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { toast } from "sonner"
 import { searchPlaces, createActivity } from "@/lib/actions/activities"
+import { getAIDiningRecommendations, type DiningRecommendation } from "@/lib/actions/dining-ai"
 import { cn } from "@/lib/utils"
 import {
   Utensils,
@@ -14,6 +15,9 @@ import {
   ChevronDown,
   Clock,
   Check,
+  Sparkles,
+  Leaf,
+  Baby,
 } from "lucide-react"
 
 /* ─── Quick-filter categories ──────────────────────────────────────────────── */
@@ -32,6 +36,13 @@ const PRICE_LABEL: Record<string, string> = {
   PRICE_LEVEL_MODERATE: "$$",
   PRICE_LEVEL_EXPENSIVE: "$$$",
   PRICE_LEVEL_VERY_EXPENSIVE: "$$$$",
+}
+
+const BEST_FOR_LABEL: Record<string, string> = {
+  breakfast: "Breakfast",
+  lunch: "Lunch",
+  dinner: "Dinner",
+  any: "Any meal",
 }
 
 /* ─── Types ────────────────────────────────────────────────────────────────── */
@@ -65,10 +76,11 @@ interface Props {
   destination: string
   destinations: Destination[]
   arrivalCities: string[]
+  isPaid?: boolean
 }
 
 /* ─── Component ────────────────────────────────────────────────────────────── */
-export function DiningView({ tripId, destination, destinations, arrivalCities }: Props) {
+export function DiningView({ tripId, destination, destinations, arrivalCities, isPaid }: Props) {
   // Build location options: destinations first, then unique arrival cities, then "Other"
   const locationOptions = buildLocationOptions(destinations, arrivalCities, destination)
 
@@ -80,6 +92,11 @@ export function DiningView({ tripId, destination, destinations, arrivalCities }:
   const [loading, setLoading] = useState(false)
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set())
   const [expandedHours, setExpandedHours] = useState<string | null>(null)
+
+  // AI recommendations state
+  const [aiRecommendations, setAiRecommendations] = useState<DiningRecommendation[]>([])
+  const [aiLoading, setAiLoading] = useState(false)
+  const [aiLoaded, setAiLoaded] = useState(false)
 
   const effectiveLocation = selectedLocation === "__other__" ? customLocation : selectedLocation
   const locationBias = getLocationBias(selectedLocation, locationOptions)
@@ -113,6 +130,31 @@ export function DiningView({ tripId, destination, destinations, arrivalCities }:
     handleSearch(activeFilter || undefined, customQuery || undefined)
   }
 
+  async function handleAIRecommendations() {
+    const city = effectiveLocation || destination
+    if (!city) {
+      toast.error("Select a location first")
+      return
+    }
+    setAiLoading(true)
+    try {
+      const recs = await getAIDiningRecommendations(tripId, city)
+      setAiRecommendations(recs)
+      setAiLoaded(true)
+      if (recs.length === 0) {
+        toast.error("No AI recommendations available. Try again later.")
+      }
+    } catch (e) {
+      if (e instanceof Error && e.message === "UPGRADE_REQUIRED") {
+        toast.error("AI recommendations require a paid plan. Upgrade to unlock.")
+      } else {
+        toast.error("Failed to get AI recommendations")
+      }
+    } finally {
+      setAiLoading(false)
+    }
+  }
+
   async function handleSave(place: Place, category: string) {
     const key = `${place.googlePlaceId}-${category}`
     if (savedIds.has(key)) return
@@ -144,12 +186,92 @@ export function DiningView({ tripId, destination, destinations, arrivalCities }:
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8">
       {/* Header */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Dining</h1>
-        <p className="text-gray-500 text-sm mt-0.5">
-          Find restaurants &amp; cafes for your trip
-        </p>
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Dining</h1>
+          <p className="text-gray-500 text-sm mt-0.5">
+            Find restaurants &amp; cafes for your trip
+          </p>
+        </div>
+        {isPaid && (
+          <button
+            onClick={handleAIRecommendations}
+            disabled={aiLoading}
+            className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-violet-600 to-indigo-600 text-white text-sm font-medium rounded-xl hover:from-violet-700 hover:to-indigo-700 disabled:opacity-50 transition-all shadow-sm"
+          >
+            {aiLoading ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Sparkles className="w-4 h-4" />
+            )}
+            {aiLoading ? "Finding..." : "AI Recommendations"}
+          </button>
+        )}
       </div>
+
+      {/* AI Recommendations section */}
+      {aiLoaded && aiRecommendations.length > 0 && (
+        <div className="mb-8">
+          <div className="flex items-center gap-2 mb-3">
+            <Sparkles className="w-4 h-4 text-violet-600" />
+            <h2 className="text-sm font-semibold text-violet-900">
+              Recommended for you
+            </h2>
+            <span className="text-xs text-violet-500">
+              in {effectiveLocation || destination}
+            </span>
+          </div>
+          <div className="grid sm:grid-cols-2 gap-3">
+            {aiRecommendations.map((rec, i) => (
+              <div
+                key={`ai-rec-${i}`}
+                className="bg-gradient-to-br from-violet-50 to-indigo-50 border border-violet-100 rounded-2xl p-4 space-y-2"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <h3 className="font-semibold text-gray-900 text-sm leading-tight">
+                    {rec.name}
+                  </h3>
+                  <span className="text-xs font-semibold text-gray-700 shrink-0">
+                    {rec.priceRange}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 text-xs text-gray-600">
+                  <span>{rec.cuisine}</span>
+                  <span className="text-gray-300">|</span>
+                  <span>{BEST_FOR_LABEL[rec.bestFor] || rec.bestFor}</span>
+                  {rec.neighborhood && (
+                    <>
+                      <span className="text-gray-300">|</span>
+                      <span className="flex items-center gap-0.5">
+                        <MapPin className="w-3 h-3" />
+                        {rec.neighborhood}
+                      </span>
+                    </>
+                  )}
+                </div>
+                <p className="text-xs text-gray-600 italic">{rec.reason}</p>
+                <div className="flex gap-1.5 flex-wrap">
+                  {rec.kidsFriendly && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium bg-green-100 text-green-700 rounded-full">
+                      <Baby className="w-3 h-3" />
+                      Kids friendly
+                    </span>
+                  )}
+                  {rec.dietaryOptions.map((opt) => (
+                    <span
+                      key={opt}
+                      className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium bg-emerald-50 text-emerald-700 rounded-full"
+                    >
+                      <Leaf className="w-3 h-3" />
+                      {opt}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Location selector */}
       <div className="mb-4">
@@ -227,7 +349,7 @@ export function DiningView({ tripId, destination, destinations, arrivalCities }:
       )}
 
       {/* Empty state */}
-      {!loading && results.length === 0 && (
+      {!loading && results.length === 0 && !aiLoaded && (
         <div className="text-center py-20">
           <Utensils className="w-12 h-12 text-gray-200 mx-auto mb-3" />
           <p className="text-gray-500 text-sm">

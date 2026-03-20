@@ -10,7 +10,7 @@ import {
 import type { TravelerProfileResult } from "@/lib/actions/travelers"
 import { updatePreferences } from "@/lib/actions/preferences"
 import { cn } from "@/lib/utils"
-import { User, Users, Settings, Plus, Trash2, X, Save } from "lucide-react"
+import { User, Users, Settings, Plus, Trash2, X, Save, Mail, Copy, Check } from "lucide-react"
 
 type TravelerProfile = {
   id: string
@@ -33,7 +33,7 @@ type Preferences = {
 } | null
 
 interface Props {
-  user: { name?: string | null; email?: string | null; image?: string | null } | null
+  user: { name?: string | null; email?: string | null; image?: string | null; id?: string } | null
   initialProfiles: TravelerProfile[]
   initialPrefs: Preferences
 }
@@ -64,6 +64,7 @@ export function GlobalSettingsView({ user, initialProfiles, initialPrefs }: Prop
   )
   const [showAddProfile, setShowAddProfile] = useState(false)
   const [savingPrefs, setSavingPrefs] = useState(false)
+  const [copiedEmail, setCopiedEmail] = useState(false)
   const [profileForm, setProfileForm] = useState({
     name: "",
     birthDate: "",
@@ -513,6 +514,50 @@ export function GlobalSettingsView({ user, initialProfiles, initialPrefs }: Prop
               </div>
             </div>
           </div>
+
+          {user?.id && (
+            <div className="bg-white border border-gray-100 rounded-2xl p-5">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center">
+                  <Mail className="w-5 h-5 text-indigo-600" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-gray-900">Email Forwarding</h3>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    Auto-import flights and hotels from confirmation emails
+                  </p>
+                </div>
+              </div>
+              <p className="text-sm text-gray-600 mb-3">
+                Forward your flight or hotel confirmation emails to this address and
+                we&apos;ll automatically add them to your next trip.
+              </p>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-800 font-mono truncate">
+                  trips+{user.id}@inbound.journeyperfect.com
+                </code>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(`trips+${user.id}@inbound.journeyperfect.com`)
+                    setCopiedEmail(true)
+                    setTimeout(() => setCopiedEmail(false), 2000)
+                  }}
+                  className="shrink-0 p-2.5 border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors"
+                  title="Copy email address"
+                >
+                  {copiedEmail ? (
+                    <Check className="w-4 h-4 text-green-600" />
+                  ) : (
+                    <Copy className="w-4 h-4 text-gray-500" />
+                  )}
+                </button>
+              </div>
+              <p className="text-xs text-gray-400 mt-2">
+                Works with flight confirmations from airlines and hotel booking confirmations.
+                Requires a paid plan.
+              </p>
+            </div>
+          )}
 
           <div className="bg-white border border-gray-100 rounded-2xl p-5">
             <h3 className="font-semibold text-gray-900 mb-2">About JourneyPerfect</h3>

@@ -1,7 +1,7 @@
 "use server"
 
-import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/db"
+import { requireTripAccess } from "@/lib/auth-trip"
 import { revalidatePath } from "next/cache"
 import { optimizeItinerary } from "@/lib/optimizer"
 import { z } from "zod"
@@ -21,10 +21,7 @@ const itemSchema = z.object({
 })
 
 export async function getItinerary(tripId: string) {
-  const session = await auth()
-  if (!session?.user?.id) throw new Error("Unauthorized")
-
-  await prisma.trip.findFirstOrThrow({ where: { id: tripId, userId: session.user.id } })
+  await requireTripAccess(tripId)
 
   return prisma.itineraryItem.findMany({
     where: { tripId },
@@ -38,10 +35,7 @@ export async function getItinerary(tripId: string) {
 }
 
 export async function createItineraryItem(tripId: string, data: z.infer<typeof itemSchema>) {
-  const session = await auth()
-  if (!session?.user?.id) throw new Error("Unauthorized")
-
-  await prisma.trip.findFirstOrThrow({ where: { id: tripId, userId: session.user.id } })
+  await requireTripAccess(tripId, "EDITOR")
 
   const parsed = itemSchema.parse(data)
   const item = await prisma.itineraryItem.create({
@@ -61,10 +55,7 @@ export async function updateItineraryItem(
   itemId: string,
   data: Partial<z.infer<typeof itemSchema>>
 ) {
-  const session = await auth()
-  if (!session?.user?.id) throw new Error("Unauthorized")
-
-  await prisma.trip.findFirstOrThrow({ where: { id: tripId, userId: session.user.id } })
+  await requireTripAccess(tripId, "EDITOR")
 
   const updated = await prisma.itineraryItem.update({
     where: { id: itemId },
@@ -79,19 +70,13 @@ export async function updateItineraryItem(
 }
 
 export async function deleteItineraryItem(tripId: string, itemId: string) {
-  const session = await auth()
-  if (!session?.user?.id) throw new Error("Unauthorized")
-
-  await prisma.trip.findFirstOrThrow({ where: { id: tripId, userId: session.user.id } })
+  await requireTripAccess(tripId, "EDITOR")
   await prisma.itineraryItem.delete({ where: { id: itemId } })
   revalidatePath(`/trip/${tripId}/itinerary`)
 }
 
 export async function reorderItineraryItems(tripId: string, updates: { id: string; position: number; date: string }[]) {
-  const session = await auth()
-  if (!session?.user?.id) throw new Error("Unauthorized")
-
-  await prisma.trip.findFirstOrThrow({ where: { id: tripId, userId: session.user.id } })
+  await requireTripAccess(tripId, "EDITOR")
 
   await prisma.$transaction(
     updates.map(u =>
@@ -106,11 +91,10 @@ export async function reorderItineraryItems(tripId: string, updates: { id: strin
 }
 
 export async function runOptimizer(tripId: string) {
-  const session = await auth()
-  if (!session?.user?.id) throw new Error("Unauthorized")
+  await requireTripAccess(tripId, "EDITOR")
 
   const trip = await prisma.trip.findFirstOrThrow({
-    where: { id: tripId, userId: session.user.id },
+    where: { id: tripId },
     include: {
       activities: { where: { status: { in: ["WISHLIST", "SCHEDULED"] } } },
       hotels: { orderBy: { checkIn: "asc" } },

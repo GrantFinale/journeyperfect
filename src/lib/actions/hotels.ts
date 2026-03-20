@@ -2,6 +2,7 @@
 
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/db"
+import { requireTripAccess } from "@/lib/auth-trip"
 import { revalidatePath } from "next/cache"
 import { parseHotelTextWithAI } from "@/lib/hotel-parser-ai"
 import { z } from "zod"
@@ -25,10 +26,7 @@ const hotelSchema = z.object({
 })
 
 export async function createHotel(tripId: string, data: z.infer<typeof hotelSchema>) {
-  const session = await auth()
-  if (!session?.user?.id) throw new Error("Unauthorized")
-
-  await prisma.trip.findFirstOrThrow({ where: { id: tripId, userId: session.user.id } })
+  await requireTripAccess(tripId, "EDITOR")
 
   const parsed = hotelSchema.parse(data)
   const hotel = await prisma.hotel.create({
@@ -118,13 +116,7 @@ export async function parseAndPreviewHotel(text: string) {
 }
 
 export async function createHotelsBatch(tripId: string, hotels: z.infer<typeof hotelSchema>[]) {
-  const session = await auth()
-  if (!session?.user?.id) throw new Error("Not authenticated")
-
-  const trip = await prisma.trip.findFirst({
-    where: { id: tripId, userId: session.user.id },
-  })
-  if (!trip) throw new Error("Trip not found")
+  await requireTripAccess(tripId, "EDITOR")
 
   const created = await prisma.$transaction(
     hotels.map((hotel) => {
@@ -195,10 +187,7 @@ export async function createHotelsBatch(tripId: string, hotels: z.infer<typeof h
 }
 
 export async function updateHotel(tripId: string, hotelId: string, data: Partial<z.infer<typeof hotelSchema>>) {
-  const session = await auth()
-  if (!session?.user?.id) throw new Error("Unauthorized")
-
-  await prisma.trip.findFirstOrThrow({ where: { id: tripId, userId: session.user.id } })
+  await requireTripAccess(tripId, "EDITOR")
 
   const updated = await prisma.hotel.update({
     where: { id: hotelId },
@@ -214,10 +203,7 @@ export async function updateHotel(tripId: string, hotelId: string, data: Partial
 }
 
 export async function deleteHotel(tripId: string, hotelId: string) {
-  const session = await auth()
-  if (!session?.user?.id) throw new Error("Unauthorized")
-
-  await prisma.trip.findFirstOrThrow({ where: { id: tripId, userId: session.user.id } })
+  await requireTripAccess(tripId, "EDITOR")
   await prisma.hotel.delete({ where: { id: hotelId } })
   revalidatePath(`/trip/${tripId}`)
 }

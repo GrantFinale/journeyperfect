@@ -2,6 +2,7 @@
 
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/db"
+import { requireTripAccess } from "@/lib/auth-trip"
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
 
@@ -89,11 +90,8 @@ export async function deleteTravelerProfile(profileId: string) {
 export type TravelerProfileResult = Awaited<ReturnType<typeof createTravelerProfile>>
 
 export async function addTravelerToTrip(tripId: string, profileId: string) {
-  const session = await auth()
-  if (!session?.user?.id) throw new Error("Unauthorized")
-
-  await prisma.trip.findFirstOrThrow({ where: { id: tripId, userId: session.user.id } })
-  await prisma.travelerProfile.findFirstOrThrow({ where: { id: profileId, userId: session.user.id } })
+  const { userId } = await requireTripAccess(tripId, "EDITOR")
+  await prisma.travelerProfile.findFirstOrThrow({ where: { id: profileId, userId } })
 
   await prisma.tripTraveler.upsert({
     where: { tripId_travelerProfileId: { tripId, travelerProfileId: profileId } },
@@ -105,10 +103,7 @@ export async function addTravelerToTrip(tripId: string, profileId: string) {
 }
 
 export async function removeTravelerFromTrip(tripId: string, profileId: string) {
-  const session = await auth()
-  if (!session?.user?.id) throw new Error("Unauthorized")
-
-  await prisma.trip.findFirstOrThrow({ where: { id: tripId, userId: session.user.id } })
+  await requireTripAccess(tripId, "EDITOR")
 
   await prisma.tripTraveler.delete({
     where: { tripId_travelerProfileId: { tripId, travelerProfileId: profileId } },

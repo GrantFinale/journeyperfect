@@ -9,6 +9,7 @@ import { createRentalCar, deleteRentalCar, parseAndPreviewRentalCar } from "@/li
 import { getCompanyInfo, RENTAL_CAR_COMPANIES } from "@/lib/rental-car-logos"
 import { addTravelerToTrip, removeTravelerFromTrip } from "@/lib/actions/travelers"
 import { updateTrip, deleteTrip, shareTrip, unshareTrip, addDestination, removeDestination } from "@/lib/actions/trips"
+import { inviteCollaborator, removeCollaborator, updateCollaboratorRole } from "@/lib/actions/collaborators"
 import { formatDate } from "@/lib/utils"
 import { cn } from "@/lib/utils"
 import {
@@ -28,6 +29,11 @@ import {
   Clipboard,
   MapPin,
   CheckCircle2,
+  UserPlus,
+  Crown,
+  Eye,
+  Pencil,
+  Mail,
 } from "lucide-react"
 import PlacesAutocomplete from "@/components/places-autocomplete"
 import { AffiliateBadge } from "@/components/affiliate-links"
@@ -94,14 +100,26 @@ type Trip = {
 
 type TravelerProfile = { id: string; name: string; tags: string[]; isDefault: boolean }
 
+type Collaborator = {
+  id: string
+  email: string
+  role: "VIEWER" | "EDITOR"
+  status: "PENDING" | "ACCEPTED" | "DECLINED"
+  user: { name: string | null; email: string | null; image: string | null } | null
+}
+
 interface Props {
   tripId: string
   trip: Trip
   allProfiles: TravelerProfile[]
   initialTab?: string
+  isOwner?: boolean
+  ownerName?: string | null
+  ownerEmail?: string | null
+  initialCollaborators?: Collaborator[]
 }
 
-const TABS = ["Flights", "Hotels", "Cars", "Travelers", "General"] as const
+const TABS = ["Flights", "Hotels", "Cars", "Travelers", "Sharing", "General"] as const
 type Tab = (typeof TABS)[number]
 
 function tabFromParam(param?: string): Tab {
@@ -111,10 +129,16 @@ function tabFromParam(param?: string): Tab {
   return match || "Flights"
 }
 
-export function TripSettingsView({ tripId, trip: initialTrip, allProfiles, initialTab }: Props) {
+export function TripSettingsView({ tripId, trip: initialTrip, allProfiles, initialTab, isOwner = true, ownerName, ownerEmail, initialCollaborators = [] }: Props) {
   const router = useRouter()
   const [activeTab, setActiveTab] = useState<Tab>(tabFromParam(initialTab))
   const [trip, setTrip] = useState<Trip>(initialTrip)
+
+  // Collaborator state
+  const [collaborators, setCollaborators] = useState<Collaborator[]>(initialCollaborators)
+  const [inviteEmail, setInviteEmail] = useState("")
+  const [inviteRole, setInviteRole] = useState<"VIEWER" | "EDITOR">("VIEWER")
+  const [inviting, setInviting] = useState(false)
 
   // Flight state
   const [showFlightForm, setShowFlightForm] = useState(false)
@@ -657,6 +681,54 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles, initi
     } catch {
       toast.error("Failed to delete trip")
       setDeletingTrip(false)
+    }
+  }
+
+  async function handleInvite() {
+    if (!inviteEmail.trim()) return
+    setInviting(true)
+    try {
+      await inviteCollaborator(tripId, inviteEmail.trim(), inviteRole)
+      setCollaborators((prev) => [
+        ...prev,
+        {
+          id: "temp-" + Date.now(),
+          email: inviteEmail.trim().toLowerCase(),
+          role: inviteRole,
+          status: "PENDING",
+          user: null,
+        },
+      ])
+      setInviteEmail("")
+      setInviteRole("VIEWER")
+      toast.success("Invite sent!")
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to invite"
+      toast.error(msg)
+    } finally {
+      setInviting(false)
+    }
+  }
+
+  async function handleRemoveCollaborator(collaboratorId: string) {
+    try {
+      await removeCollaborator(tripId, collaboratorId)
+      setCollaborators((prev) => prev.filter((c) => c.id !== collaboratorId))
+      toast.success("Collaborator removed")
+    } catch {
+      toast.error("Failed to remove collaborator")
+    }
+  }
+
+  async function handleChangeRole(collaboratorId: string, role: "VIEWER" | "EDITOR") {
+    try {
+      await updateCollaboratorRole(tripId, collaboratorId, role)
+      setCollaborators((prev) =>
+        prev.map((c) => (c.id === collaboratorId ? { ...c, role } : c))
+      )
+      toast.success("Role updated")
+    } catch {
+      toast.error("Failed to update role")
     }
   }
 
@@ -1400,6 +1472,143 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles, initi
               })}
             </div>
           )}
+        </div>
+      )}
+
+      {/* SHARING TAB */}
+      {activeTab === "Sharing" && (
+        <div className="space-y-6">
+          {/* Owner */}
+          <div className="bg-white border border-gray-100 rounded-2xl p-5">
+            <h3 className="font-semibold text-gray-900 mb-4">Trip Owner</h3>
+            <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
+              <div className="w-9 h-9 bg-indigo-100 rounded-full flex items-center justify-center text-sm font-semibold text-indigo-700 shrink-0">
+                <Crown className="w-4 h-4" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="font-medium text-sm text-gray-900">{ownerName || "You"}</div>
+                {ownerEmail && <div className="text-xs text-gray-500">{ownerEmail}</div>}
+              </div>
+              <span className="px-2 py-0.5 bg-indigo-100 text-indigo-700 text-xs font-medium rounded-full">
+                Owner
+              </span>
+            </div>
+          </div>
+
+          {/* Invite form - only for owner */}
+          {isOwner && (
+            <div className="bg-white border border-gray-100 rounded-2xl p-5">
+              <h3 className="font-semibold text-gray-900 mb-1">Invite Collaborators</h3>
+              <p className="text-sm text-gray-500 mb-4">
+                Share this trip with others so they can view or help edit.
+              </p>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <div className="flex-1">
+                  <input
+                    type="email"
+                    placeholder="Email address"
+                    value={inviteEmail}
+                    onChange={(e) => setInviteEmail(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleInvite()}
+                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+                <select
+                  value={inviteRole}
+                  onChange={(e) => setInviteRole(e.target.value as "VIEWER" | "EDITOR")}
+                  className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+                >
+                  <option value="VIEWER">Viewer</option>
+                  <option value="EDITOR">Editor</option>
+                </select>
+                <button
+                  onClick={handleInvite}
+                  disabled={inviting || !inviteEmail.trim()}
+                  className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition-colors whitespace-nowrap"
+                >
+                  <UserPlus className="w-4 h-4" />
+                  {inviting ? "Inviting..." : "Invite"}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Collaborators list */}
+          <div className="bg-white border border-gray-100 rounded-2xl p-5">
+            <h3 className="font-semibold text-gray-900 mb-4">
+              Collaborators {collaborators.length > 0 && `(${collaborators.length})`}
+            </h3>
+            {collaborators.length === 0 ? (
+              <div className="text-center py-8">
+                <Users className="w-10 h-10 text-gray-200 mx-auto mb-3" />
+                <p className="text-gray-500 text-sm">No collaborators yet</p>
+                <p className="text-gray-400 text-xs mt-1">
+                  Invite someone to view or edit this trip
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {collaborators.map((collab) => (
+                  <div
+                    key={collab.id}
+                    className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl group"
+                  >
+                    <div className="w-9 h-9 bg-gray-200 rounded-full flex items-center justify-center text-sm font-semibold text-gray-600 shrink-0">
+                      {collab.user?.name
+                        ? collab.user.name.charAt(0).toUpperCase()
+                        : <Mail className="w-4 h-4 text-gray-400" />}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium text-sm text-gray-900 truncate">
+                        {collab.user?.name || collab.email}
+                      </div>
+                      <div className="text-xs text-gray-500 truncate">
+                        {collab.user?.name ? collab.email : ""}
+                        {collab.status === "PENDING" && (
+                          <span className="ml-1 text-amber-600">(pending)</span>
+                        )}
+                        {collab.status === "DECLINED" && (
+                          <span className="ml-1 text-red-500">(declined)</span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {isOwner ? (
+                        <select
+                          value={collab.role}
+                          onChange={(e) =>
+                            handleChangeRole(collab.id, e.target.value as "VIEWER" | "EDITOR")
+                          }
+                          className="px-2 py-1 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+                        >
+                          <option value="VIEWER">Viewer</option>
+                          <option value="EDITOR">Editor</option>
+                        </select>
+                      ) : (
+                        <span className={cn(
+                          "inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium rounded-full",
+                          collab.role === "EDITOR"
+                            ? "bg-green-50 text-green-700"
+                            : "bg-gray-100 text-gray-600"
+                        )}>
+                          {collab.role === "EDITOR" ? <Pencil className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                          {collab.role === "EDITOR" ? "Editor" : "Viewer"}
+                        </span>
+                      )}
+                      {isOwner && (
+                        <button
+                          onClick={() => handleRemoveCollaborator(collab.id)}
+                          className="p-1.5 text-gray-400 hover:text-red-500 transition-colors sm:opacity-0 sm:group-hover:opacity-100"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       )}
 

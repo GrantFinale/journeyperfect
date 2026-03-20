@@ -1,16 +1,19 @@
 import { NextRequest, NextResponse } from "next/server"
-import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/db"
+import { requireTripAccess } from "@/lib/auth-trip"
 
 export const dynamic = "force-dynamic"
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ tripId: string }> }) {
   const { tripId } = await params
-  const session = await auth()
-  if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  try {
+    await requireTripAccess(tripId)
+  } catch {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
 
   const trip = await prisma.trip.findFirst({
-    where: { id: tripId, userId: session.user.id },
+    where: { id: tripId },
     include: {
       itineraryItems: { orderBy: [{ date: "asc" }, { startTime: "asc" }] },
       flights: true,

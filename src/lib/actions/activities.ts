@@ -2,6 +2,7 @@
 
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/db"
+import { requireTripAccess } from "@/lib/auth-trip"
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
 
@@ -31,10 +32,7 @@ const activitySchema = z.object({
 })
 
 export async function createActivity(tripId: string, data: z.infer<typeof activitySchema>) {
-  const session = await auth()
-  if (!session?.user?.id) throw new Error("Unauthorized")
-
-  await prisma.trip.findFirstOrThrow({ where: { id: tripId, userId: session.user.id } })
+  await requireTripAccess(tripId, "EDITOR")
 
   const parsed = activitySchema.parse(data)
   const activity = await prisma.activity.create({
@@ -50,10 +48,7 @@ export async function createActivity(tripId: string, data: z.infer<typeof activi
 }
 
 export async function updateActivity(tripId: string, activityId: string, data: Partial<z.infer<typeof activitySchema>>) {
-  const session = await auth()
-  if (!session?.user?.id) throw new Error("Unauthorized")
-
-  await prisma.trip.findFirstOrThrow({ where: { id: tripId, userId: session.user.id } })
+  await requireTripAccess(tripId, "EDITOR")
 
   const updated = await prisma.activity.update({
     where: { id: activityId },
@@ -68,19 +63,13 @@ export async function updateActivity(tripId: string, activityId: string, data: P
 }
 
 export async function deleteActivity(tripId: string, activityId: string) {
-  const session = await auth()
-  if (!session?.user?.id) throw new Error("Unauthorized")
-
-  await prisma.trip.findFirstOrThrow({ where: { id: tripId, userId: session.user.id } })
+  await requireTripAccess(tripId, "EDITOR")
   await prisma.activity.delete({ where: { id: activityId } })
   revalidatePath(`/trip/${tripId}/activities`)
 }
 
 export async function getActivities(tripId: string) {
-  const session = await auth()
-  if (!session?.user?.id) throw new Error("Unauthorized")
-
-  await prisma.trip.findFirstOrThrow({ where: { id: tripId, userId: session.user.id } })
+  await requireTripAccess(tripId)
 
   return prisma.activity.findMany({
     where: { tripId },
@@ -93,7 +82,8 @@ export async function searchPlaces(query: string, locationBias?: string) {
   const session = await auth()
   if (!session?.user?.id) throw new Error("Unauthorized")
 
-  const apiKey = process.env.NEXT_PUBLIC_GOOGLE_PLACES_KEY
+  // Prefer server-only env var; fall back to NEXT_PUBLIC_ for local dev
+  const apiKey = process.env.GOOGLE_PLACES_KEY || process.env.NEXT_PUBLIC_GOOGLE_PLACES_KEY
   if (!apiKey || apiKey === "build-placeholder") {
     return { results: [], error: "Places API not configured" }
   }

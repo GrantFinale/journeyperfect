@@ -11,13 +11,17 @@ import {
   type AffiliateLink,
 } from "@/lib/affiliates"
 import { prisma } from "@/lib/db"
+import { requireTripAccess } from "@/lib/auth-trip"
 
 export async function getTripAffiliates(tripId: string): Promise<AffiliateLink[]> {
-  const session = await auth()
-  if (!session?.user?.id) return []
+  try {
+    await requireTripAccess(tripId)
+  } catch {
+    return []
+  }
 
   const trip = await prisma.trip.findFirst({
-    where: { id: tripId, userId: session.user.id },
+    where: { id: tripId },
     select: { destination: true, startDate: true, endDate: true },
   })
   if (!trip) return []
@@ -30,11 +34,14 @@ export async function getTripAffiliates(tripId: string): Promise<AffiliateLink[]
 }
 
 export async function getSmartSuggestions(tripId: string) {
-  const session = await auth()
-  if (!session?.user?.id) return []
+  try {
+    await requireTripAccess(tripId)
+  } catch {
+    return []
+  }
 
   const trip = await prisma.trip.findFirst({
-    where: { id: tripId, userId: session.user.id },
+    where: { id: tripId },
     include: {
       flights: { select: { id: true, arrivalAirport: true } },
       hotels: { select: { id: true } },

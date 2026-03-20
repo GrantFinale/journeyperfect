@@ -1,7 +1,7 @@
 "use server"
 
-import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/db"
+import { requireTripAccess } from "@/lib/auth-trip"
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
 
@@ -15,10 +15,7 @@ const budgetItemSchema = z.object({
 })
 
 export async function getBudgetSummary(tripId: string) {
-  const session = await auth()
-  if (!session?.user?.id) throw new Error("Unauthorized")
-
-  await prisma.trip.findFirstOrThrow({ where: { id: tripId, userId: session.user.id } })
+  await requireTripAccess(tripId)
 
   const items = await prisma.budgetItem.findMany({
     where: { tripId },
@@ -38,10 +35,7 @@ export async function getBudgetSummary(tripId: string) {
 }
 
 export async function createBudgetItem(tripId: string, data: z.infer<typeof budgetItemSchema>) {
-  const session = await auth()
-  if (!session?.user?.id) throw new Error("Unauthorized")
-
-  await prisma.trip.findFirstOrThrow({ where: { id: tripId, userId: session.user.id } })
+  await requireTripAccess(tripId, "EDITOR")
 
   const parsed = budgetItemSchema.parse(data)
   const item = await prisma.budgetItem.create({
@@ -57,10 +51,7 @@ export async function createBudgetItem(tripId: string, data: z.infer<typeof budg
 }
 
 export async function updateBudgetItem(tripId: string, itemId: string, data: Partial<z.infer<typeof budgetItemSchema>>) {
-  const session = await auth()
-  if (!session?.user?.id) throw new Error("Unauthorized")
-
-  await prisma.trip.findFirstOrThrow({ where: { id: tripId, userId: session.user.id } })
+  await requireTripAccess(tripId, "EDITOR")
 
   const updated = await prisma.budgetItem.update({
     where: { id: itemId },
@@ -78,10 +69,7 @@ export type BudgetItemResult = Awaited<ReturnType<typeof createBudgetItem>>
 export type BudgetSummaryResult = Awaited<ReturnType<typeof getBudgetSummary>>
 
 export async function deleteBudgetItem(tripId: string, itemId: string) {
-  const session = await auth()
-  if (!session?.user?.id) throw new Error("Unauthorized")
-
-  await prisma.trip.findFirstOrThrow({ where: { id: tripId, userId: session.user.id } })
+  await requireTripAccess(tripId, "EDITOR")
   await prisma.budgetItem.delete({ where: { id: itemId } })
   revalidatePath(`/trip/${tripId}/budget`)
 }

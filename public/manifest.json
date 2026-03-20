@@ -1,0 +1,12 @@
+{
+  "name": "JourneyPerfect",
+  "short_name": "JourneyPerfect",
+  "description": "Plan perfect vacations",
+  "start_url": "/dashboard",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#4f46e5",
+  "icons": [
+    { "src": "/jp-icon.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

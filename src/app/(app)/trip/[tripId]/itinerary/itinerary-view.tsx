@@ -38,6 +38,7 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { WeatherBar } from "@/components/weather-bar"
+import { FlightStatusBadge } from "@/components/flight-status-badge"
 import type { TripWeatherData } from "@/lib/weather"
 
 type ItineraryItem = {
@@ -170,6 +171,22 @@ function SortableItineraryItem({
               {item.notes && (
                 <p className="text-xs text-gray-400 mt-0.5">{item.notes}</p>
               )}
+              {item.type === "FLIGHT" && item.flight?.flightNumber && (() => {
+                const depDate = new Date(item.date)
+                const now = new Date()
+                const diffHours = (depDate.getTime() - now.getTime()) / (1000 * 60 * 60)
+                if (diffHours > -12 && diffHours < 24) {
+                  return (
+                    <div className="mt-1">
+                      <FlightStatusBadge
+                        flightNumber={item.flight.flightNumber}
+                        departureDate={depDate.toISOString().split("T")[0]}
+                      />
+                    </div>
+                  )
+                }
+                return null
+              })()}
             </div>
             <button
               onClick={() => onDelete(item.id)}

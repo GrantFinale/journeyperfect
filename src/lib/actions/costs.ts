@@ -1,12 +1,9 @@
 "use server"
-import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/db"
+import { requireTripAccess } from "@/lib/auth-trip"
 
 export async function getTripCostSummary(tripId: string) {
-  const session = await auth()
-  if (!session?.user?.id) throw new Error("Unauthorized")
-
-  await prisma.trip.findFirstOrThrow({ where: { id: tripId, userId: session.user.id } })
+  await requireTripAccess(tripId)
 
   const [flights, hotels, budgetItems] = await Promise.all([
     prisma.flight.findMany({ where: { tripId }, select: { price: true, priceCurrency: true } }),

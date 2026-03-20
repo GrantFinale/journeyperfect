@@ -1,6 +1,9 @@
 import { notFound } from "next/navigation"
+import { auth } from "@/lib/auth"
+import { prisma } from "@/lib/db"
 import { getTrip } from "@/lib/actions/trips"
 import { getTravelerProfiles } from "@/lib/actions/travelers"
+import { getCollaborators } from "@/lib/actions/collaborators"
 import { TripSettingsView } from "./trip-settings-view"
 
 export default async function TripSettingsPage({
@@ -14,13 +17,31 @@ export default async function TripSettingsPage({
   const { tab } = await searchParams
 
   try {
-    const [trip, allProfiles] = await Promise.all([getTrip(tripId), getTravelerProfiles()])
+    const session = await auth()
+    const [trip, allProfiles, collaborators] = await Promise.all([
+      getTrip(tripId),
+      getTravelerProfiles(),
+      getCollaborators(tripId),
+    ])
+
+    // Get owner info
+    const owner = await prisma.user.findUnique({
+      where: { id: trip.userId },
+      select: { name: true, email: true },
+    })
+
+    const isOwner = session?.user?.id === trip.userId
+
     return (
       <TripSettingsView
         tripId={tripId}
         trip={trip}
         allProfiles={allProfiles}
         initialTab={tab}
+        isOwner={isOwner}
+        ownerName={owner?.name}
+        ownerEmail={owner?.email}
+        initialCollaborators={collaborators}
       />
     )
   } catch {

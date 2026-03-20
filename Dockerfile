@@ -23,6 +23,7 @@ ENV NEXTAUTH_SECRET=build-time-secret
 ENV GOOGLE_CLIENT_ID=build-placeholder
 ENV GOOGLE_CLIENT_SECRET=build-placeholder
 ENV NEXT_PUBLIC_GOOGLE_PLACES_KEY=build-placeholder
+ENV GOOGLE_PLACES_KEY=build-placeholder
 ENV NEXT_PUBLIC_APP_URL=http://localhost:3000
 RUN npx prisma generate
 ENV NODE_OPTIONS="--max-old-space-size=1536"

@@ -2,6 +2,7 @@
 
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/db"
+import { requireTripAccess } from "@/lib/auth-trip"
 import {
   getWeatherForecast,
   getWeatherAlerts,
@@ -10,11 +11,16 @@ import {
 import { hasFeature } from "@/lib/features"
 
 export async function getTripWeather(tripId: string): Promise<TripWeatherData | null> {
-  const session = await auth()
-  if (!session?.user?.id) return null
+  let userId: string
+  try {
+    const access = await requireTripAccess(tripId)
+    userId = access.userId
+  } catch {
+    return null
+  }
 
   const trip = await prisma.trip.findFirst({
-    where: { id: tripId, userId: session.user.id },
+    where: { id: tripId },
     include: {
       destinations: { orderBy: { position: "asc" } },
       itineraryItems: {
@@ -63,7 +69,7 @@ export async function getTripWeather(tripId: string): Promise<TripWeatherData | 
 
   // Only show weather alerts for paid plans
   const user = await prisma.user.findUnique({
-    where: { id: session.user.id },
+    where: { id: userId },
     select: { plan: true },
   })
   const showAlerts = user && hasFeature(user.plan, "weatherAlerts")

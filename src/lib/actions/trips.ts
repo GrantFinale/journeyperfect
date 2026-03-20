@@ -2,6 +2,7 @@
 
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/db"
+import { requireTripAccess } from "@/lib/auth-trip"
 import { getPlanLimits, type Plan } from "@/lib/plans"
 import { revalidatePath } from "next/cache"
 import { nanoid } from "nanoid"
@@ -75,11 +76,11 @@ export async function getTrips() {
 }
 
 export async function getTrip(tripId: string) {
-  const session = await auth()
-  if (!session?.user?.id) throw new Error("Unauthorized")
+  // Verify access (owner or collaborator)
+  await requireTripAccess(tripId)
 
   const trip = await prisma.trip.findFirst({
-    where: { id: tripId, userId: session.user.id },
+    where: { id: tripId },
     include: {
       destinations: { orderBy: { position: "asc" } },
       travelers: { include: { traveler: true } },
@@ -95,11 +96,7 @@ export async function getTrip(tripId: string) {
 }
 
 export async function updateTrip(tripId: string, data: Partial<z.infer<typeof createTripSchema>>) {
-  const session = await auth()
-  if (!session?.user?.id) throw new Error("Unauthorized")
-
-  const trip = await prisma.trip.findFirst({ where: { id: tripId, userId: session.user.id } })
-  if (!trip) throw new Error("Trip not found")
+  await requireTripAccess(tripId, "EDITOR")
 
   const updated = await prisma.trip.update({
     where: { id: tripId },
@@ -126,10 +123,7 @@ export async function deleteTrip(tripId: string) {
 }
 
 export async function shareTrip(tripId: string) {
-  const session = await auth()
-  if (!session?.user?.id) throw new Error("Unauthorized")
-
-  await prisma.trip.findFirstOrThrow({ where: { id: tripId, userId: session.user.id } })
+  await requireTripAccess(tripId, "EDITOR")
 
   const slug = nanoid(21)
   const updated = await prisma.trip.update({
@@ -138,14 +132,11 @@ export async function shareTrip(tripId: string) {
   })
 
   revalidatePath(`/trip/${tripId}`)
-  return updated
+  return { isPublic: updated.isPublic, shareSlug: updated.shareSlug }
 }
 
 export async function unshareTrip(tripId: string) {
-  const session = await auth()
-  if (!session?.user?.id) throw new Error("Unauthorized")
-
-  await prisma.trip.findFirstOrThrow({ where: { id: tripId, userId: session.user.id } })
+  await requireTripAccess(tripId, "EDITOR")
 
   const updated = await prisma.trip.update({
     where: { id: tripId },
@@ -153,7 +144,7 @@ export async function unshareTrip(tripId: string) {
   })
 
   revalidatePath(`/trip/${tripId}`)
-  return updated
+  return { isPublic: updated.isPublic, shareSlug: updated.shareSlug }
 }
 
 export async function getTripBySlug(slug: string) {
@@ -186,10 +177,7 @@ async function updateDestinationSummary(tripId: string) {
 }
 
 export async function addDestination(tripId: string, name: string, lat?: number, lng?: number) {
-  const session = await auth()
-  if (!session?.user?.id) throw new Error("Unauthorized")
-
-  await prisma.trip.findFirstOrThrow({ where: { id: tripId, userId: session.user.id } })
+  await requireTripAccess(tripId, "EDITOR")
 
   // Get the next position
   const maxPos = await prisma.tripDestination.findFirst({
@@ -214,10 +202,7 @@ export async function addDestination(tripId: string, name: string, lat?: number,
 }
 
 export async function removeDestination(tripId: string, destinationId: string) {
-  const session = await auth()
-  if (!session?.user?.id) throw new Error("Unauthorized")
-
-  await prisma.trip.findFirstOrThrow({ where: { id: tripId, userId: session.user.id } })
+  await requireTripAccess(tripId, "EDITOR")
 
   await prisma.tripDestination.delete({
     where: { id: destinationId },
@@ -231,10 +216,7 @@ export async function reorderDestinations(
   tripId: string,
   updates: { id: string; position: number }[]
 ) {
-  const session = await auth()
-  if (!session?.user?.id) throw new Error("Unauthorized")
-
-  await prisma.trip.findFirstOrThrow({ where: { id: tripId, userId: session.user.id } })
+  await requireTripAccess(tripId, "EDITOR")
 
   await prisma.$transaction(
     updates.map((u) =>

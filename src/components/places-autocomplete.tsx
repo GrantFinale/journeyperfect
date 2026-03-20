@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef } from "react"
+import { useEffect, useRef, useState } from "react"
 
 declare global {
   interface Window {
@@ -21,13 +21,23 @@ interface PlacesAutocompleteProps {
 function loadGoogleMaps(): Promise<void> {
   if (window.google?.maps?.places) return Promise.resolve()
 
-  return new Promise((resolve) => {
+  const apiKey = process.env.NEXT_PUBLIC_GOOGLE_PLACES_KEY
+  if (!apiKey || apiKey === "build-placeholder") {
+    return Promise.reject(new Error("Google Places API key not available"))
+  }
+
+  return new Promise((resolve, reject) => {
     if (document.querySelector('script[src*="maps.googleapis.com"]')) {
-      // Script already loading, wait for it
+      // Script already loading, wait for it with a timeout
+      let elapsed = 0
       const check = setInterval(() => {
+        elapsed += 100
         if (window.google?.maps?.places) {
           clearInterval(check)
           resolve()
+        } else if (elapsed > 10000) {
+          clearInterval(check)
+          reject(new Error("Google Maps script load timeout"))
         }
       }, 100)
       return
@@ -35,8 +45,9 @@ function loadGoogleMaps(): Promise<void> {
 
     window.__googleMapsCallback = () => resolve()
     const script = document.createElement("script")
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_PLACES_KEY}&libraries=places&callback=__googleMapsCallback`
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&callback=__googleMapsCallback`
     script.async = true
+    script.onerror = () => reject(new Error("Failed to load Google Maps script"))
     document.head.appendChild(script)
   })
 }
@@ -53,44 +64,49 @@ export default function PlacesAutocomplete({
   const autocompleteRef = useRef<any>(null)
   const onSelectRef = useRef(onSelect)
   const onChangeRef = useRef(onChange)
+  const [apiFailed, setApiFailed] = useState(false)
 
   // Keep refs up to date so the listener closure always uses the latest callbacks
   onSelectRef.current = onSelect
   onChangeRef.current = onChange
 
   useEffect(() => {
-    if (disabled) return
-    if (!process.env.NEXT_PUBLIC_GOOGLE_PLACES_KEY) return
+    if (disabled || apiFailed) return
 
-    loadGoogleMaps().then(() => {
-      if (!inputRef.current || autocompleteRef.current) return
+    loadGoogleMaps()
+      .then(() => {
+        if (!inputRef.current || autocompleteRef.current) return
 
-      const autocomplete = new window.google.maps.places.Autocomplete(inputRef.current, {
-        types: ["(cities)"],
+        const autocomplete = new window.google.maps.places.Autocomplete(inputRef.current, {
+          types: ["(cities)"],
+        })
+
+        autocomplete.addListener("place_changed", () => {
+          const place = autocomplete.getPlace()
+          if (place?.geometry) {
+            const name = place.formatted_address || place.name || ""
+            onSelectRef.current({
+              name,
+              lat: place.geometry.location?.lat(),
+              lng: place.geometry.location?.lng(),
+            })
+            onChangeRef.current(name)
+          }
+        })
+
+        autocompleteRef.current = autocomplete
       })
-
-      autocomplete.addListener("place_changed", () => {
-        const place = autocomplete.getPlace()
-        if (place?.geometry) {
-          const name = place.formatted_address || place.name || ""
-          onSelectRef.current({
-            name,
-            lat: place.geometry.location?.lat(),
-            lng: place.geometry.location?.lng(),
-          })
-          onChangeRef.current(name)
-        }
+      .catch(() => {
+        // Google Maps failed to load — fall back to plain text input
+        setApiFailed(true)
       })
-
-      autocompleteRef.current = autocomplete
-    })
 
     return () => {
       if (autocompleteRef.current) {
         window.google?.maps?.event?.clearInstanceListeners(autocompleteRef.current)
       }
     }
-  }, [disabled])
+  }, [disabled, apiFailed])
 
   if (disabled) {
     return (
@@ -106,6 +122,22 @@ export default function PlacesAutocomplete({
           Upgrade for smart search
         </span>
       </div>
+    )
+  }
+
+  // If API failed to load, render a plain text input (no ref needed for autocomplete)
+  if (apiFailed) {
+    return (
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => {
+          onChange(e.target.value)
+          onSelect({ name: e.target.value })
+        }}
+        placeholder={placeholder || "Type a city name..."}
+        className={className}
+      />
     )
   }
 

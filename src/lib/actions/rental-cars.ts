@@ -2,6 +2,7 @@
 
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/db"
+import { requireTripAccess } from "@/lib/auth-trip"
 import { revalidatePath } from "next/cache"
 import { parseRentalCarTextWithAI } from "@/lib/rental-car-parser-ai"
 import { z } from "zod"
@@ -26,10 +27,7 @@ const rentalCarSchema = z.object({
 })
 
 export async function createRentalCar(tripId: string, data: z.infer<typeof rentalCarSchema>) {
-  const session = await auth()
-  if (!session?.user?.id) throw new Error("Unauthorized")
-
-  await prisma.trip.findFirstOrThrow({ where: { id: tripId, userId: session.user.id } })
+  await requireTripAccess(tripId, "EDITOR")
 
   const parsed = rentalCarSchema.parse(data)
   const pickupTime = new Date(parsed.pickupTime)
@@ -95,10 +93,7 @@ export async function createRentalCar(tripId: string, data: z.infer<typeof renta
 }
 
 export async function updateRentalCar(tripId: string, carId: string, data: Partial<z.infer<typeof rentalCarSchema>>) {
-  const session = await auth()
-  if (!session?.user?.id) throw new Error("Unauthorized")
-
-  await prisma.trip.findFirstOrThrow({ where: { id: tripId, userId: session.user.id } })
+  await requireTripAccess(tripId, "EDITOR")
 
   const updated = await prisma.rentalCar.update({
     where: { id: carId },
@@ -114,10 +109,7 @@ export async function updateRentalCar(tripId: string, carId: string, data: Parti
 }
 
 export async function deleteRentalCar(tripId: string, carId: string) {
-  const session = await auth()
-  if (!session?.user?.id) throw new Error("Unauthorized")
-
-  await prisma.trip.findFirstOrThrow({ where: { id: tripId, userId: session.user.id } })
+  await requireTripAccess(tripId, "EDITOR")
   await prisma.rentalCar.delete({ where: { id: carId } })
   revalidatePath(`/trip/${tripId}`)
 }
@@ -149,10 +141,7 @@ export async function parseAndPreviewRentalCar(text: string) {
 }
 
 export async function getRentalCars(tripId: string) {
-  const session = await auth()
-  if (!session?.user?.id) throw new Error("Unauthorized")
-
-  await prisma.trip.findFirstOrThrow({ where: { id: tripId, userId: session.user.id } })
+  await requireTripAccess(tripId)
 
   return prisma.rentalCar.findMany({
     where: { tripId },

@@ -36,6 +36,7 @@ model User {
   travelerProfiles TravelerProfile[]
   preferences      UserPreferences?
   subscription     Subscription?
+  collaborations   TripCollaborator[] @relation("userCollaborations")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -152,6 +153,7 @@ model Trip {
   documents      TravelDocument[]
   budgetItems    BudgetItem[]
   packingItems   PackingItem[]
+  collaborators  TripCollaborator[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -466,6 +468,39 @@ model PackingItem {
   createdAt DateTime @default(now())
 
   @@index([tripId])
+}
+
+// ─── Trip Collaborators ──────────────────────────────────────────────────────
+
+model TripCollaborator {
+  id        String              @id @default(cuid())
+  tripId    String
+  userId    String?             // null until they accept (invited by email)
+  email     String              // email they were invited with
+  role      CollaboratorRole    @default(VIEWER)
+  status    CollaboratorStatus  @default(PENDING)
+  invitedBy String              // userId who sent invite
+
+  trip      Trip    @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  user      User?   @relation("userCollaborations", fields: [userId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@unique([tripId, email])
+  @@index([tripId])
+  @@index([userId])
+  @@index([email])
+}
+
+enum CollaboratorRole {
+  VIEWER
+  EDITOR
+}
+
+enum CollaboratorStatus {
+  PENDING   // invited, hasn't signed up or accepted
+  ACCEPTED  // active collaborator
+  DECLINED
 }
 
 // ─── Enums ────────────────────────────────────────────────────────────────────

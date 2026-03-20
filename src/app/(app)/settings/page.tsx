@@ -12,7 +12,7 @@ export default async function SettingsPage() {
 
   return (
     <GlobalSettingsView
-      user={session?.user ?? null}
+      user={session?.user ? { ...session.user, id: session.user.id } : null}
       initialProfiles={profiles}
       initialPrefs={prefs}
     />

@@ -2,14 +2,12 @@
 
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/db"
+import { requireTripAccess } from "@/lib/auth-trip"
 import { getConfig } from "@/lib/config"
 import { revalidatePath } from "next/cache"
 
 export async function getPackingList(tripId: string) {
-  const session = await auth()
-  if (!session?.user?.id) throw new Error("Unauthorized")
-
-  await prisma.trip.findFirstOrThrow({ where: { id: tripId, userId: session.user.id } })
+  await requireTripAccess(tripId)
 
   const items = await prisma.packingItem.findMany({
     where: { tripId },
@@ -30,10 +28,7 @@ export async function getPackingList(tripId: string) {
 }
 
 export async function addPackingItem(tripId: string, text: string, category: string) {
-  const session = await auth()
-  if (!session?.user?.id) throw new Error("Unauthorized")
-
-  await prisma.trip.findFirstOrThrow({ where: { id: tripId, userId: session.user.id } })
+  await requireTripAccess(tripId, "EDITOR")
 
   const maxPos = await prisma.packingItem.aggregate({
     where: { tripId, category },
@@ -54,10 +49,7 @@ export async function addPackingItem(tripId: string, text: string, category: str
 }
 
 export async function togglePackingItem(tripId: string, itemId: string) {
-  const session = await auth()
-  if (!session?.user?.id) throw new Error("Unauthorized")
-
-  await prisma.trip.findFirstOrThrow({ where: { id: tripId, userId: session.user.id } })
+  await requireTripAccess(tripId, "EDITOR")
 
   const item = await prisma.packingItem.findFirstOrThrow({
     where: { id: itemId, tripId },
@@ -73,10 +65,7 @@ export async function togglePackingItem(tripId: string, itemId: string) {
 }
 
 export async function deletePackingItem(tripId: string, itemId: string) {
-  const session = await auth()
-  if (!session?.user?.id) throw new Error("Unauthorized")
-
-  await prisma.trip.findFirstOrThrow({ where: { id: tripId, userId: session.user.id } })
+  await requireTripAccess(tripId, "EDITOR")
 
   await prisma.packingItem.delete({ where: { id: itemId } })
   revalidatePath(`/trip/${tripId}/packing`)
@@ -88,11 +77,10 @@ export async function generateBasicPackingList(
   tripId: string,
   tripTypes: string[]
 ) {
-  const session = await auth()
-  if (!session?.user?.id) throw new Error("Unauthorized")
+  await requireTripAccess(tripId, "EDITOR")
 
   const trip = await prisma.trip.findFirstOrThrow({
-    where: { id: tripId, userId: session.user.id },
+    where: { id: tripId },
   })
 
   const days = Math.max(1, Math.ceil(
@@ -265,12 +253,11 @@ export async function generateBasicPackingList(
 
 // AI-powered packing list generator — paid plans only
 export async function generatePackingList(tripId: string) {
-  const session = await auth()
-  if (!session?.user?.id) throw new Error("Unauthorized")
+  const { userId } = await requireTripAccess(tripId, "EDITOR")
 
   // Check paid plan
   const user = await prisma.user.findUnique({
-    where: { id: session.user.id },
+    where: { id: userId },
     select: { plan: true },
   })
   if (!user || user.plan === "FREE") {
@@ -278,7 +265,7 @@ export async function generatePackingList(tripId: string) {
   }
 
   const trip = await prisma.trip.findFirstOrThrow({
-    where: { id: tripId, userId: session.user.id },
+    where: { id: tripId },
     include: {
       travelers: { include: { traveler: true } },
       activities: { select: { name: true, category: true } },

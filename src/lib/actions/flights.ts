@@ -2,6 +2,7 @@
 
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/db"
+import { requireTripAccess } from "@/lib/auth-trip"
 import { revalidatePath } from "next/cache"
 import { parseFlightTextWithAI } from "@/lib/flight-parser-ai"
 import { z } from "zod"
@@ -55,10 +56,7 @@ export async function parseAndPreviewFlight(text: string) {
 }
 
 export async function createFlight(tripId: string, data: z.infer<typeof flightSchema>) {
-  const session = await auth()
-  if (!session?.user?.id) throw new Error("Unauthorized")
-
-  await prisma.trip.findFirstOrThrow({ where: { id: tripId, userId: session.user.id } })
+  await requireTripAccess(tripId, "EDITOR")
 
   const parsed = flightSchema.parse(data)
   const flight = await prisma.flight.create({
@@ -111,13 +109,7 @@ export async function createFlight(tripId: string, data: z.infer<typeof flightSc
 }
 
 export async function createFlightsBatch(tripId: string, flights: z.infer<typeof flightSchema>[]) {
-  const session = await auth()
-  if (!session?.user?.id) throw new Error("Not authenticated")
-
-  const trip = await prisma.trip.findFirst({
-    where: { id: tripId, userId: session.user.id },
-  })
-  if (!trip) throw new Error("Trip not found")
+  await requireTripAccess(tripId, "EDITOR")
 
   const created = await prisma.$transaction(
     flights.map((flight) => {
@@ -174,10 +166,7 @@ export async function createFlightsBatch(tripId: string, flights: z.infer<typeof
 }
 
 export async function updateFlight(tripId: string, flightId: string, data: Partial<z.infer<typeof flightSchema>>) {
-  const session = await auth()
-  if (!session?.user?.id) throw new Error("Unauthorized")
-
-  await prisma.trip.findFirstOrThrow({ where: { id: tripId, userId: session.user.id } })
+  await requireTripAccess(tripId, "EDITOR")
 
   const updated = await prisma.flight.update({
     where: { id: flightId },
@@ -193,10 +182,7 @@ export async function updateFlight(tripId: string, flightId: string, data: Parti
 }
 
 export async function deleteFlight(tripId: string, flightId: string) {
-  const session = await auth()
-  if (!session?.user?.id) throw new Error("Unauthorized")
-
-  await prisma.trip.findFirstOrThrow({ where: { id: tripId, userId: session.user.id } })
+  await requireTripAccess(tripId, "EDITOR")
   await prisma.flight.delete({ where: { id: flightId } })
   revalidatePath(`/trip/${tripId}`)
 }

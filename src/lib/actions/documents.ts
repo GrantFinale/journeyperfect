@@ -1,7 +1,7 @@
 "use server"
 
-import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/db"
+import { requireTripAccess } from "@/lib/auth-trip"
 import { revalidatePath } from "next/cache"
 import { z } from "zod"
 
@@ -17,10 +17,7 @@ const documentSchema = z.object({
 })
 
 export async function getDocuments(tripId: string) {
-  const session = await auth()
-  if (!session?.user?.id) throw new Error("Unauthorized")
-
-  await prisma.trip.findFirstOrThrow({ where: { id: tripId, userId: session.user.id } })
+  await requireTripAccess(tripId)
 
   return prisma.travelDocument.findMany({
     where: { tripId },
@@ -30,10 +27,7 @@ export async function getDocuments(tripId: string) {
 }
 
 export async function createDocument(tripId: string, data: z.infer<typeof documentSchema>) {
-  const session = await auth()
-  if (!session?.user?.id) throw new Error("Unauthorized")
-
-  await prisma.trip.findFirstOrThrow({ where: { id: tripId, userId: session.user.id } })
+  await requireTripAccess(tripId, "EDITOR")
 
   const parsed = documentSchema.parse(data)
   const doc = await prisma.travelDocument.create({
@@ -48,10 +42,7 @@ export type DocumentResult = Awaited<ReturnType<typeof createDocument>>
 export type DocumentFull = Awaited<ReturnType<typeof getDocuments>>[number]
 
 export async function deleteDocument(tripId: string, documentId: string) {
-  const session = await auth()
-  if (!session?.user?.id) throw new Error("Unauthorized")
-
-  await prisma.trip.findFirstOrThrow({ where: { id: tripId, userId: session.user.id } })
+  await requireTripAccess(tripId, "EDITOR")
   await prisma.travelDocument.delete({ where: { id: documentId } })
   revalidatePath(`/trip/${tripId}/documents`)
 }

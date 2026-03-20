@@ -2,11 +2,53 @@ import { getAdminConfigs } from "@/lib/actions/admin"
 import { AffiliateConfigForm } from "./affiliate-config-form"
 
 const AFFILIATE_PROGRAMS = [
-  { key: "affiliate.booking.id", name: "Booking.com (via Awin)", description: "Hotels, flights, cars — 4-6% commission. Enter your Awin publisher ID. Also covers car rentals.", dashboardUrl: "https://ui.awin.com/awin/reports/advertiser", icon: "🏨" },
-  { key: "affiliate.viator.pid", name: "Viator", description: "Tours & activities — 8% commission", dashboardUrl: "https://partners.viator.com/reporting/commissions", icon: "🎟️" },
-  { key: "affiliate.getyourguide.id", name: "GetYourGuide", description: "Tours & activities — 8% commission", dashboardUrl: "https://partner.getyourguide.com/reporting", icon: "🗺️" },
-  { key: "affiliate.safetywing.id", name: "SafetyWing", description: "Travel insurance — 10% commission", dashboardUrl: "https://safetywing.com/affiliates/dashboard", icon: "🛡️" },
-  { key: "affiliate.amazon.tag", name: "Amazon Associates", description: "Travel essentials — up to 4% commission", dashboardUrl: "https://affiliate-program.amazon.com/home/reports", icon: "🎒" },
+  {
+    key: "affiliate.booking.id", name: "Booking.com (via Awin)", icon: "🏨",
+    description: "Hotels, flights, cars — 4-6% commission. Enter your Awin publisher ID.",
+    links: [
+      { label: "Earnings Report", url: "https://ui.awin.com/awin/reports/advertiser" },
+      { label: "Click Report", url: "https://ui.awin.com/awin/reports/clicks" },
+      { label: "Transaction Report", url: "https://ui.awin.com/awin/reports/transaction" },
+      { label: "Account Settings", url: "https://ui.awin.com/awin/affiliate/settings" },
+    ],
+  },
+  {
+    key: "affiliate.viator.pid", name: "Viator", icon: "🎟️",
+    description: "Tours & activities — 8% commission",
+    links: [
+      { label: "Commissions", url: "https://partners.viator.com/reporting/commissions" },
+      { label: "Click Report", url: "https://partners.viator.com/reporting/clicks" },
+      { label: "Tools & Links", url: "https://partners.viator.com/tools/overview" },
+      { label: "Account", url: "https://partners.viator.com/account" },
+    ],
+  },
+  {
+    key: "affiliate.getyourguide.id", name: "GetYourGuide", icon: "🗺️",
+    description: "Tours & activities — 8% commission",
+    links: [
+      { label: "Earnings", url: "https://partner.getyourguide.com/reporting" },
+      { label: "Performance", url: "https://partner.getyourguide.com/reporting/performance" },
+      { label: "Account", url: "https://partner.getyourguide.com/account" },
+    ],
+  },
+  {
+    key: "affiliate.safetywing.id", name: "SafetyWing", icon: "🛡️",
+    description: "Travel insurance — 10% commission",
+    links: [
+      { label: "Dashboard", url: "https://safetywing.com/affiliates/dashboard" },
+      { label: "Referrals", url: "https://safetywing.com/affiliates/referrals" },
+    ],
+  },
+  {
+    key: "affiliate.amazon.tag", name: "Amazon Associates", icon: "🎒",
+    description: "Travel essentials — up to 4% commission",
+    links: [
+      { label: "Earnings", url: "https://affiliate-program.amazon.com/home/reports/earnings" },
+      { label: "Orders", url: "https://affiliate-program.amazon.com/home/reports/orders" },
+      { label: "Clicks", url: "https://affiliate-program.amazon.com/home/reports/clicks" },
+      { label: "Link Checker", url: "https://affiliate-program.amazon.com/home/tools/linkchecker" },
+    ],
+  },
 ]
 
 export default async function AffiliateAdminPage() {

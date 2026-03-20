@@ -4,11 +4,16 @@ import { useState } from "react"
 import { updateAdminConfig, deleteAdminConfig } from "@/lib/actions/admin"
 import { ExternalLink, Check, Trash2 } from "lucide-react"
 
+interface ProgramLink {
+  label: string
+  url: string
+}
+
 interface Program {
   key: string
   name: string
   description: string
-  dashboardUrl: string
+  links: ProgramLink[]
   icon: string
   currentValue: string
   isConfigured: boolean
@@ -87,17 +92,23 @@ function AffiliateCard({ program }: { program: Program }) {
           </div>
         </div>
 
-        <div className="flex items-center justify-between">
-          <a
-            href={program.dashboardUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800"
-          >
-            View commissions
-            <ExternalLink className="w-3 h-3" />
-          </a>
+        {/* Quick dashboard links */}
+        <div className="flex flex-wrap gap-x-3 gap-y-1">
+          {program.links.map((link) => (
+            <a
+              key={link.label}
+              href={link.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 py-0.5"
+            >
+              {link.label}
+              <ExternalLink className="w-2.5 h-2.5" />
+            </a>
+          ))}
+        </div>
 
+        <div className="flex items-center justify-end">
           <button
             onClick={handleSave}
             disabled={!isChanged || saving}

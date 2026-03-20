@@ -23,6 +23,12 @@ model User {
   trialEndsAt      DateTime?
   isAdmin          Boolean  @default(false)
 
+  // Referrals
+  referralCode      String?    @unique // this user's referral code
+  referredBy        String?    // referral code they used to sign up
+  referralsMade     Referral[] @relation("referralsMade")
+  referralUsed      Referral?  @relation("referralUsed")
+
   // Relations
   accounts         Account[]
   sessions         Session[]
@@ -145,6 +151,7 @@ model Trip {
   itineraryItems ItineraryItem[]
   documents      TravelDocument[]
   budgetItems    BudgetItem[]
+  packingItems   PackingItem[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -414,6 +421,51 @@ model AppConfig {
   key       String   @id
   value     String
   updatedAt DateTime @updatedAt
+}
+
+// ─── Referrals ───────────────────────────────────────────────────────────────
+
+model Referral {
+  id          String         @id @default(cuid())
+  referrerId  String         // user who shared the code
+  refereeId   String?        @unique // user who signed up (null until they sign up)
+  code        String         @unique // referral code
+  status      ReferralStatus @default(PENDING)
+  rewardGiven Boolean        @default(false)
+
+  referrer    User           @relation("referralsMade", fields: [referrerId], references: [id], onDelete: Cascade)
+  referee     User?          @relation("referralUsed", fields: [refereeId], references: [id])
+
+  createdAt   DateTime       @default(now())
+  convertedAt DateTime?
+
+  @@index([referrerId])
+  @@index([code])
+}
+
+enum ReferralStatus {
+  PENDING     // code created, not yet used
+  SIGNED_UP   // referee created account
+  CONVERTED   // referee purchased qualifying plan
+  REWARDED    // referrer received reward
+  EXPIRED     // code expired
+}
+
+// ─── Packing Lists ──────────────────────────────────────────────────────
+
+model PackingItem {
+  id        String  @id @default(cuid())
+  tripId    String
+  text      String
+  category  String  @default("General") // Clothing, Toiletries, Electronics, Documents, etc.
+  isPacked  Boolean @default(false)
+  position  Int     @default(0)
+
+  trip      Trip    @relation(fields: [tripId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([tripId])
 }
 
 // ─── Enums ────────────────────────────────────────────────────────────────────

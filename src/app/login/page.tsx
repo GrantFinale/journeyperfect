@@ -1,9 +1,17 @@
 import { redirect } from "next/navigation"
 import { auth, signIn } from "@/lib/auth"
+import { ReferralCaptureOnLogin } from "./referral-capture-on-login"
 
-export default async function LoginPage() {
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ ref?: string }>
+}) {
   const session = await auth()
   if (session?.user) redirect("/dashboard")
+
+  const params = await searchParams
+  const refCode = params.ref || null
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-indigo-50 via-white to-purple-50 px-4">
@@ -14,6 +22,14 @@ export default async function LoginPage() {
           <h1 className="text-2xl font-bold text-gray-900">Welcome to JourneyPerfect</h1>
           <p className="text-gray-600 mt-2 text-sm">Sign in to start planning perfect vacations</p>
         </div>
+
+        {refCode && (
+          <div className="mb-4 rounded-xl bg-indigo-50 border border-indigo-200 px-4 py-3 text-center">
+            <p className="text-sm text-indigo-700 font-medium">
+              You were referred by a friend! Sign in to get started.
+            </p>
+          </div>
+        )}
 
         {/* Sign in card */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
@@ -43,6 +59,9 @@ export default async function LoginPage() {
           </p>
         </div>
       </div>
+
+      {/* Store referral code in localStorage for post-login capture */}
+      {refCode && <ReferralCaptureOnLogin code={refCode} />}
     </div>
   )
 }

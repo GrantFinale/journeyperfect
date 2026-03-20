@@ -21,6 +21,8 @@ import {
   Clock,
   Map,
   ArrowRight,
+  Calendar,
+  Package,
 } from "lucide-react"
 
 export default async function TripOverviewPage({ params }: { params: Promise<{ tripId: string }> }) {
@@ -75,6 +77,7 @@ export default async function TripOverviewPage({ params }: { params: Promise<{ t
       label: "Budget",
       desc: formatCurrency(budget.total),
     },
+    { href: `/trip/${tripId}/packing`, icon: Package, label: "Packing", desc: "Packing checklist" },
     { href: `/trip/${tripId}/documents`, icon: FileText, label: "Documents", desc: "Travel docs" },
     {
       href: `/trip/${tripId}/settings`,
@@ -105,12 +108,21 @@ export default async function TripOverviewPage({ params }: { params: Promise<{ t
             </span>
           </div>
         </div>
-        <Link
-          href={`/trip/${tripId}/settings`}
-          className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-        >
-          <Settings className="w-5 h-5" />
-        </Link>
+        <div className="flex items-center gap-1 shrink-0">
+          <a
+            href={`/api/trip/${tripId}/calendar`}
+            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+            title="Export to Calendar"
+          >
+            <Calendar className="w-5 h-5" />
+          </a>
+          <Link
+            href={`/trip/${tripId}/settings`}
+            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+          >
+            <Settings className="w-5 h-5" />
+          </Link>
+        </div>
       </div>
 
       {/* Countdown or status banner */}

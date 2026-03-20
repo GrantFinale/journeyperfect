@@ -17,6 +17,8 @@ import {
   Map,
   ChevronLeft,
   User,
+  Gift,
+  Package,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { signOut } from "next-auth/react"
@@ -36,6 +38,7 @@ type NavItem = {
 const NAV_ITEMS: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/settings", label: "Settings", icon: Settings },
+  { href: "/settings/referrals", label: "Refer a Friend", icon: Gift },
 ]
 
 const TRIP_NAV_ITEMS = (tripId: string): NavItem[] => [
@@ -44,6 +47,7 @@ const TRIP_NAV_ITEMS = (tripId: string): NavItem[] => [
   { href: `/trip/${tripId}/activities`, label: "Activities", icon: Star },
   { href: `/trip/${tripId}/discover`, label: "Discover", icon: Compass },
   { href: `/trip/${tripId}/dining`, label: "Dining", icon: Utensils },
+  { href: `/trip/${tripId}/packing`, label: "Packing", icon: Package },
   { href: `/trip/${tripId}/budget`, label: "Budget", icon: DollarSign },
   { href: `/trip/${tripId}/documents`, label: "Documents", icon: FileText },
   { href: `/trip/${tripId}/settings`, label: "Trip Settings", icon: Settings },

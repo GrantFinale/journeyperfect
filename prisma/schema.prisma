@@ -192,6 +192,10 @@ model Hotel {
   bookingLink        String?
   notes              String?  @db.Text
   isVacationRental   Boolean  @default(false)
+  price              Float?
+  priceCurrency      String?  @default("USD")
+  roomCount          Int      @default(1)
+  roomType           String?  // e.g. "2 Queen Beds", "King Suite"
 
   trip           Trip             @relation(fields: [tripId], references: [id], onDelete: Cascade)
   itineraryItems ItineraryItem[]
@@ -222,6 +226,8 @@ model Flight {
   bookingLink        String?
   cabin              String?
   notes              String?  @db.Text
+  price              Float?
+  priceCurrency      String?  @default("USD")
   passengers         String[] // traveler profile names
 
   trip           Trip             @relation(fields: [tripId], references: [id], onDelete: Cascade)

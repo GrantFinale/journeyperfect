@@ -23,6 +23,8 @@ const flightSchema = z.object({
   cabin: z.string().optional(),
   notes: z.string().optional(),
   durationMins: z.number().optional(),
+  price: z.number().optional(),
+  priceCurrency: z.string().optional(),
 })
 
 export async function parseAndPreviewFlight(text: string) {
@@ -90,6 +92,19 @@ export async function createFlight(tripId: string, data: z.infer<typeof flightSc
     ],
   })
 
+  // Auto-create BudgetItem for flight cost
+  if (parsed.price) {
+    await prisma.budgetItem.create({
+      data: {
+        tripId,
+        category: "FLIGHTS",
+        title: `${parsed.airline || ""} ${parsed.flightNumber || "Flight"} ${[parsed.departureAirport, parsed.arrivalAirport].filter(Boolean).join(" → ")}`.trim(),
+        amount: parsed.price,
+        isEstimate: false,
+      },
+    })
+  }
+
   revalidatePath(`/trip/${tripId}`)
   revalidatePath(`/trip/${tripId}/itinerary`)
   return flight
@@ -129,13 +144,29 @@ export async function createFlightsBatch(tripId: string, flights: z.infer<typeof
               durationMins,
               position: 0,
               isConfirmed: true,
-              costEstimate: 0,
+              costEstimate: parsed.price || 0,
             },
           },
         },
       })
     })
   )
+
+  // Create BudgetItems for flights with prices
+  for (const flight of flights) {
+    const parsed = flightSchema.parse(flight)
+    if (parsed.price) {
+      await prisma.budgetItem.create({
+        data: {
+          tripId,
+          category: "FLIGHTS",
+          title: `${parsed.airline || ""} ${parsed.flightNumber || "Flight"} ${[parsed.departureAirport, parsed.arrivalAirport].filter(Boolean).join(" → ")}`.trim(),
+          amount: parsed.price,
+          isEstimate: false,
+        },
+      })
+    }
+  }
 
   revalidatePath(`/trip/${tripId}`)
   revalidatePath(`/trip/${tripId}/itinerary`)

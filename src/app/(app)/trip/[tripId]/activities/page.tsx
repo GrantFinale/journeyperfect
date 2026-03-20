@@ -15,5 +15,21 @@ export default async function ActivitiesPage({ params }: { params: Promise<{ tri
     notFound()
   }
 
-  return <ActivitiesView tripId={tripId} initialActivities={activities} destination={trip.destination} />
+  // Build destinations list from trip destinations, with flight arrival city as potential default
+  const destinations = trip.destinations.map((d) => d.name)
+  const firstFlightArrivalCity = trip.flights.length > 0
+    ? (trip.flights[0].arrivalCity || trip.flights[0].arrivalAirport || null)
+    : null
+
+  // Default search location: first flight arrival city, then first destination, then trip.destination
+  const defaultSearchLocation = firstFlightArrivalCity || destinations[0] || trip.destination
+
+  return (
+    <ActivitiesView
+      tripId={tripId}
+      initialActivities={activities}
+      destination={defaultSearchLocation}
+      destinations={destinations}
+    />
+  )
 }

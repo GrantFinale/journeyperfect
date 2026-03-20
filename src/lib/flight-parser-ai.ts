@@ -37,7 +37,9 @@ Return a JSON object:
       "confirmationNumber": "ABC123",
       "cabin": "Economy",
       "durationMins": 195,
-      "passengers": ["John Doe"]
+      "passengers": ["John Doe"],
+      "price": 342.50,
+      "priceCurrency": "USD"
     },
     {
       "airline": "American Airlines",
@@ -53,7 +55,9 @@ Return a JSON object:
       "confirmationNumber": "ABC123",
       "cabin": "Economy",
       "durationMins": 90,
-      "passengers": ["John Doe"]
+      "passengers": ["John Doe"],
+      "price": 342.50,
+      "priceCurrency": "USD"
     }
   ],
   "confirmationNumber": "ABC123"
@@ -64,6 +68,8 @@ Rules:
 - IANA timezone names (America/New_York, not EST)
 - CRITICAL: All times MUST be in UTC (with Z suffix). Convert local times to UTC using the airport timezone. Example: 3:43 PM Eastern = 2025-03-31T19:43:00Z
 - durationMins: the actual flight duration in minutes as stated in the email. If the email says "2h 58m", durationMins = 178. Do NOT calculate from departure/arrival times (timezone differences make that wrong)
+- price: the ticket price per person for this segment if shown. If only a total trip price is shown, divide evenly across segments
+- priceCurrency: 3-letter currency code (USD, EUR, GBP)
 - Flight number includes 2-letter airline code (AA123, DL456)
 - EVERY segment is a separate entry — outbound legs, connections, return legs, ALL of them
 - If the email shows "Flight 1", "Flight 2" or "Depart" / "Return" sections, extract each one
@@ -152,6 +158,8 @@ ${text}`
       if (f.confirmationNumber) flight.confirmationNumber = String(f.confirmationNumber)
       if (f.cabin) flight.cabin = String(f.cabin)
       if (f.durationMins) flight.durationMins = Number(f.durationMins)
+      if (f.price) flight.price = Number(f.price)
+      if (f.priceCurrency) flight.priceCurrency = String(f.priceCurrency)
 
       // Cap confidence at 0.95
       flight.confidence = Math.min(flight.confidence, 0.95)

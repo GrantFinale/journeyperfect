@@ -2,6 +2,7 @@ import { notFound } from "next/navigation"
 import Link from "next/link"
 import { getTrip } from "@/lib/actions/trips"
 import { getBudgetSummary } from "@/lib/actions/budget"
+import { getTripCostSummary } from "@/lib/actions/costs"
 import { getItinerary, type ItineraryItemFull } from "@/lib/actions/itinerary"
 import { getSmartSuggestions } from "@/lib/actions/affiliates"
 import { formatDate, formatTime, tripDuration, formatCurrency } from "@/lib/utils"
@@ -26,13 +27,15 @@ export default async function TripOverviewPage({ params }: { params: Promise<{ t
 
   let trip: Awaited<ReturnType<typeof getTrip>>
   let budget: Awaited<ReturnType<typeof getBudgetSummary>>
+  let costSummary: Awaited<ReturnType<typeof getTripCostSummary>>
   let allItems: ItineraryItemFull[] = []
   let smartSuggestions: Awaited<ReturnType<typeof getSmartSuggestions>> = []
 
   try {
-    ;[trip, budget, allItems, smartSuggestions] = await Promise.all([
+    ;[trip, budget, costSummary, allItems, smartSuggestions] = await Promise.all([
       getTrip(tripId),
       getBudgetSummary(tripId),
+      getTripCostSummary(tripId),
       getItinerary(tripId),
       getSmartSuggestions(tripId),
     ])
@@ -84,19 +87,19 @@ export default async function TripOverviewPage({ params }: { params: Promise<{ t
     <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8">
       {/* Header */}
       <div className="flex items-start justify-between gap-4 mb-8">
-        <div>
+        <div className="min-w-0">
           <h1 className="text-2xl font-bold text-gray-900">{trip.title}</h1>
-          <div className="flex items-center gap-3 mt-2 text-sm text-gray-500">
+          <div className="flex items-center gap-3 mt-2 text-sm text-gray-500 flex-wrap">
             <span className="flex items-center gap-1">
-              <MapPin className="w-3.5 h-3.5" />
-              {trip.destination}
+              <MapPin className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">{trip.destination}</span>
             </span>
             <span className="flex items-center gap-1">
-              <Clock className="w-3.5 h-3.5" />
+              <Clock className="w-3.5 h-3.5 shrink-0" />
               {duration} days
             </span>
             <span className="flex items-center gap-1">
-              <Map className="w-3.5 h-3.5" />
+              <Map className="w-3.5 h-3.5 shrink-0" />
               {formatDate(trip.startDate, "MMM d")} – {formatDate(trip.endDate, "MMM d, yyyy")}
             </span>
           </div>
@@ -123,7 +126,7 @@ export default async function TripOverviewPage({ params }: { params: Promise<{ t
       )}
       {daysUntil <= 0 && daysUntil >= -duration && (
         <div className="bg-green-50 border border-green-100 rounded-2xl p-5 mb-6 text-center">
-          <div className="text-green-700 font-semibold">🎉 You&apos;re on your trip!</div>
+          <div className="text-green-700 font-semibold">You&apos;re on your trip!</div>
           <div className="text-green-600 text-sm mt-1">
             {trip.destination} · Day {Math.abs(daysUntil) + 1} of {duration}
           </div>
@@ -137,7 +140,7 @@ export default async function TripOverviewPage({ params }: { params: Promise<{ t
             <h2 className="text-sm font-semibold text-gray-700">Next Up</h2>
             <Link
               href={`/trip/${tripId}/itinerary`}
-              className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-700 font-medium"
+              className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-700 font-medium p-2 -m-2"
             >
               View itinerary
               <ArrowRight className="w-3 h-3" />
@@ -160,7 +163,7 @@ export default async function TripOverviewPage({ params }: { params: Promise<{ t
                     {item.durationMins > 0 && <> &middot; {item.durationMins} min</>}
                   </div>
                 </div>
-                <span className="text-[10px] font-medium text-gray-400 uppercase tracking-wide shrink-0">
+                <span className="text-[10px] font-medium text-gray-400 uppercase tracking-wide shrink-0 hidden sm:block">
                   {item.type.replace(/_/g, " ")}
                 </span>
               </div>
@@ -170,7 +173,7 @@ export default async function TripOverviewPage({ params }: { params: Promise<{ t
       )}
 
       {/* Flight/Hotel summary cards */}
-      <div className="grid grid-cols-2 gap-4 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
         <div className="bg-white border border-gray-100 rounded-2xl p-4">
           <div className="flex items-center gap-2 mb-2">
             <Plane className="w-4 h-4 text-indigo-500" />
@@ -179,12 +182,12 @@ export default async function TripOverviewPage({ params }: { params: Promise<{ t
           <div className="text-2xl font-bold text-gray-900">{trip.flights.length}</div>
           {trip.flights.length > 0 ? (
             <div className="text-xs text-gray-500 mt-1 truncate">
-              {trip.flights[0].departureAirport} → {trip.flights[0].arrivalAirport}
+              {trip.flights[0].departureAirport} &rarr; {trip.flights[0].arrivalAirport}
             </div>
           ) : (
             <Link
-              href={`/trip/${tripId}/settings`}
-              className="text-xs text-indigo-500 hover:underline"
+              href={`/trip/${tripId}/settings?tab=flights`}
+              className="text-xs text-indigo-500 hover:underline p-2 -m-2 inline-block"
             >
               Add flights
             </Link>
@@ -200,14 +203,50 @@ export default async function TripOverviewPage({ params }: { params: Promise<{ t
             <div className="text-xs text-gray-500 mt-1 truncate">{trip.hotels[0].name}</div>
           ) : (
             <Link
-              href={`/trip/${tripId}/settings`}
-              className="text-xs text-indigo-500 hover:underline"
+              href={`/trip/${tripId}/settings?tab=hotels`}
+              className="text-xs text-indigo-500 hover:underline p-2 -m-2 inline-block"
             >
               Add hotels
             </Link>
           )}
         </div>
       </div>
+
+      {/* Trip Cost Summary */}
+      {costSummary.grandTotal > 0 && (
+        <div className="bg-white border border-gray-100 rounded-2xl p-5 mb-6">
+          <div className="flex items-center gap-2 mb-3">
+            <DollarSign className="w-4 h-4 text-green-600" />
+            <h2 className="text-sm font-semibold text-gray-700">Trip Cost Estimate</h2>
+          </div>
+          <div className="text-2xl font-bold text-gray-900 mb-3">
+            {formatCurrency(costSummary.grandTotal)}
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            {costSummary.flights > 0 && (
+              <div className="flex items-center gap-2 bg-blue-50 rounded-xl px-3 py-2">
+                <Plane className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                <span className="text-xs text-blue-800">Flights</span>
+                <span className="text-xs font-semibold text-blue-900 ml-auto">{formatCurrency(costSummary.flights)}</span>
+              </div>
+            )}
+            {costSummary.hotels > 0 && (
+              <div className="flex items-center gap-2 bg-purple-50 rounded-xl px-3 py-2">
+                <Hotel className="w-3.5 h-3.5 text-purple-600 shrink-0" />
+                <span className="text-xs text-purple-800">Hotels</span>
+                <span className="text-xs font-semibold text-purple-900 ml-auto">{formatCurrency(costSummary.hotels)}</span>
+              </div>
+            )}
+            {costSummary.activities > 0 && (
+              <div className="flex items-center gap-2 bg-amber-50 rounded-xl px-3 py-2">
+                <Star className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                <span className="text-xs text-amber-800">Activities</span>
+                <span className="text-xs font-semibold text-amber-900 ml-auto">{formatCurrency(costSummary.activities)}</span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Contextual suggestions */}
       {smartSuggestions.length > 0 && (
@@ -224,14 +263,14 @@ export default async function TripOverviewPage({ params }: { params: Promise<{ t
             href={link.href}
             className="flex items-center gap-4 bg-white border border-gray-100 rounded-2xl p-4 hover:border-indigo-200 hover:shadow-sm transition-all group"
           >
-            <div className="w-9 h-9 bg-gray-50 rounded-xl flex items-center justify-center group-hover:bg-indigo-50 transition-colors">
+            <div className="w-9 h-9 bg-gray-50 rounded-xl flex items-center justify-center group-hover:bg-indigo-50 transition-colors shrink-0">
               <link.icon className="w-4 h-4 text-gray-600 group-hover:text-indigo-600 transition-colors" />
             </div>
-            <div className="flex-1">
+            <div className="flex-1 min-w-0">
               <div className="font-medium text-gray-900 text-sm">{link.label}</div>
               <div className="text-xs text-gray-500">{link.desc}</div>
             </div>
-            <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-indigo-500 transition-colors" />
+            <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-indigo-500 transition-colors shrink-0" />
           </Link>
         ))}
       </div>

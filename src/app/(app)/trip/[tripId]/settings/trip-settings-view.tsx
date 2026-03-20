@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { createFlight, createFlightsBatch, deleteFlight, parseAndPreviewFlight } from "@/lib/actions/flights"
-import { createHotel, deleteHotel } from "@/lib/actions/hotels"
+import { createHotel, createHotelsBatch, deleteHotel, parseAndPreviewHotel } from "@/lib/actions/hotels"
 import { addTravelerToTrip, removeTravelerFromTrip } from "@/lib/actions/travelers"
 import { updateTrip, deleteTrip, shareTrip, unshareTrip, addDestination, removeDestination } from "@/lib/actions/trips"
 import { formatDate } from "@/lib/utils"
@@ -18,6 +18,7 @@ import {
   Trash2,
   X,
   ChevronRight,
+  ChevronDown,
   Share2,
   Copy,
   AlertTriangle,
@@ -82,14 +83,22 @@ interface Props {
   tripId: string
   trip: Trip
   allProfiles: TravelerProfile[]
+  initialTab?: string
 }
 
 const TABS = ["Flights", "Hotels", "Travelers", "General"] as const
 type Tab = (typeof TABS)[number]
 
-export function TripSettingsView({ tripId, trip: initialTrip, allProfiles }: Props) {
+function tabFromParam(param?: string): Tab {
+  if (!param) return "Flights"
+  const lower = param.toLowerCase()
+  const match = TABS.find((t) => t.toLowerCase() === lower)
+  return match || "Flights"
+}
+
+export function TripSettingsView({ tripId, trip: initialTrip, allProfiles, initialTab }: Props) {
   const router = useRouter()
-  const [activeTab, setActiveTab] = useState<Tab>("Flights")
+  const [activeTab, setActiveTab] = useState<Tab>(tabFromParam(initialTab))
   const [trip, setTrip] = useState<Trip>(initialTrip)
 
   // Flight state
@@ -108,6 +117,7 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles }: Pro
     arrivalTimezone: "UTC",
     confirmationNumber: "",
     cabin: "",
+    price: "",
   })
   const [parsedFlights, setParsedFlights] = useState<Array<{
     airline: string; flightNumber: string; departureAirport: string;
@@ -127,7 +137,20 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles }: Pro
     confirmationNumber: "",
     bookingLink: "",
     isVacationRental: false,
+    price: "",
+    roomCount: "1",
+    roomType: "",
   })
+
+  // Hotel parsing state
+  const [showHotelParse, setShowHotelParse] = useState(false)
+  const [hotelPasteText, setHotelPasteText] = useState("")
+  const [parsingHotel, setParsingHotel] = useState(false)
+  const [parsedHotel, setParsedHotel] = useState<{
+    name?: string; address?: string; checkIn?: string; checkOut?: string;
+    confirmationNumber?: string; price?: number; priceCurrency?: string; roomCount?: number;
+    roomType?: string; isVacationRental?: boolean;
+  } | null>(null)
 
   // General state
   const [generalForm, setGeneralForm] = useState({
@@ -187,11 +210,11 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles }: Pro
         setParsedFlights(allFlights)
         setParsedFlight(result as unknown as Record<string, string>)
         // Set the manual form to the first flight as fallback
-        setFlightForm(allFlights[0])
+        setFlightForm({ ...allFlights[0], price: "" })
         toast.success(`Found ${result.flights.length} flight segment(s)!`)
       } else {
         setParsedFlights([])
-        toast.error("Could not parse flight info — fill in manually below")
+        toast.error("Could not parse flight info -- fill in manually below")
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : ""
@@ -200,10 +223,77 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles }: Pro
       } else if (msg.includes("PARSE_FAILED")) {
         toast.error(msg.split(":").slice(1).join(":"))
       } else {
-        toast.error("Failed to parse flight — check API configuration in admin")
+        toast.error("Failed to parse flight -- check API configuration in admin")
       }
     } finally {
       setParsingFlight(false)
+    }
+  }
+
+  // Parse hotel from text
+  async function handleParseHotel() {
+    if (!hotelPasteText.trim()) return
+    setParsingHotel(true)
+    try {
+      const result = await parseAndPreviewHotel(hotelPasteText)
+      if (result && result.hotels && result.hotels.length > 0) {
+        const h = result.hotels[0]
+        const parsed = {
+          name: h.name || "",
+          address: h.address || "",
+          checkIn: h.checkIn ? new Date(h.checkIn).toISOString().slice(0, 16) : "",
+          checkOut: h.checkOut ? new Date(h.checkOut).toISOString().slice(0, 16) : "",
+          confirmationNumber: h.confirmationNumber || result.confirmationNumber || "",
+          price: h.price,
+          priceCurrency: h.priceCurrency,
+          roomCount: h.roomCount,
+          roomType: h.roomType || "",
+          isVacationRental: false,
+        }
+        setParsedHotel(parsed)
+        toast.success("Hotel details parsed!")
+      } else {
+        toast.error("Could not parse hotel info -- fill in manually below")
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : ""
+      if (msg.includes("UPGRADE_REQUIRED")) {
+        toast.error(msg.split(":").slice(1).join(":"))
+      } else if (msg.includes("PARSE_FAILED")) {
+        toast.error(msg.split(":").slice(1).join(":"))
+      } else {
+        toast.error("Failed to parse hotel -- check API configuration in admin")
+      }
+    } finally {
+      setParsingHotel(false)
+    }
+  }
+
+  async function handleAddParsedHotel() {
+    if (!parsedHotel?.name || !parsedHotel?.checkIn || !parsedHotel?.checkOut) {
+      toast.error("Name, check-in, and check-out dates are required")
+      return
+    }
+    try {
+      const hotel = await createHotel(tripId, {
+        name: parsedHotel.name,
+        address: parsedHotel.address || undefined,
+        checkIn: new Date(parsedHotel.checkIn).toISOString(),
+        checkOut: new Date(parsedHotel.checkOut).toISOString(),
+        confirmationNumber: parsedHotel.confirmationNumber || undefined,
+        isVacationRental: parsedHotel.isVacationRental || false,
+        price: parsedHotel.price,
+        priceCurrency: parsedHotel.priceCurrency,
+        roomCount: parsedHotel.roomCount || 1,
+        roomType: parsedHotel.roomType || undefined,
+      })
+      setTrip((prev) => ({ ...prev, hotels: [...prev.hotels, hotel as unknown as Trip["hotels"][0]] }))
+      setParsedHotel(null)
+      setHotelPasteText("")
+      setShowHotelParse(false)
+      toast.success("Hotel added!")
+    } catch {
+      toast.error("Failed to add hotel")
     }
   }
 
@@ -212,7 +302,7 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles }: Pro
     setFlightPasteText("")
     setParsedFlight(null)
     setParsedFlights([])
-    setFlightForm({ airline: "", flightNumber: "", departureAirport: "", departureTime: "", departureTimezone: "UTC", arrivalAirport: "", arrivalTime: "", arrivalTimezone: "UTC", confirmationNumber: "", cabin: "" })
+    setFlightForm({ airline: "", flightNumber: "", departureAirport: "", departureTime: "", departureTimezone: "UTC", arrivalAirport: "", arrivalTime: "", arrivalTimezone: "UTC", confirmationNumber: "", cabin: "", price: "" })
   }
 
   async function handleAddAllFlights() {
@@ -261,6 +351,7 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles }: Pro
         arrivalAirport: flightForm.arrivalAirport || undefined,
         confirmationNumber: flightForm.confirmationNumber || undefined,
         cabin: flightForm.cabin || undefined,
+        price: flightForm.price ? parseFloat(flightForm.price) : undefined,
       })
       setTrip((prev) => ({ ...prev, flights: [...prev.flights, flight as unknown as Trip["flights"][0]] }))
       clearFlightState()
@@ -293,10 +384,13 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles }: Pro
         address: hotelForm.address || undefined,
         confirmationNumber: hotelForm.confirmationNumber || undefined,
         bookingLink: hotelForm.bookingLink || undefined,
+        price: hotelForm.price ? parseFloat(hotelForm.price) : undefined,
+        roomCount: hotelForm.roomCount ? parseInt(hotelForm.roomCount) : 1,
+        roomType: hotelForm.roomType || undefined,
       })
       setTrip((prev) => ({ ...prev, hotels: [...prev.hotels, hotel as unknown as Trip["hotels"][0]] }))
       setShowHotelForm(false)
-      setHotelForm({ name: "", address: "", checkIn: "", checkOut: "", confirmationNumber: "", bookingLink: "", isVacationRental: false })
+      setHotelForm({ name: "", address: "", checkIn: "", checkOut: "", confirmationNumber: "", bookingLink: "", isVacationRental: false, price: "", roomCount: "1", roomType: "" })
       toast.success("Hotel added!")
     } catch {
       toast.error("Failed to add hotel")
@@ -414,14 +508,14 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles }: Pro
     <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8">
       <h1 className="text-2xl font-bold text-gray-900 mb-6">Trip Settings</h1>
 
-      {/* Tabs */}
-      <div className="flex gap-1 bg-gray-100 p-1 rounded-xl mb-8">
+      {/* Tabs - scrollable on mobile */}
+      <div className="flex gap-1 bg-gray-100 p-1 rounded-xl mb-8 overflow-x-auto">
         {TABS.map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
             className={cn(
-              "flex-1 py-2 text-sm font-medium rounded-lg transition-colors",
+              "flex-1 min-w-[80px] py-2.5 text-sm font-medium rounded-lg transition-colors whitespace-nowrap",
               activeTab === tab ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
             )}
           >
@@ -450,15 +544,15 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles }: Pro
                 key={flight.id}
                 className="bg-white border border-gray-100 rounded-2xl p-4 flex items-center gap-3 group"
               >
-                <div className="w-9 h-9 bg-blue-50 rounded-xl flex items-center justify-center">
+                <div className="w-9 h-9 bg-blue-50 rounded-xl flex items-center justify-center shrink-0">
                   <Plane className="w-4 h-4 text-blue-600" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="font-medium text-sm text-gray-900">
-                    {flight.flightNumber || "Flight"} · {flight.departureAirport} → {flight.arrivalAirport}
+                  <div className="font-medium text-sm text-gray-900 truncate">
+                    {flight.flightNumber || "Flight"} · {flight.departureAirport} &rarr; {flight.arrivalAirport}
                   </div>
-                  <div className="text-xs text-gray-500">
-                    {formatDate(flight.departureTime, "MMM d, h:mm a")} →{" "}
+                  <div className="text-xs text-gray-500 truncate">
+                    {formatDate(flight.departureTime, "MMM d, h:mm a")} &rarr;{" "}
                     {formatDate(flight.arrivalTime, "MMM d, h:mm a")}
                     {flight.confirmationNumber && ` · ${flight.confirmationNumber}`}
                     {flight.cabin && ` · ${flight.cabin}`}
@@ -466,7 +560,7 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles }: Pro
                 </div>
                 <button
                   onClick={() => handleDeleteFlight(flight.id)}
-                  className="p-1.5 text-gray-400 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
+                  className="p-2 text-gray-400 hover:text-red-500 transition-colors sm:opacity-0 sm:group-hover:opacity-100"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>
@@ -498,7 +592,7 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles }: Pro
             <div className="bg-white border border-indigo-200 rounded-2xl p-5">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="font-semibold text-gray-900">Add Flight</h3>
-                <button onClick={clearFlightState}>
+                <button onClick={clearFlightState} className="p-2">
                   <X className="w-4 h-4 text-gray-400" />
                 </button>
               </div>
@@ -506,7 +600,7 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles }: Pro
               {/* Paste & parse */}
               <div className="mb-4">
                 <label className="block text-xs font-medium text-gray-500 mb-1.5">
-                  Paste confirmation email (optional — auto-parses)
+                  Paste confirmation email (optional -- auto-parses)
                 </label>
                 <textarea
                   value={flightPasteText}
@@ -538,7 +632,7 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles }: Pro
                     {parsedFlights.map((f, i) => (
                       <div
                         key={i}
-                        className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-100 rounded-xl"
+                        className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-100 rounded-xl flex-wrap"
                       >
                         <Plane className="w-3.5 h-3.5 text-indigo-500 flex-shrink-0" />
                         <span className="text-sm text-gray-900 font-medium">
@@ -548,7 +642,7 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles }: Pro
                           {f.departureAirport || "???"} &rarr; {f.arrivalAirport || "???"}
                         </span>
                         {f.departureTime && (
-                          <span className="text-xs text-gray-400 ml-auto">
+                          <span className="text-xs text-gray-400 sm:ml-auto">
                             {new Date(f.departureTime).toLocaleDateString("en-US", { month: "short", day: "numeric" })},{" "}
                             {new Date(f.departureTime).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
                           </span>
@@ -572,7 +666,7 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles }: Pro
               )}
 
               <div className="border-t border-gray-100 pt-4 space-y-3">
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs text-gray-500 mb-1">Airline</label>
                     <input type="text" placeholder="Delta" value={flightForm.airline}
@@ -586,7 +680,7 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles }: Pro
                       className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs text-gray-500 mb-1">Departure *</label>
                     <input type="datetime-local" value={flightForm.departureTime}
@@ -600,7 +694,7 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles }: Pro
                       className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs text-gray-500 mb-1">From airport</label>
                     <input type="text" placeholder="JFK" value={flightForm.departureAirport}
@@ -614,7 +708,7 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles }: Pro
                       className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 uppercase" />
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div>
                     <label className="block text-xs text-gray-500 mb-1">Confirmation #</label>
                     <input type="text" placeholder="ABC123" value={flightForm.confirmationNumber}
@@ -632,6 +726,13 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles }: Pro
                       <option value="Business">Business</option>
                       <option value="First">First</option>
                     </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Ticket price ($)</label>
+                    <input type="number" placeholder="0.00" value={flightForm.price}
+                      onChange={(e) => setFlightForm((f) => ({ ...f, price: e.target.value }))}
+                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      min="0" step="0.01" />
                   </div>
                 </div>
                 <div className="flex gap-3 pt-1">
@@ -653,7 +754,7 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles }: Pro
       {/* HOTELS TAB */}
       {activeTab === "Hotels" && (
         <div>
-          {trip.hotels.length === 0 && !showHotelForm && (
+          {trip.hotels.length === 0 && !showHotelForm && !showHotelParse && (
             <div className="text-center py-12">
               <Hotel className="w-10 h-10 text-gray-200 mx-auto mb-3" />
               <p className="text-gray-500 text-sm">No hotels added yet</p>
@@ -664,14 +765,14 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles }: Pro
             {trip.hotels.map((hotel) => (
               <div key={hotel.id} className="bg-white border border-gray-100 rounded-2xl p-4 group">
                 <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 bg-purple-50 rounded-xl flex items-center justify-center">
+                  <div className="w-9 h-9 bg-purple-50 rounded-xl flex items-center justify-center shrink-0">
                     <Hotel className="w-4 h-4 text-purple-600" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="font-medium text-sm text-gray-900">
+                    <div className="font-medium text-sm text-gray-900 truncate">
                       {hotel.isVacationRental ? "\u{1F3E1} " : "\u{1F3E8} "}{hotel.name}
                     </div>
-                    <div className="text-xs text-gray-500">
+                    <div className="text-xs text-gray-500 truncate">
                       {formatDate(hotel.checkIn, "MMM d")} &rarr; {formatDate(hotel.checkOut, "MMM d, yyyy")}
                       {hotel.confirmationNumber && ` \u00B7 ${hotel.confirmationNumber}`}
                       {hotel.address && ` \u00B7 ${hotel.address}`}
@@ -679,7 +780,7 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles }: Pro
                   </div>
                   <button
                     onClick={() => handleDeleteHotel(hotel.id)}
-                    className="p-1.5 text-gray-400 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
+                    className="p-2 text-gray-400 hover:text-red-500 transition-colors sm:opacity-0 sm:group-hover:opacity-100"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
@@ -692,6 +793,72 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles }: Pro
               </div>
             ))}
           </div>
+
+          {/* Paste hotel confirmation (collapsible) */}
+          {!showHotelForm && (
+            <div className="mb-4">
+              <button
+                onClick={() => setShowHotelParse(!showHotelParse)}
+                className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-800 transition-colors p-2 -ml-2"
+              >
+                <ChevronDown className={cn("w-4 h-4 transition-transform", showHotelParse && "rotate-180")} />
+                Paste hotel confirmation
+              </button>
+
+              {showHotelParse && (
+                <div className="bg-white border border-gray-200 rounded-2xl p-4 mt-2">
+                  <textarea
+                    value={hotelPasteText}
+                    onChange={(e) => setHotelPasteText(e.target.value)}
+                    rows={4}
+                    placeholder="Paste your hotel confirmation email here..."
+                    className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none font-mono text-xs"
+                  />
+                  <button
+                    onClick={handleParseHotel}
+                    disabled={parsingHotel || !hotelPasteText.trim()}
+                    className="mt-2 flex items-center gap-2 px-3 py-2 bg-gray-900 text-white text-xs font-medium rounded-lg hover:bg-gray-800 disabled:opacity-50 transition-colors"
+                  >
+                    <Clipboard className="w-3.5 h-3.5" />
+                    {parsingHotel ? "Parsing..." : "Parse hotel info"}
+                  </button>
+
+                  {/* Parsed hotel preview */}
+                  {parsedHotel && (
+                    <div className="mt-4 bg-purple-50 border border-purple-100 rounded-xl p-4">
+                      <div className="flex items-center gap-2 mb-3">
+                        <CheckCircle2 className="w-4 h-4 text-green-600" />
+                        <span className="text-sm font-medium text-gray-900">Hotel details parsed</span>
+                      </div>
+                      <div className="space-y-1 text-sm text-gray-700 mb-3">
+                        {parsedHotel.name && <div><span className="text-gray-500">Name:</span> {parsedHotel.name}</div>}
+                        {parsedHotel.address && <div><span className="text-gray-500">Address:</span> {parsedHotel.address}</div>}
+                        {parsedHotel.checkIn && <div><span className="text-gray-500">Check-in:</span> {new Date(parsedHotel.checkIn).toLocaleDateString()}</div>}
+                        {parsedHotel.checkOut && <div><span className="text-gray-500">Check-out:</span> {new Date(parsedHotel.checkOut).toLocaleDateString()}</div>}
+                        {parsedHotel.confirmationNumber && <div><span className="text-gray-500">Confirmation:</span> {parsedHotel.confirmationNumber}</div>}
+                        {parsedHotel.price !== undefined && <div><span className="text-gray-500">Price/night:</span> ${parsedHotel.price}</div>}
+                        {parsedHotel.roomType && <div><span className="text-gray-500">Room:</span> {parsedHotel.roomType}</div>}
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => { setParsedHotel(null); setHotelPasteText("") }}
+                          className="flex-1 py-2 border border-gray-200 text-gray-700 text-sm rounded-xl hover:bg-gray-50"
+                        >
+                          Discard
+                        </button>
+                        <button
+                          onClick={handleAddParsedHotel}
+                          className="flex-1 py-2 bg-indigo-600 text-white text-sm font-medium rounded-xl hover:bg-indigo-700"
+                        >
+                          Add hotel
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           {!showHotelForm && (
             <button
@@ -707,7 +874,7 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles }: Pro
             <div className="bg-white border border-indigo-200 rounded-2xl p-5">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="font-semibold text-gray-900">Add Hotel / Rental</h3>
-                <button onClick={() => setShowHotelForm(false)}>
+                <button onClick={() => setShowHotelForm(false)} className="p-2">
                   <X className="w-4 h-4 text-gray-400" />
                 </button>
               </div>
@@ -718,7 +885,7 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles }: Pro
                 <input type="text" placeholder="Address" value={hotelForm.address}
                   onChange={(e) => setHotelForm((f) => ({ ...f, address: e.target.value }))}
                   className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs text-gray-500 mb-1">Check-in *</label>
                     <input type="datetime-local" value={hotelForm.checkIn}
@@ -732,7 +899,7 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles }: Pro
                       className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <input type="text" placeholder="Confirmation #" value={hotelForm.confirmationNumber}
                     onChange={(e) => setHotelForm((f) => ({ ...f, confirmationNumber: e.target.value }))}
                     className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono" />
@@ -740,7 +907,29 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles }: Pro
                     onChange={(e) => setHotelForm((f) => ({ ...f, bookingLink: e.target.value }))}
                     className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
                 </div>
-                <label className="flex items-center gap-2 text-sm text-gray-700">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Price per night ($)</label>
+                    <input type="number" placeholder="0.00" value={hotelForm.price}
+                      onChange={(e) => setHotelForm((f) => ({ ...f, price: e.target.value }))}
+                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      min="0" step="0.01" />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Number of rooms</label>
+                    <input type="number" value={hotelForm.roomCount}
+                      onChange={(e) => setHotelForm((f) => ({ ...f, roomCount: e.target.value }))}
+                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      min="1" />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Room type</label>
+                    <input type="text" placeholder="2 Queen Beds" value={hotelForm.roomType}
+                      onChange={(e) => setHotelForm((f) => ({ ...f, roomType: e.target.value }))}
+                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                  </div>
+                </div>
+                <label className="flex items-center gap-2 text-sm text-gray-700 p-1">
                   <input type="checkbox" checked={hotelForm.isVacationRental}
                     onChange={(e) => setHotelForm((f) => ({ ...f, isVacationRental: e.target.checked }))}
                     className="rounded" />
@@ -783,7 +972,7 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles }: Pro
                     key={profile.id}
                     className="bg-white border border-gray-100 rounded-2xl p-4 flex items-center gap-3"
                   >
-                    <div className="w-9 h-9 bg-gray-100 rounded-full flex items-center justify-center text-sm font-semibold text-gray-600">
+                    <div className="w-9 h-9 bg-gray-100 rounded-full flex items-center justify-center text-sm font-semibold text-gray-600 shrink-0">
                       {profile.name.charAt(0).toUpperCase()}
                     </div>
                     <div className="flex-1 min-w-0">
@@ -801,7 +990,7 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles }: Pro
                     <button
                       onClick={() => handleToggleTraveler(profile.id, added)}
                       className={cn(
-                        "px-3 py-1.5 text-xs font-medium rounded-lg transition-colors",
+                        "px-3 py-2 text-xs font-medium rounded-lg transition-colors",
                         added
                           ? "bg-gray-100 text-gray-600 hover:bg-red-50 hover:text-red-600"
                           : "bg-indigo-600 text-white hover:bg-indigo-700"
@@ -839,10 +1028,10 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles }: Pro
                       className="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-xl group"
                     >
                       <MapPin className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
-                      <span className="flex-1 text-sm text-gray-900">{dest.name}</span>
+                      <span className="flex-1 text-sm text-gray-900 truncate">{dest.name}</span>
                       <button
                         onClick={() => handleRemoveDestination(dest.id)}
-                        className="p-1 text-gray-400 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
+                        className="p-1 text-gray-400 hover:text-red-500 transition-colors sm:opacity-0 sm:group-hover:opacity-100"
                       >
                         <X className="w-3.5 h-3.5" />
                       </button>
@@ -866,19 +1055,19 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles }: Pro
                         setNewDestinationCoords({ lat: place.lat, lng: place.lng })
                       }}
                       placeholder="Search for a city..."
-                      className="w-full pl-8 pr-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      className="w-full pl-8 pr-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     />
                   </div>
                   <button
                     onClick={handleAddDestination}
                     disabled={addingDestination || !newDestinationName.trim()}
-                    className="px-3 py-2 bg-indigo-600 text-white text-sm font-medium rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                    className="px-3 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition-colors"
                   >
                     <Plus className="w-4 h-4" />
                   </button>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs text-gray-500 mb-1">Start date</label>
                   <input type="date" value={generalForm.startDate}
@@ -921,14 +1110,14 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles }: Pro
                   type="text"
                   readOnly
                   value={shareUrl}
-                  className="flex-1 bg-transparent text-sm text-green-800 font-mono outline-none"
+                  className="flex-1 bg-transparent text-sm text-green-800 font-mono outline-none min-w-0 truncate"
                 />
                 <button
                   onClick={() => {
                     navigator.clipboard.writeText(shareUrl)
                     toast.success("Link copied!")
                   }}
-                  className="p-1.5 text-green-600 hover:text-green-800 transition-colors"
+                  className="p-2 text-green-600 hover:text-green-800 transition-colors shrink-0"
                 >
                   <Copy className="w-4 h-4" />
                 </button>

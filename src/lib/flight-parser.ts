@@ -12,6 +12,8 @@ export interface ParsedFlight {
   confirmationNumber?: string
   cabin?: string
   durationMins?: number
+  price?: number
+  priceCurrency?: string
   confidence: number // 0-1
 }
 

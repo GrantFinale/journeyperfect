@@ -1,9 +1,9 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
-import { runOptimizer, runAIOptimizer, deleteItineraryItem, createItineraryItem, reorderItineraryItems } from "@/lib/actions/itinerary"
+import { runOptimizer, runAIOptimizer, deleteItineraryItem, createItineraryItem, reorderItineraryItems, updateItineraryItemNotes } from "@/lib/actions/itinerary"
 import type { ItineraryItemResult } from "@/lib/actions/itinerary"
 import { formatDate, formatTime } from "@/lib/utils"
 import {
@@ -35,6 +35,9 @@ import {
   ChevronUp,
   Coffee,
   GripVertical,
+  PenLine,
+  Check,
+  X,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { WeatherBar } from "@/components/weather-bar"
@@ -49,6 +52,7 @@ type ItineraryItem = {
   type: string
   title: string
   notes: string | null
+  userNotes: string | null
   durationMins: number
   travelTimeToNextMins: number
   costEstimate: number
@@ -102,11 +106,20 @@ function SortableItineraryItem({
   item,
   isLast,
   onDelete,
+  tripId,
+  onUpdateNotes,
 }: {
   item: ItineraryItem
   isLast: boolean
   onDelete: (id: string) => void
+  tripId: string
+  onUpdateNotes: (itemId: string, notes: string) => void
 }) {
+  const [editingNote, setEditingNote] = useState(false)
+  const [noteText, setNoteText] = useState(item.userNotes || "")
+  const [saving, setSaving] = useState(false)
+  const noteRef = useRef<HTMLTextAreaElement>(null)
+
   const {
     attributes,
     listeners,
@@ -121,6 +134,20 @@ function SortableItineraryItem({
     transition,
     opacity: isDragging ? 0.5 : 1,
     zIndex: isDragging ? 10 : undefined,
+  }
+
+  async function handleSaveNote() {
+    setSaving(true)
+    try {
+      await updateItineraryItemNotes(tripId, item.id, noteText)
+      onUpdateNotes(item.id, noteText)
+      setEditingNote(false)
+      toast.success("Note saved")
+    } catch {
+      toast.error("Failed to save note")
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -150,7 +177,7 @@ function SortableItineraryItem({
         </div>
         <div className="flex-1 min-w-0 pb-2">
           <div className="flex items-start justify-between gap-2">
-            <div>
+            <div className="flex-1 min-w-0">
               <div className="font-medium text-gray-900 text-sm leading-tight">
                 {item.type === "FLIGHT" && item.flight
                   ? `${item.flight.airline || ""} ${item.flight.flightNumber || "Flight"}${item.flight.departureAirport || item.flight.arrivalAirport ? ` · ${[item.flight.departureAirport, item.flight.arrivalAirport].filter(Boolean).join(" → ")}` : ""}`.trim()
@@ -171,6 +198,47 @@ function SortableItineraryItem({
               {item.notes && (
                 <p className="text-xs text-gray-400 mt-0.5">{item.notes}</p>
               )}
+              {/* User notes display */}
+              {item.userNotes && !editingNote && (
+                <div className="mt-1 flex items-start gap-1.5">
+                  <PenLine className="w-3 h-3 text-amber-500 shrink-0 mt-0.5" />
+                  <p className="text-xs text-amber-700 italic whitespace-pre-wrap">{item.userNotes}</p>
+                </div>
+              )}
+              {/* Note editor */}
+              {editingNote && (
+                <div className="mt-2 space-y-1.5">
+                  <textarea
+                    ref={noteRef}
+                    value={noteText}
+                    onChange={(e) => setNoteText(e.target.value)}
+                    placeholder="Write a personal note or story about this..."
+                    rows={2}
+                    className="w-full px-3 py-2 border border-amber-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-amber-400 bg-amber-50/50 resize-none"
+                    autoFocus
+                  />
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={handleSaveNote}
+                      disabled={saving}
+                      className="flex items-center gap-1 px-2.5 py-1 bg-amber-500 text-white text-[11px] font-medium rounded-md hover:bg-amber-600 disabled:opacity-50 transition-colors"
+                    >
+                      <Check className="w-3 h-3" />
+                      {saving ? "Saving..." : "Save"}
+                    </button>
+                    <button
+                      onClick={() => {
+                        setEditingNote(false)
+                        setNoteText(item.userNotes || "")
+                      }}
+                      className="flex items-center gap-1 px-2.5 py-1 text-gray-500 text-[11px] rounded-md hover:bg-gray-100 transition-colors"
+                    >
+                      <X className="w-3 h-3" />
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
               {item.type === "FLIGHT" && item.flight?.flightNumber && (() => {
                 const depDate = new Date(item.date)
                 const now = new Date()
@@ -188,12 +256,31 @@ function SortableItineraryItem({
                 return null
               })()}
             </div>
-            <button
-              onClick={() => onDelete(item.id)}
-              className="opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-red-500 transition-all"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-            </button>
+            <div className="flex items-center gap-0.5 shrink-0">
+              <button
+                onClick={() => {
+                  setEditingNote(!editingNote)
+                  setNoteText(item.userNotes || "")
+                }}
+                className={cn(
+                  "p-1 transition-all",
+                  editingNote
+                    ? "text-amber-600"
+                    : item.userNotes
+                      ? "text-amber-400 hover:text-amber-600"
+                      : "opacity-0 group-hover:opacity-100 text-gray-400 hover:text-amber-600"
+                )}
+                title="Add a personal note"
+              >
+                <PenLine className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={() => onDelete(item.id)}
+                className="opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-red-500 transition-all"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -331,6 +418,7 @@ export function ItineraryView({ tripId, initialItems, tripStartDate, tripEndDate
         type: item.type,
         title: item.title,
         notes: item.notes,
+        userNotes: null,
         durationMins: item.durationMins,
         travelTimeToNextMins: item.travelTimeToNextMins,
         costEstimate: item.costEstimate,
@@ -379,6 +467,12 @@ export function ItineraryView({ tripId, initialItems, tripStartDate, tripEndDate
       // Revert on failure
       setItems(items)
     })
+  }
+
+  function handleUpdateNotes(itemId: string, userNotes: string) {
+    setItems((prev) =>
+      prev.map((i) => (i.id === itemId ? { ...i, userNotes: userNotes || null } : i))
+    )
   }
 
   function toggleDay(dateStr: string) {
@@ -497,6 +591,8 @@ export function ItineraryView({ tripId, initialItems, tripStartDate, tripEndDate
                             item={item}
                             isLast={i === day.items.length - 1}
                             onDelete={handleDelete}
+                            tripId={tripId}
+                            onUpdateNotes={handleUpdateNotes}
                           />
                         ))}
                       </div>

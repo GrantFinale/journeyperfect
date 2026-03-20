@@ -329,6 +329,17 @@ export async function runAIOptimizer(tripId: string) {
   }
 }
 
+export async function updateItineraryItemNotes(tripId: string, itemId: string, userNotes: string) {
+  await requireTripAccess(tripId, "EDITOR")
+
+  await prisma.itineraryItem.update({
+    where: { id: itemId },
+    data: { userNotes: userNotes || null },
+  })
+
+  revalidatePath(`/trip/${tripId}/itinerary`)
+}
+
 function timeDiffMins(start: string, end: string): number {
   const [sh, sm] = start.split(":").map(Number)
   const [eh, em] = end.split(":").map(Number)

@@ -1,8 +1,9 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useRef } from "react"
 import { toast } from "sonner"
 import { createActivity, deleteActivity, updateActivity, searchPlaces } from "@/lib/actions/activities"
+import { getActivityNotes, addActivityNote, deleteActivityNote, addActivityExpense } from "@/lib/actions/activity-notes"
 import { priorityColor, priorityLabel, formatCurrency } from "@/lib/utils"
 import { cn } from "@/lib/utils"
 import {
@@ -20,6 +21,9 @@ import {
   CalendarDays,
   Check,
   Loader2,
+  MessageSquare,
+  Send,
+  Receipt,
 } from "lucide-react"
 import { ActivityBookingLinks } from "@/components/affiliate-links"
 
@@ -59,6 +63,13 @@ type Place = {
   goodForChildren?: boolean
   openNow?: boolean
   weekdayHours?: string[]
+}
+
+type ActivityNoteItem = {
+  id: string
+  text: string
+  createdAt: string | Date
+  user: { name: string | null; image: string | null }
 }
 
 type Destination = { name: string; lat?: number | null; lng?: number | null }
@@ -166,6 +177,22 @@ export function ActivitiesView({ tripId, initialActivities, destination, destina
     isFixed: false,
     fixedDateTime: "",
   })
+
+  // Notes state
+  const [expandedNotes, setExpandedNotes] = useState<Set<string>>(new Set())
+  const [notesByActivity, setNotesByActivity] = useState<Record<string, ActivityNoteItem[]>>({})
+  const [notesLoading, setNotesLoading] = useState<Set<string>>(new Set())
+  const [noteInputs, setNoteInputs] = useState<Record<string, string>>({})
+  const [noteCounts, setNoteCounts] = useState<Record<string, number>>({})
+  const [sendingNote, setSendingNote] = useState<Set<string>>(new Set())
+
+  // Expense state
+  const [expenseOpen, setExpenseOpen] = useState<string | null>(null)
+  const [expenseForm, setExpenseForm] = useState({ description: "", amount: "", currency: "USD" })
+  const [expenseAdded, setExpenseAdded] = useState<Set<string>>(new Set())
+  const [sendingExpense, setSendingExpense] = useState(false)
+
+  const noteInputRef = useRef<HTMLInputElement>(null)
 
   const effectiveLocation = selectedLocation === "__other__" ? customLocation : selectedLocation
   const locationBias = getLocationBias(selectedLocation, locationOptions)
@@ -301,6 +328,105 @@ export function ActivitiesView({ tripId, initialActivities, destination, destina
       toast.success(currentlyFixed ? "Date unlocked" : "Date locked")
     } catch {
       toast.error("Failed to update")
+    }
+  }
+
+  async function handleToggleNotes(activityId: string) {
+    const isExpanded = expandedNotes.has(activityId)
+    if (isExpanded) {
+      setExpandedNotes((prev) => {
+        const next = new Set(prev)
+        next.delete(activityId)
+        return next
+      })
+      return
+    }
+
+    // Expand and load notes
+    setExpandedNotes((prev) => new Set([...prev, activityId]))
+    if (!notesByActivity[activityId]) {
+      setNotesLoading((prev) => new Set([...prev, activityId]))
+      try {
+        const notes = await getActivityNotes(tripId, activityId)
+        setNotesByActivity((prev) => ({ ...prev, [activityId]: notes as unknown as ActivityNoteItem[] }))
+        setNoteCounts((prev) => ({ ...prev, [activityId]: notes.length }))
+      } catch {
+        toast.error("Failed to load notes")
+      } finally {
+        setNotesLoading((prev) => {
+          const next = new Set(prev)
+          next.delete(activityId)
+          return next
+        })
+      }
+    }
+  }
+
+  async function handleAddNote(activityId: string) {
+    const text = (noteInputs[activityId] || "").trim()
+    if (!text) return
+
+    setSendingNote((prev) => new Set([...prev, activityId]))
+    try {
+      const note = await addActivityNote(tripId, activityId, text)
+      setNotesByActivity((prev) => ({
+        ...prev,
+        [activityId]: [...(prev[activityId] || []), note as unknown as ActivityNoteItem],
+      }))
+      setNoteCounts((prev) => ({ ...prev, [activityId]: (prev[activityId] || 0) + 1 }))
+      setNoteInputs((prev) => ({ ...prev, [activityId]: "" }))
+    } catch {
+      toast.error("Failed to add note")
+    } finally {
+      setSendingNote((prev) => {
+        const next = new Set(prev)
+        next.delete(activityId)
+        return next
+      })
+    }
+  }
+
+  async function handleDeleteNote(activityId: string, noteId: string) {
+    try {
+      await deleteActivityNote(tripId, noteId)
+      setNotesByActivity((prev) => ({
+        ...prev,
+        [activityId]: (prev[activityId] || []).filter((n) => n.id !== noteId),
+      }))
+      setNoteCounts((prev) => ({ ...prev, [activityId]: Math.max(0, (prev[activityId] || 1) - 1) }))
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to delete note")
+    }
+  }
+
+  async function handleAddExpense(activityId: string) {
+    const amount = parseFloat(expenseForm.amount)
+    if (!expenseForm.description || isNaN(amount) || amount <= 0) {
+      toast.error("Please fill in description and a valid amount")
+      return
+    }
+
+    setSendingExpense(true)
+    try {
+      await addActivityExpense(tripId, activityId, {
+        description: expenseForm.description,
+        amount,
+        currency: expenseForm.currency,
+      })
+      setExpenseAdded((prev) => new Set([...prev, activityId]))
+      setExpenseForm({ description: "", amount: "", currency: "USD" })
+      setTimeout(() => {
+        setExpenseAdded((prev) => {
+          const next = new Set(prev)
+          next.delete(activityId)
+          return next
+        })
+        setExpenseOpen(null)
+      }, 1500)
+    } catch {
+      toast.error("Failed to add expense")
+    } finally {
+      setSendingExpense(false)
     }
   }
 
@@ -835,6 +961,181 @@ export function ActivitiesView({ tripId, initialActivities, destination, destina
 
                 {/* Affiliate booking links */}
                 <ActivityBookingLinks activityName={activity.name} destination={effectiveLocation} />
+
+                {/* Notes & Expenses row */}
+                <div className="flex items-center gap-2 mt-2.5 pt-2.5 border-t border-gray-50">
+                  <button
+                    onClick={() => handleToggleNotes(activity.id)}
+                    className={cn(
+                      "flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg transition-colors",
+                      expandedNotes.has(activity.id)
+                        ? "bg-indigo-50 text-indigo-700"
+                        : "text-gray-500 hover:bg-gray-50 hover:text-gray-700"
+                    )}
+                  >
+                    <MessageSquare className="w-3.5 h-3.5" />
+                    Notes & Stories
+                    {(noteCounts[activity.id] ?? 0) > 0 && (
+                      <span className="ml-0.5 px-1.5 py-0.5 text-[10px] font-semibold bg-indigo-100 text-indigo-700 rounded-full">
+                        {noteCounts[activity.id]}
+                      </span>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => setExpenseOpen(expenseOpen === activity.id ? null : activity.id)}
+                    className={cn(
+                      "flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg transition-colors",
+                      expenseOpen === activity.id
+                        ? "bg-green-50 text-green-700"
+                        : "text-gray-500 hover:bg-gray-50 hover:text-gray-700"
+                    )}
+                  >
+                    <Receipt className="w-3.5 h-3.5" />
+                    Add Expense
+                  </button>
+                </div>
+
+                {/* Notes panel */}
+                {expandedNotes.has(activity.id) && (
+                  <div className="mt-2 bg-gray-50 rounded-xl p-3 space-y-3">
+                    {notesLoading.has(activity.id) ? (
+                      <div className="flex items-center justify-center py-4">
+                        <Loader2 className="w-4 h-4 text-indigo-400 animate-spin" />
+                      </div>
+                    ) : (
+                      <>
+                        {(notesByActivity[activity.id] || []).length === 0 && (
+                          <p className="text-xs text-gray-400 text-center py-2">
+                            No notes yet. Share a memory or story!
+                          </p>
+                        )}
+                        {(notesByActivity[activity.id] || []).map((note) => (
+                          <div key={note.id} className="flex items-start gap-2 group/note">
+                            <div className="w-6 h-6 rounded-full bg-indigo-100 flex items-center justify-center text-[10px] font-semibold text-indigo-700 shrink-0 mt-0.5">
+                              {note.user.image ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img src={note.user.image} alt="" className="w-6 h-6 rounded-full object-cover" />
+                              ) : (
+                                (note.user.name || "?").charAt(0).toUpperCase()
+                              )}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="text-xs font-medium text-gray-700">
+                                  {note.user.name || "You"}
+                                </span>
+                                <span className="text-[10px] text-gray-400">
+                                  {new Date(note.createdAt).toLocaleDateString(undefined, {
+                                    month: "short",
+                                    day: "numeric",
+                                    hour: "numeric",
+                                    minute: "2-digit",
+                                  })}
+                                </span>
+                              </div>
+                              <p className="text-xs text-gray-600 mt-0.5 whitespace-pre-wrap">{note.text}</p>
+                            </div>
+                            <button
+                              onClick={() => handleDeleteNote(activity.id, note.id)}
+                              className="opacity-0 group-hover/note:opacity-100 p-1 text-gray-300 hover:text-red-500 transition-all shrink-0"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </div>
+                        ))}
+                      </>
+                    )}
+                    {/* Add note input */}
+                    <div className="flex items-center gap-2 pt-1">
+                      <input
+                        ref={noteInputRef}
+                        type="text"
+                        placeholder="Add a note or story..."
+                        value={noteInputs[activity.id] || ""}
+                        onChange={(e) =>
+                          setNoteInputs((prev) => ({ ...prev, [activity.id]: e.target.value }))
+                        }
+                        onKeyDown={(e) => e.key === "Enter" && handleAddNote(activity.id)}
+                        className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
+                      />
+                      <button
+                        onClick={() => handleAddNote(activity.id)}
+                        disabled={sendingNote.has(activity.id) || !(noteInputs[activity.id] || "").trim()}
+                        className="p-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-40 transition-colors"
+                      >
+                        {sendingNote.has(activity.id) ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <Send className="w-3.5 h-3.5" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Expense inline form */}
+                {expenseOpen === activity.id && (
+                  <div className="mt-2 bg-green-50 border border-green-100 rounded-xl p-3">
+                    {expenseAdded.has(activity.id) ? (
+                      <div className="flex items-center justify-center gap-2 py-2 text-green-700 text-sm font-medium">
+                        <Check className="w-4 h-4" />
+                        Added!
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        <div className="text-xs font-medium text-green-800 mb-1">Quick Expense</div>
+                        <input
+                          type="text"
+                          placeholder='Description (e.g. "Souvenirs")'
+                          value={expenseForm.description}
+                          onChange={(e) => setExpenseForm((f) => ({ ...f, description: e.target.value }))}
+                          className="w-full px-3 py-2 border border-green-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-green-500 bg-white"
+                        />
+                        <div className="flex gap-2">
+                          <input
+                            type="number"
+                            placeholder="Amount"
+                            value={expenseForm.amount}
+                            onChange={(e) => setExpenseForm((f) => ({ ...f, amount: e.target.value }))}
+                            className="flex-1 px-3 py-2 border border-green-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-green-500 bg-white"
+                          />
+                          <select
+                            value={expenseForm.currency}
+                            onChange={(e) => setExpenseForm((f) => ({ ...f, currency: e.target.value }))}
+                            className="px-3 py-2 border border-green-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-green-500 bg-white"
+                          >
+                            <option value="USD">USD</option>
+                            <option value="EUR">EUR</option>
+                            <option value="GBP">GBP</option>
+                            <option value="JPY">JPY</option>
+                            <option value="CAD">CAD</option>
+                            <option value="AUD">AUD</option>
+                            <option value="CHF">CHF</option>
+                            <option value="MXN">MXN</option>
+                          </select>
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => {
+                              setExpenseOpen(null)
+                              setExpenseForm({ description: "", amount: "", currency: "USD" })
+                            }}
+                            className="flex-1 py-2 border border-green-200 text-green-700 text-xs rounded-lg hover:bg-green-100 transition-colors"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            onClick={() => handleAddExpense(activity.id)}
+                            disabled={sendingExpense}
+                            className="flex-1 py-2 bg-green-600 text-white text-xs font-medium rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors"
+                          >
+                            {sendingExpense ? "Adding..." : "Add Expense"}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           </div>

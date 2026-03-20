@@ -38,6 +38,7 @@ model User {
   subscription     Subscription?
   collaborations   TripCollaborator[] @relation("userCollaborations")
   notifications    Notification[]
+  activityNotes    ActivityNote[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -155,6 +156,7 @@ model Trip {
   budgetItems    BudgetItem[]
   packingItems   PackingItem[]
   collaborators  TripCollaborator[]
+  activityNotes  ActivityNote[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -312,6 +314,7 @@ model Activity {
 
   trip           Trip            @relation(fields: [tripId], references: [id], onDelete: Cascade)
   itineraryItems ItineraryItem[]
+  activityNotes  ActivityNote[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -331,6 +334,7 @@ model ItineraryItem {
   type        ItineraryItemType
   title       String
   notes       String?           @db.Text
+  userNotes   String?           // personal notes/stories for this event
 
   // Linked source entities (at most one will be set)
   activityId   String?
@@ -590,6 +594,23 @@ model Notification {
   createdAt DateTime @default(now())
 
   @@index([userId, read])
+}
+
+// ─── Activity Notes ─────────────────────────────────────────────────────────
+
+model ActivityNote {
+  id         String   @id @default(cuid())
+  activityId String
+  tripId     String
+  userId     String
+  text       String
+  createdAt  DateTime @default(now())
+
+  activity   Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  trip       Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id])
+
+  @@index([activityId])
 }
 
 enum BudgetCategory {

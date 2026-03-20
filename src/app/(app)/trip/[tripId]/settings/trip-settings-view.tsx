@@ -208,9 +208,9 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles }: Pro
         confirmationNumber: f.confirmationNumber || undefined,
         cabin: f.cabin || undefined,
       }))
-      await createFlightsBatch(tripId, batchData)
+      const created = await createFlightsBatch(tripId, batchData)
+      setTrip((prev) => ({ ...prev, flights: [...prev.flights, ...(created as unknown as Trip["flights"])] }))
       clearFlightState()
-      router.refresh()
       toast.success(`Added ${batchData.length} flight(s)!`)
     } catch {
       toast.error("Failed to add flights")

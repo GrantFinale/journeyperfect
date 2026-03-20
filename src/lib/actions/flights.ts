@@ -100,7 +100,7 @@ export async function createFlightsBatch(tripId: string, flights: z.infer<typeof
   })
   if (!trip) throw new Error("Trip not found")
 
-  await prisma.$transaction(
+  const created = await prisma.$transaction(
     flights.map((flight) => {
       const parsed = flightSchema.parse(flight)
       const depTime = new Date(parsed.departureTime)
@@ -134,6 +134,7 @@ export async function createFlightsBatch(tripId: string, flights: z.infer<typeof
 
   revalidatePath(`/trip/${tripId}`)
   revalidatePath(`/trip/${tripId}/itinerary`)
+  return created
 }
 
 export async function updateFlight(tripId: string, flightId: string, data: Partial<z.infer<typeof flightSchema>>) {

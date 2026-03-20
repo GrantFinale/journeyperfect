@@ -38,9 +38,13 @@ export async function parseAndPreviewFlight(text: string) {
     throw new Error("UPGRADE_REQUIRED:AI flight parsing requires a paid plan. Please enter flight details manually or upgrade your plan.")
   }
 
-  const aiResult = await parseFlightTextWithAI(text)
-  if (aiResult && aiResult.flights.length > 0) {
-    return aiResult
+  try {
+    const aiResult = await parseFlightTextWithAI(text)
+    if (aiResult && aiResult.flights.length > 0) {
+      return aiResult
+    }
+  } catch (err) {
+    console.error("[parseAndPreviewFlight] AI parser threw:", err)
   }
 
   // AI failed — tell user to enter manually

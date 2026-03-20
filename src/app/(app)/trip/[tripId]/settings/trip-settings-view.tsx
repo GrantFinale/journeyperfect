@@ -169,8 +169,15 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles }: Pro
         setParsedFlights([])
         toast.error("Could not parse flight info — fill in manually below")
       }
-    } catch {
-      toast.error("Failed to parse flight")
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : ""
+      if (msg.includes("UPGRADE_REQUIRED")) {
+        toast.error(msg.split(":").slice(1).join(":"))
+      } else if (msg.includes("PARSE_FAILED")) {
+        toast.error(msg.split(":").slice(1).join(":"))
+      } else {
+        toast.error("Failed to parse flight — check API configuration in admin")
+      }
     } finally {
       setParsingFlight(false)
     }

@@ -8,7 +8,7 @@ export async function parseFlightTextWithAI(text: string): Promise<ParseResult |
     return null
   }
 
-  const model = await getConfig("ai.flight_parser.model", "anthropic/claude-haiku-4.5")
+  const model = await getConfig("ai.flightParserModel", "anthropic/claude-haiku-4.5")
 
   const prompt = `You are parsing an airline confirmation email or flight itinerary. These emails often contain marketing content, banners, and disclaimers — IGNORE all of that. Focus ONLY on the flight booking details.
 

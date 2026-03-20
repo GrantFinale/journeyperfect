@@ -6,6 +6,7 @@ import {
   togglePackingItem,
   deletePackingItem,
   generatePackingList,
+  generateBasicPackingList,
 } from "@/lib/actions/packing"
 import {
   CheckSquare,
@@ -17,6 +18,7 @@ import {
   ChevronRight,
   Loader2,
   Package,
+  ListPlus,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -63,8 +65,48 @@ export function PackingView({ tripId, initialData, tripTitle, userPlan }: Packin
   const [isGenerating, setIsGenerating] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const [selectedTypes, setSelectedTypes] = useState<Set<string>>(new Set())
+  const [isGeneratingBasic, setIsGeneratingBasic] = useState(false)
+
   const isPaid = userPlan !== "FREE"
   const progressPercent = data.totalItems > 0 ? Math.round((data.packedItems / data.totalItems) * 100) : 0
+
+  const TRIP_TYPES = [
+    { id: "beach", label: "Beach", emoji: "🏖️" },
+    { id: "ski", label: "Ski / Snow", emoji: "⛷️" },
+    { id: "golf", label: "Golf", emoji: "⛳" },
+    { id: "hiking", label: "Hiking", emoji: "🥾" },
+    { id: "business", label: "Business", emoji: "💼" },
+    { id: "camping", label: "Camping", emoji: "⛺" },
+    { id: "international", label: "International", emoji: "🌍" },
+    { id: "family", label: "Family / Kids", emoji: "👨‍👩‍👧‍👦" },
+  ]
+
+  function toggleTripType(id: string) {
+    setSelectedTypes(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  async function handleGenerateBasic() {
+    setIsGeneratingBasic(true)
+    setError(null)
+    try {
+      const result = await generateBasicPackingList(tripId, Array.from(selectedTypes))
+      if (result.added > 0) {
+        refreshData()
+      } else {
+        setError("No new items to add — your list already has the basics!")
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to generate list")
+    } finally {
+      setIsGeneratingBasic(false)
+    }
+  }
 
   function toggleCategory(category: string) {
     setCollapsedCategories((prev) => {
@@ -249,28 +291,61 @@ export function PackingView({ tripId, initialData, tripTitle, userPlan }: Packin
         </div>
       </form>
 
-      {/* AI Suggest button */}
-      <div className="flex items-center gap-3 mb-6">
-        <button
-          onClick={handleGenerate}
-          disabled={isGenerating}
-          className={cn(
-            "flex items-center gap-2 px-4 py-2.5 text-sm font-medium rounded-xl transition-colors",
-            isPaid
-              ? "bg-gradient-to-r from-purple-600 to-indigo-600 text-white hover:from-purple-700 hover:to-indigo-700"
-              : "bg-gray-100 text-gray-500 cursor-not-allowed"
-          )}
-        >
-          {isGenerating ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
-          ) : (
-            <Sparkles className="w-4 h-4" />
-          )}
-          {isGenerating ? "Generating..." : "AI Suggest Items"}
-        </button>
-        {!isPaid && (
-          <span className="text-xs text-gray-400">Paid plan required</span>
-        )}
+      {/* Trip type selector + generate buttons */}
+      <div className="bg-white border border-gray-100 rounded-2xl p-4 mb-6">
+        <p className="text-sm font-medium text-gray-700 mb-3">What kind of trip is this?</p>
+        <div className="flex flex-wrap gap-2 mb-4">
+          {TRIP_TYPES.map(type => (
+            <button
+              key={type.id}
+              onClick={() => toggleTripType(type.id)}
+              className={cn(
+                "flex items-center gap-1.5 px-3 py-2 text-sm rounded-xl border transition-colors",
+                selectedTypes.has(type.id)
+                  ? "bg-indigo-50 border-indigo-200 text-indigo-700 font-medium"
+                  : "bg-white border-gray-200 text-gray-600 hover:border-gray-300"
+              )}
+            >
+              <span>{type.emoji}</span>
+              {type.label}
+            </button>
+          ))}
+        </div>
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+          <button
+            onClick={handleGenerateBasic}
+            disabled={isGeneratingBasic}
+            className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl disabled:opacity-50 transition-colors"
+          >
+            {isGeneratingBasic ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <ListPlus className="w-4 h-4" />
+            )}
+            {isGeneratingBasic ? "Generating..." : "Generate Packing List"}
+          </button>
+          <button
+            onClick={handleGenerate}
+            disabled={isGenerating || !isPaid}
+            className={cn(
+              "flex items-center gap-2 px-4 py-2.5 text-sm font-medium rounded-xl transition-colors",
+              isPaid
+                ? "bg-gradient-to-r from-purple-600 to-indigo-600 text-white hover:from-purple-700 hover:to-indigo-700"
+                : "bg-gray-100 text-gray-400 cursor-not-allowed"
+            )}
+          >
+            {isGenerating ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Sparkles className="w-4 h-4" />
+            )}
+            {isGenerating ? "Generating..." : "AI Smart Suggest"}
+            {!isPaid && <span className="text-xs opacity-75 ml-1">Pro</span>}
+          </button>
+        </div>
+        <p className="text-xs text-gray-400 mt-2">
+          Generate Packing List creates essentials based on trip duration{selectedTypes.size > 0 ? " and selected trip types" : ""}. AI Smart Suggest adds personalized items based on destination, weather, and activities.
+        </p>
       </div>
 
       {/* Error message */}

@@ -82,6 +82,188 @@ export async function deletePackingItem(tripId: string, itemId: string) {
   revalidatePath(`/trip/${tripId}/packing`)
 }
 
+// Basic packing list generator — free for all users, no AI
+// Takes trip duration and trip type tags to generate appropriate items
+export async function generateBasicPackingList(
+  tripId: string,
+  tripTypes: string[]
+) {
+  const session = await auth()
+  if (!session?.user?.id) throw new Error("Unauthorized")
+
+  const trip = await prisma.trip.findFirstOrThrow({
+    where: { id: tripId, userId: session.user.id },
+  })
+
+  const days = Math.max(1, Math.ceil(
+    (new Date(trip.endDate).getTime() - new Date(trip.startDate).getTime()) / 86400000
+  ))
+
+  // Scale clothing by trip duration
+  const tops = Math.min(days, 7)
+  const bottoms = Math.min(Math.ceil(days / 2), 5)
+  const underwear = Math.min(days + 1, 8)
+  const socks = Math.min(days + 1, 8)
+
+  const items: { text: string; category: string }[] = [
+    // Clothing — always
+    { text: `T-shirts/tops (${tops})`, category: "Clothing" },
+    { text: `Bottoms/pants (${bottoms})`, category: "Clothing" },
+    { text: `Underwear (${underwear})`, category: "Clothing" },
+    { text: `Socks (${socks} pairs)`, category: "Clothing" },
+    { text: "Pajamas", category: "Clothing" },
+    { text: "Comfortable walking shoes", category: "Clothing" },
+    { text: "Light jacket or hoodie", category: "Clothing" },
+    // Toiletries — always
+    { text: "Toothbrush & toothpaste", category: "Toiletries" },
+    { text: "Deodorant", category: "Toiletries" },
+    { text: "Shampoo & conditioner", category: "Toiletries" },
+    { text: "Sunscreen", category: "Toiletries" },
+    { text: "Lip balm", category: "Toiletries" },
+    // Electronics — always
+    { text: "Phone charger", category: "Electronics" },
+    { text: "Portable battery pack", category: "Electronics" },
+    { text: "Headphones/earbuds", category: "Electronics" },
+    // Documents — always
+    { text: "ID / Driver's license", category: "Documents" },
+    { text: "Boarding passes / confirmations", category: "Documents" },
+    { text: "Insurance cards", category: "Documents" },
+    // Medical — always
+    { text: "Prescription medications", category: "Medical" },
+    { text: "Pain reliever (ibuprofen/Tylenol)", category: "Medical" },
+    { text: "Band-aids", category: "Medical" },
+    // General — always
+    { text: "Luggage locks", category: "General" },
+    { text: "Reusable water bottle", category: "General" },
+    { text: "Snacks for travel", category: "General" },
+  ]
+
+  // Trip type specific items
+  const typeItems: Record<string, { text: string; category: string }[]> = {
+    beach: [
+      { text: "Swimsuit(s)", category: "Clothing" },
+      { text: "Flip flops / sandals", category: "Clothing" },
+      { text: "Cover-up / sarong", category: "Clothing" },
+      { text: "Beach towel", category: "General" },
+      { text: "Sunglasses", category: "General" },
+      { text: "Aloe vera / after-sun lotion", category: "Toiletries" },
+      { text: "Waterproof phone pouch", category: "Electronics" },
+      { text: "Hat / sun hat", category: "Clothing" },
+    ],
+    ski: [
+      { text: "Ski jacket / snow coat", category: "Clothing" },
+      { text: "Snow pants", category: "Clothing" },
+      { text: "Thermal base layers (top + bottom)", category: "Clothing" },
+      { text: "Wool socks (3+ pairs)", category: "Clothing" },
+      { text: "Ski gloves / mittens", category: "Clothing" },
+      { text: "Warm beanie / hat", category: "Clothing" },
+      { text: "Neck gaiter / balaclava", category: "Clothing" },
+      { text: "Goggles", category: "General" },
+      { text: "Hand & toe warmers", category: "General" },
+      { text: "Moisturizer (cold weather)", category: "Toiletries" },
+      { text: "SPF lip balm", category: "Toiletries" },
+    ],
+    golf: [
+      { text: "Golf polo shirts (${Math.min(days, 4)})", category: "Clothing" },
+      { text: "Golf shorts / pants", category: "Clothing" },
+      { text: "Golf shoes", category: "Clothing" },
+      { text: "Golf glove", category: "General" },
+      { text: "Golf balls", category: "General" },
+      { text: "Divot repair tool & ball markers", category: "General" },
+      { text: "Golf hat / visor", category: "Clothing" },
+      { text: "Rain gear (golf)", category: "Clothing" },
+    ],
+    hiking: [
+      { text: "Hiking boots / trail shoes", category: "Clothing" },
+      { text: "Moisture-wicking shirts", category: "Clothing" },
+      { text: "Hiking pants / convertible pants", category: "Clothing" },
+      { text: "Rain jacket (packable)", category: "Clothing" },
+      { text: "Hiking socks (wool blend)", category: "Clothing" },
+      { text: "Backpack / daypack", category: "General" },
+      { text: "Trail snacks / energy bars", category: "General" },
+      { text: "Blister pads / moleskin", category: "Medical" },
+      { text: "Bug spray / insect repellent", category: "Toiletries" },
+    ],
+    business: [
+      { text: "Dress shirts (${Math.min(days, 4)})", category: "Clothing" },
+      { text: "Dress pants / slacks", category: "Clothing" },
+      { text: "Blazer / sport coat", category: "Clothing" },
+      { text: "Dress shoes", category: "Clothing" },
+      { text: "Belt", category: "Clothing" },
+      { text: "Tie(s)", category: "Clothing" },
+      { text: "Laptop & charger", category: "Electronics" },
+      { text: "Business cards", category: "Documents" },
+      { text: "Garment bag", category: "General" },
+    ],
+    camping: [
+      { text: "Tent", category: "General" },
+      { text: "Sleeping bag", category: "General" },
+      { text: "Sleeping pad / air mattress", category: "General" },
+      { text: "Flashlight / headlamp + batteries", category: "Electronics" },
+      { text: "Camp stove + fuel", category: "General" },
+      { text: "Cooler", category: "General" },
+      { text: "Bug spray / insect repellent", category: "Toiletries" },
+      { text: "Multi-tool / pocket knife", category: "General" },
+      { text: "Fire starter / matches", category: "General" },
+      { text: "Camp chairs", category: "General" },
+    ],
+    international: [
+      { text: "Passport", category: "Documents" },
+      { text: "Visa (if required)", category: "Documents" },
+      { text: "Travel adapter / converter", category: "Electronics" },
+      { text: "Copy of passport (digital + paper)", category: "Documents" },
+      { text: "Foreign currency / travel card", category: "Documents" },
+      { text: "Translation app (downloaded offline)", category: "Electronics" },
+    ],
+    family: [
+      { text: "Kids' snacks & drinks", category: "General" },
+      { text: "Kids' entertainment (tablet, books, toys)", category: "Entertainment" },
+      { text: "Stroller (if needed)", category: "General" },
+      { text: "Children's medications", category: "Medical" },
+      { text: "Baby wipes", category: "Toiletries" },
+      { text: "Extra change of clothes (kids)", category: "Clothing" },
+    ],
+  }
+
+  for (const type of tripTypes) {
+    const extra = typeItems[type]
+    if (extra) items.push(...extra)
+  }
+
+  // Deduplicate by text
+  const seen = new Set<string>()
+  const deduped = items.filter(item => {
+    const key = item.text.toLowerCase()
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+
+  // Check existing items to avoid duplicates with what's already in the list
+  const existing = await prisma.packingItem.findMany({
+    where: { tripId },
+    select: { text: true },
+  })
+  const existingTexts = new Set(existing.map((e: { text: string }) => e.text.toLowerCase()))
+
+  const newItems = deduped
+    .filter(item => !existingTexts.has(item.text.toLowerCase()))
+    .map((item, i) => ({
+      tripId,
+      text: item.text,
+      category: item.category,
+      position: i,
+    }))
+
+  if (newItems.length > 0) {
+    await prisma.packingItem.createMany({ data: newItems })
+  }
+
+  revalidatePath(`/trip/${tripId}/packing`)
+  return { added: newItems.length }
+}
+
+// AI-powered packing list generator — paid plans only
 export async function generatePackingList(tripId: string) {
   const session = await auth()
   if (!session?.user?.id) throw new Error("Unauthorized")

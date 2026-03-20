@@ -98,8 +98,19 @@ export async function createFlight(tripId: string, data: z.infer<typeof flightSc
         category: "FLIGHTS",
         title: `${parsed.airline || ""} ${parsed.flightNumber || "Flight"} ${[parsed.departureAirport, parsed.arrivalAirport].filter(Boolean).join(" → ")}`.trim(),
         amount: parsed.price,
+        currency: parsed.priceCurrency || "USD",
         isEstimate: false,
       },
+    })
+  }
+
+  // Auto-update trip end date if flight arrival extends beyond current end
+  const latestArrival = new Date(parsed.arrivalTime)
+  const trip = await prisma.trip.findUnique({ where: { id: tripId }, select: { endDate: true } })
+  if (trip && latestArrival > trip.endDate) {
+    await prisma.trip.update({
+      where: { id: tripId },
+      data: { endDate: latestArrival },
     })
   }
 
@@ -144,9 +155,14 @@ export async function createFlightsBatch(tripId: string, flights: z.infer<typeof
     })
   )
 
-  // Create BudgetItems for flights with prices
+  // Create BudgetItems for flights with prices and find latest arrival
+  let latestArrival: Date | null = null
   for (const flight of flights) {
     const parsed = flightSchema.parse(flight)
+    const arrTime = new Date(parsed.arrivalTime)
+    if (!latestArrival || arrTime > latestArrival) {
+      latestArrival = arrTime
+    }
     if (parsed.price) {
       await prisma.budgetItem.create({
         data: {
@@ -154,8 +170,20 @@ export async function createFlightsBatch(tripId: string, flights: z.infer<typeof
           category: "FLIGHTS",
           title: `${parsed.airline || ""} ${parsed.flightNumber || "Flight"} ${[parsed.departureAirport, parsed.arrivalAirport].filter(Boolean).join(" → ")}`.trim(),
           amount: parsed.price,
+          currency: parsed.priceCurrency || "USD",
           isEstimate: false,
         },
+      })
+    }
+  }
+
+  // Auto-update trip end date if latest flight arrival extends beyond current end
+  if (latestArrival) {
+    const trip = await prisma.trip.findUnique({ where: { id: tripId }, select: { endDate: true } })
+    if (trip && latestArrival > trip.endDate) {
+      await prisma.trip.update({
+        where: { id: tripId },
+        data: { endDate: latestArrival },
       })
     }
   }

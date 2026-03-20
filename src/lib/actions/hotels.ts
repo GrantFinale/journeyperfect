@@ -25,6 +25,33 @@ const hotelSchema = z.object({
   roomType: z.string().optional(),
 })
 
+export async function getCheckInTimeForDate(tripId: string, checkInDate: Date): Promise<string> {
+  // Look for flights arriving on the same day as hotel check-in
+  const dayStart = new Date(checkInDate)
+  dayStart.setHours(0, 0, 0, 0)
+  const dayEnd = new Date(checkInDate)
+  dayEnd.setHours(23, 59, 59, 999)
+
+  const arrivingFlights = await prisma.flight.findMany({
+    where: {
+      tripId,
+      arrivalTime: { gte: dayStart, lte: dayEnd },
+    },
+    orderBy: { arrivalTime: "desc" },
+    select: { arrivalTime: true },
+  })
+
+  if (arrivingFlights.length > 0) {
+    // Set check-in to 1 hour after the latest flight arrival
+    const latestArrival = arrivingFlights[0].arrivalTime
+    const checkInTime = new Date(latestArrival.getTime() + 60 * 60 * 1000)
+    return checkInTime.toTimeString().slice(0, 5)
+  }
+
+  // Default: 3:00 PM standard check-in time
+  return "15:00"
+}
+
 export async function createHotel(tripId: string, data: z.infer<typeof hotelSchema>) {
   await requireTripAccess(tripId, "EDITOR")
 
@@ -38,14 +65,18 @@ export async function createHotel(tripId: string, data: z.infer<typeof hotelSche
     },
   })
 
+  // Determine check-in time based on arriving flights
+  const checkInDate = new Date(parsed.checkIn)
+  const checkInTime = await getCheckInTimeForDate(tripId, checkInDate)
+
   // Auto-create check-in and check-out itinerary items
   await prisma.itineraryItem.createMany({
     data: [
       {
         tripId,
         hotelId: hotel.id,
-        date: new Date(parsed.checkIn),
-        startTime: new Date(parsed.checkIn).toTimeString().slice(0, 5),
+        date: checkInDate,
+        startTime: checkInTime,
         type: "HOTEL_CHECK_IN",
         title: `🏨 Check in: ${parsed.name}`,
         durationMins: 30,
@@ -56,7 +87,7 @@ export async function createHotel(tripId: string, data: z.infer<typeof hotelSche
         tripId,
         hotelId: hotel.id,
         date: new Date(parsed.checkOut),
-        startTime: new Date(parsed.checkOut).toTimeString().slice(0, 5),
+        startTime: "11:00",
         type: "HOTEL_CHECK_OUT",
         title: `🏨 Check out: ${parsed.name}`,
         durationMins: 30,
@@ -118,9 +149,14 @@ export async function parseAndPreviewHotel(text: string) {
 export async function createHotelsBatch(tripId: string, hotels: z.infer<typeof hotelSchema>[]) {
   await requireTripAccess(tripId, "EDITOR")
 
+  // Pre-compute check-in times for each hotel (needs async flight lookups)
+  const parsedHotels = hotels.map((h) => hotelSchema.parse(h))
+  const checkInTimes = await Promise.all(
+    parsedHotels.map((parsed) => getCheckInTimeForDate(tripId, new Date(parsed.checkIn)))
+  )
+
   const created = await prisma.$transaction(
-    hotels.map((hotel) => {
-      const parsed = hotelSchema.parse(hotel)
+    parsedHotels.map((parsed, i) => {
       const checkInDate = new Date(parsed.checkIn)
       const checkOutDate = new Date(parsed.checkOut)
       return prisma.hotel.create({
@@ -135,7 +171,7 @@ export async function createHotelsBatch(tripId: string, hotels: z.infer<typeof h
                 {
                   tripId,
                   date: checkInDate,
-                  startTime: checkInDate.toTimeString().slice(0, 5),
+                  startTime: checkInTimes[i],
                   type: "HOTEL_CHECK_IN" as const,
                   title: `Check in: ${parsed.name}`,
                   durationMins: 30,
@@ -145,7 +181,7 @@ export async function createHotelsBatch(tripId: string, hotels: z.infer<typeof h
                 {
                   tripId,
                   date: checkOutDate,
-                  startTime: checkOutDate.toTimeString().slice(0, 5),
+                  startTime: "11:00",
                   type: "HOTEL_CHECK_OUT" as const,
                   title: `Check out: ${parsed.name}`,
                   durationMins: 30,

@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation"
 import Link from "next/link"
+import { auth } from "@/lib/auth"
 import { getTrip } from "@/lib/actions/trips"
 import { getBudgetSummary } from "@/lib/actions/budget"
 import { getTripCostSummary } from "@/lib/actions/costs"
@@ -8,6 +9,7 @@ import { getSmartSuggestions } from "@/lib/actions/affiliates"
 import { getPlacesApiKey } from "@/lib/actions/user"
 import { formatDate, formatTime, tripDuration, formatCurrency } from "@/lib/utils"
 import { AffiliateSmartSuggestions, BookingReturnPrompt } from "@/components/affiliate-links"
+import { ForwardingEmail } from "@/components/forwarding-email"
 import { TripOverviewMap } from "./overview-map"
 import {
   Plane,
@@ -38,6 +40,7 @@ export default async function TripOverviewPage({ params }: { params: Promise<{ t
   let smartSuggestions: Awaited<ReturnType<typeof getSmartSuggestions>> = []
 
   let apiKey = ""
+  const session = await auth()
 
   try {
     ;[trip, budget, costSummary, allItems, smartSuggestions, apiKey] = await Promise.all([
@@ -179,6 +182,13 @@ export default async function TripOverviewPage({ params }: { params: Promise<{ t
           <div className="text-green-600 text-sm mt-1">
             {trip.destination} · Day {Math.abs(daysUntil) + 1} of {duration}
           </div>
+        </div>
+      )}
+
+      {/* Forwarding email */}
+      {session?.user?.id && (
+        <div className="mb-6">
+          <ForwardingEmail userId={session.user.id} variant="card" />
         </div>
       )}
 

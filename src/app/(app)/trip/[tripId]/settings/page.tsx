@@ -44,6 +44,7 @@ export default async function TripSettingsPage({
         ownerEmail={owner?.email}
         initialCollaborators={collaborators}
         placesApiKey={placesApiKey}
+        userId={session?.user?.id || ""}
       />
     )
   } catch {

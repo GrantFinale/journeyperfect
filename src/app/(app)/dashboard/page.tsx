@@ -4,6 +4,7 @@ import { getTrips } from "@/lib/actions/trips"
 import { getCollaborativeTrips } from "@/lib/actions/collaborators"
 import { Plus, MapPin, Calendar, ChevronRight, Plane, Users, Eye, Pencil } from "lucide-react"
 import { formatDate, tripDuration } from "@/lib/utils"
+import { ForwardingEmail } from "@/components/forwarding-email"
 
 export default async function DashboardPage() {
   const session = await auth()
@@ -38,6 +39,13 @@ export default async function DashboardPage() {
           New trip
         </Link>
       </div>
+
+      {/* Forwarding email hint */}
+      {session?.user?.id && trips.length > 0 && (
+        <div className="mb-6">
+          <ForwardingEmail userId={session.user.id} variant="compact" />
+        </div>
+      )}
 
       {/* Empty state */}
       {trips.length === 0 && (

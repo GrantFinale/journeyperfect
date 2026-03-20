@@ -37,6 +37,7 @@ import {
 } from "lucide-react"
 import PlacesAutocomplete from "@/components/places-autocomplete"
 import { AffiliateBadge } from "@/components/affiliate-links"
+import { ForwardingEmail } from "@/components/forwarding-email"
 import { getHotelAffiliate, getCarRentalAffiliate } from "@/lib/actions/affiliates"
 import type { AffiliateLink } from "@/lib/affiliates"
 
@@ -118,6 +119,7 @@ interface Props {
   ownerEmail?: string | null
   initialCollaborators?: Collaborator[]
   placesApiKey?: string
+  userId?: string
 }
 
 const TABS = ["Flights", "Hotels", "Cars", "Travelers", "Sharing", "General"] as const
@@ -261,7 +263,7 @@ function TravelerCard({ profile, added, tripId, onToggle }: { profile: TravelerP
   )
 }
 
-export function TripSettingsView({ tripId, trip: initialTrip, allProfiles, initialTab, isOwner = true, ownerName, ownerEmail, initialCollaborators = [], placesApiKey }: Props) {
+export function TripSettingsView({ tripId, trip: initialTrip, allProfiles, initialTab, isOwner = true, ownerName, ownerEmail, initialCollaborators = [], placesApiKey, userId }: Props) {
   const router = useRouter()
   const [activeTab, setActiveTab] = useState<Tab>(tabFromParam(initialTab))
   const [trip, setTrip] = useState<Trip>(initialTrip)
@@ -889,6 +891,11 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles, initi
       {/* FLIGHTS TAB */}
       {activeTab === "Flights" && (
         <div>
+          {userId && (
+            <div className="mb-4">
+              <ForwardingEmail userId={userId} variant="compact" />
+            </div>
+          )}
           {trip.flights.length === 0 && !showFlightForm && (
             <div className="text-center py-12">
               <Plane className="w-10 h-10 text-gray-200 mx-auto mb-3" />
@@ -1116,6 +1123,11 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles, initi
       {/* HOTELS TAB */}
       {activeTab === "Hotels" && (
         <div>
+          {userId && (
+            <div className="mb-4">
+              <ForwardingEmail userId={userId} variant="compact" />
+            </div>
+          )}
           {/* Booking.com affiliate suggestion */}
           {hotelAffiliateLink && (
             <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 mb-4">
@@ -1340,6 +1352,11 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles, initi
       {/* CARS TAB */}
       {activeTab === "Cars" && (
         <div>
+          {userId && (
+            <div className="mb-4">
+              <ForwardingEmail userId={userId} variant="compact" />
+            </div>
+          )}
           {/* Booking.com affiliate suggestion */}
           {carRentalLink && (
             <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-4 mb-4">

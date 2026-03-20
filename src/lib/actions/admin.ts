@@ -161,5 +161,55 @@ export async function getApiStatuses(): Promise<ApiStatus[]> {
     detail: hasDb ? "DATABASE_URL set" : "DATABASE_URL missing",
   })
 
+  // DigitalOcean API
+  const hasDOToken = !!process.env.DIGITALOCEAN_API_TOKEN
+  statuses.push({
+    name: "DigitalOcean API",
+    configured: hasDOToken,
+    detail: hasDOToken ? "API token set" : "DIGITALOCEAN_API_TOKEN missing",
+  })
+
   return statuses
+}
+
+export type Deployment = {
+  id: string
+  phase: string
+  created_at: string
+  updated_at: string
+  cause: string
+  commit_hash: string | null
+}
+
+export async function getDeployments(): Promise<Deployment[] | null> {
+  await requireAdmin()
+
+  const token = process.env.DIGITALOCEAN_API_TOKEN
+  if (!token) return null
+
+  try {
+    const res = await fetch(
+      "https://api.digitalocean.com/v2/apps/251d5051-87d7-44e6-86ce-83721a40b6e8/deployments",
+      {
+        headers: { Authorization: `Bearer ${token}` },
+        next: { revalidate: 30 },
+      }
+    )
+
+    if (!res.ok) throw new Error(`DO API returned ${res.status}`)
+
+    const data = await res.json()
+    const deployments = (data.deployments || []).slice(0, 5)
+
+    return deployments.map((d: any) => ({
+      id: d.id,
+      phase: d.phase || "UNKNOWN",
+      created_at: d.created_at,
+      updated_at: d.updated_at,
+      cause: d.cause || "",
+      commit_hash: d.cause?.match(/commit ([a-f0-9]+)/)?.[1] || null,
+    }))
+  } catch {
+    return []
+  }
 }

@@ -81,29 +81,65 @@ export default async function TripMapPage({ params }: { params: Promise<{ tripId
     LIS: [38.7756, -9.1354], CPH: [55.618, 12.6508], ZRH: [47.4647, 8.5492],
   }
 
-  for (const flight of trip.flights) {
-    if (flight.departureAirport) {
-      const coords = AIRPORT_COORDS[flight.departureAirport.toUpperCase().trim()]
-      if (coords) {
-        markers.push({
-          lat: coords[0],
-          lng: coords[1],
-          label: `${flight.departureAirport} (${flight.airline || "Flight"})`,
-          type: "flight",
-          day: dateToDayIndex(flight.departureTime),
-        })
+  // Sort flights chronologically to identify home airport and layovers
+  const sortedFlights = [...trip.flights].sort(
+    (a, b) => new Date(a.departureTime).getTime() - new Date(b.departureTime).getTime()
+  )
+
+  // Identify home airport: the departure airport of the first chronological flight
+  const homeAirport = sortedFlights.length > 0
+    ? sortedFlights[0].departureAirport?.toUpperCase().trim() || null
+    : null
+
+  // Identify layover airports: arrival airports where the next flight departs
+  // from the same airport within 4 hours
+  const layoverAirports = new Set<string>()
+  for (let i = 0; i < sortedFlights.length - 1; i++) {
+    const current = sortedFlights[i]
+    const next = sortedFlights[i + 1]
+    const arrAirport = current.arrivalAirport?.toUpperCase().trim()
+    const nextDeptAirport = next.departureAirport?.toUpperCase().trim()
+    if (arrAirport && nextDeptAirport && arrAirport === nextDeptAirport) {
+      const arrTime = new Date(current.arrivalTime).getTime()
+      const nextDeptTime = new Date(next.departureTime).getTime()
+      const layoverHours = (nextDeptTime - arrTime) / (1000 * 60 * 60)
+      if (layoverHours > 0 && layoverHours < 4) {
+        layoverAirports.add(arrAirport)
       }
     }
+  }
+
+  for (const flight of sortedFlights) {
+    // Add departure airport marker only if it's not the home airport and not a layover
+    if (flight.departureAirport) {
+      const code = flight.departureAirport.toUpperCase().trim()
+      if (code !== homeAirport && !layoverAirports.has(code)) {
+        const coords = AIRPORT_COORDS[code]
+        if (coords) {
+          markers.push({
+            lat: coords[0],
+            lng: coords[1],
+            label: `${flight.departureAirport} (${flight.airline || "Flight"})`,
+            type: "flight",
+            day: dateToDayIndex(flight.departureTime),
+          })
+        }
+      }
+    }
+    // Add arrival airport marker only if it's not the home airport and not a layover
     if (flight.arrivalAirport) {
-      const coords = AIRPORT_COORDS[flight.arrivalAirport.toUpperCase().trim()]
-      if (coords) {
-        markers.push({
-          lat: coords[0],
-          lng: coords[1],
-          label: `${flight.arrivalAirport} (${flight.airline || "Flight"})`,
-          type: "flight",
-          day: dateToDayIndex(flight.arrivalTime),
-        })
+      const code = flight.arrivalAirport.toUpperCase().trim()
+      if (code !== homeAirport && !layoverAirports.has(code)) {
+        const coords = AIRPORT_COORDS[code]
+        if (coords) {
+          markers.push({
+            lat: coords[0],
+            lng: coords[1],
+            label: `${flight.arrivalAirport} (${flight.airline || "Flight"})`,
+            type: "flight",
+            day: dateToDayIndex(flight.arrivalTime),
+          })
+        }
       }
     }
   }

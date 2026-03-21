@@ -1,8 +1,9 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useCallback } from "react"
 import { toast } from "sonner"
 import { searchPlaces, createActivity } from "@/lib/actions/activities"
+import { getPlaceDetails } from "@/lib/actions/places-detail"
 import { cn } from "@/lib/utils"
 import {
   Compass,
@@ -12,7 +13,13 @@ import {
   Plus,
   Loader2,
   ChevronDown,
+  ChevronUp,
   Check,
+  Phone,
+  Clock,
+  Globe,
+  ExternalLink,
+  DollarSign,
 } from "lucide-react"
 import { ViatorDestinationBanner } from "@/components/affiliate-links"
 
@@ -50,6 +57,22 @@ type Place = {
   goodForChildren?: boolean
   openNow?: boolean
   weekdayHours?: string[]
+}
+
+type PlaceDetails = {
+  name?: string
+  address?: string
+  lat?: number
+  lng?: number
+  rating?: number
+  ratingCount?: number
+  types?: string[]
+  priceLevel?: string
+  website?: string
+  phone?: string
+  goodForChildren?: boolean
+  hours?: string[]
+  openNow?: boolean
 }
 
 type Destination = { name: string; lat?: number | null; lng?: number | null }
@@ -104,6 +127,280 @@ function getLocationBias(
     return `${opt.lat},${opt.lng}`
   }
   return undefined
+}
+
+function googleMapsUrl(place: Place): string {
+  if (place.lat && place.lng) {
+    return `https://www.google.com/maps/search/?api=1&query=${place.lat},${place.lng}&query_place_id=${place.googlePlaceId}`
+  }
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place.name + " " + place.address)}`
+}
+
+/* ─── PlaceCard with expandable details ───────────────────────────────────── */
+function PlaceCard({
+  place,
+  isSaved,
+  onSave,
+}: {
+  place: Place
+  isSaved: boolean
+  onSave: () => void
+}) {
+  const [expanded, setExpanded] = useState(false)
+  const [details, setDetails] = useState<PlaceDetails | null>(null)
+  const [detailsLoading, setDetailsLoading] = useState(false)
+
+  const handleExpand = useCallback(async () => {
+    if (expanded) {
+      setExpanded(false)
+      return
+    }
+    setExpanded(true)
+    if (!details) {
+      setDetailsLoading(true)
+      try {
+        const result = await getPlaceDetails(place.googlePlaceId)
+        setDetails(result)
+      } catch {
+        // Silently fail — we'll show what we have from the search result
+      } finally {
+        setDetailsLoading(false)
+      }
+    }
+  }, [expanded, details, place.googlePlaceId])
+
+  const effectivePrice = details?.priceLevel || place.priceLevel
+  const effectiveRating = details?.rating ?? place.rating
+  const effectiveRatingCount = details?.ratingCount ?? place.ratingCount
+
+  return (
+    <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden hover:border-gray-200 hover:shadow-sm transition-all">
+      {/* Image — clickable to expand */}
+      <button
+        type="button"
+        onClick={handleExpand}
+        className="w-full text-left cursor-pointer"
+      >
+        {place.imageUrl ? (
+          /* eslint-disable-next-line @next/next/no-img-element */
+          <img src={place.imageUrl} alt="" className="w-full h-40 object-cover" />
+        ) : (
+          <div className="w-full h-40 bg-gradient-to-br from-emerald-50 to-teal-50 flex items-center justify-center">
+            <Compass className="w-8 h-8 text-emerald-200" />
+          </div>
+        )}
+      </button>
+
+      <div className="p-4 space-y-2.5">
+        {/* Name + rating — clickable to expand */}
+        <button
+          type="button"
+          onClick={handleExpand}
+          className="w-full text-left flex items-start justify-between gap-2 cursor-pointer"
+        >
+          <h3 className="font-semibold text-gray-900 text-sm leading-tight">
+            {place.name}
+          </h3>
+          <div className="flex items-center gap-1.5 shrink-0">
+            {effectiveRating != null && (
+              <span className="flex items-center gap-0.5 text-yellow-600 text-xs font-medium">
+                <Star className="w-3.5 h-3.5 fill-current" />
+                {effectiveRating.toFixed(1)}
+                {effectiveRatingCount != null && (
+                  <span className="text-gray-400 font-normal ml-0.5">
+                    ({effectiveRatingCount.toLocaleString()})
+                  </span>
+                )}
+              </span>
+            )}
+            {expanded ? (
+              <ChevronUp className="w-4 h-4 text-gray-400" />
+            ) : (
+              <ChevronDown className="w-4 h-4 text-gray-400" />
+            )}
+          </div>
+        </button>
+
+        {/* Address */}
+        <div className="flex items-start gap-1 text-xs text-gray-500">
+          <MapPin className="w-3 h-3 shrink-0 mt-0.5" />
+          <span className={expanded ? "" : "line-clamp-2"}>{details?.address || place.address}</span>
+        </div>
+
+        {/* Price + open status */}
+        <div className="flex items-center gap-2 text-xs">
+          {effectivePrice && PRICE_LABEL[effectivePrice] && (
+            <span className="font-semibold text-gray-700">
+              {PRICE_LABEL[effectivePrice]}
+            </span>
+          )}
+          {(details?.openNow ?? place.openNow) != null && (
+            <span
+              className={cn(
+                "font-medium",
+                (details?.openNow ?? place.openNow) ? "text-green-600" : "text-red-500"
+              )}
+            >
+              {(details?.openNow ?? place.openNow) ? "Open now" : "Closed"}
+            </span>
+          )}
+        </div>
+
+        {/* Kids-friendly badge */}
+        {(details?.goodForChildren ?? place.goodForChildren) && (
+          <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-green-50 border border-green-100 rounded-lg text-xs font-medium text-green-700">
+            Kids friendly
+          </div>
+        )}
+
+        {/* Type tags */}
+        {place.types.length > 0 && (
+          <div className="flex gap-1 flex-wrap">
+            {place.types
+              .filter(
+                (t) =>
+                  !["point_of_interest", "establishment", "food", "store"].includes(t)
+              )
+              .slice(0, 4)
+              .map((type) => (
+                <span
+                  key={type}
+                  className="px-1.5 py-0.5 text-[10px] bg-emerald-50 text-emerald-600 rounded capitalize"
+                >
+                  {type.replace(/_/g, " ")}
+                </span>
+              ))}
+          </div>
+        )}
+
+        {/* ─── Expanded detail panel ─────────────────────────────────────── */}
+        {expanded && (
+          <div className="border-t border-gray-100 pt-3 mt-1 space-y-3">
+            {detailsLoading && (
+              <div className="flex items-center justify-center py-4">
+                <Loader2 className="w-5 h-5 text-emerald-500 animate-spin" />
+              </div>
+            )}
+
+            {!detailsLoading && (
+              <>
+                {/* Phone */}
+                {details?.phone && (
+                  <div className="flex items-center gap-2 text-xs text-gray-600">
+                    <Phone className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                    <a href={`tel:${details.phone}`} className="hover:text-indigo-600 transition-colors">
+                      {details.phone}
+                    </a>
+                  </div>
+                )}
+
+                {/* Website */}
+                {details?.website && (
+                  <div className="flex items-center gap-2 text-xs text-gray-600">
+                    <Globe className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                    <a
+                      href={details.website}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="hover:text-indigo-600 transition-colors truncate"
+                    >
+                      {details.website.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "")}
+                    </a>
+                  </div>
+                )}
+
+                {/* Price level detail */}
+                {effectivePrice && PRICE_LABEL[effectivePrice] && (
+                  <div className="flex items-center gap-2 text-xs text-gray-600">
+                    <DollarSign className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                    <span>Price level: <span className="font-semibold">{PRICE_LABEL[effectivePrice]}</span></span>
+                  </div>
+                )}
+
+                {/* Opening hours */}
+                {details?.hours && details.hours.length > 0 && (
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2 text-xs font-medium text-gray-700">
+                      <Clock className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                      Opening Hours
+                    </div>
+                    <div className="ml-5.5 space-y-0.5">
+                      {details.hours.map((line, i) => (
+                        <div key={i} className="text-[11px] text-gray-500 ml-[22px]">
+                          {line}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Action buttons */}
+                <div className="flex gap-2 pt-1">
+                  <a
+                    href={googleMapsUrl(place)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium rounded-xl border border-gray-200 text-gray-700 hover:bg-gray-50 transition-colors"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    View on Google Maps
+                  </a>
+                  <button
+                    onClick={onSave}
+                    disabled={isSaved}
+                    className={cn(
+                      "flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium rounded-xl transition-colors",
+                      isSaved
+                        ? "bg-green-50 text-green-700 cursor-default"
+                        : "bg-emerald-600 text-white hover:bg-emerald-700"
+                    )}
+                  >
+                    {isSaved ? (
+                      <>
+                        <Check className="w-3.5 h-3.5" />
+                        Added
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="w-3.5 h-3.5" />
+                        Add to Trip
+                      </>
+                    )}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* Collapsed: simple add button */}
+        {!expanded && (
+          <button
+            onClick={onSave}
+            disabled={isSaved}
+            className={cn(
+              "w-full flex items-center justify-center gap-1.5 py-2 text-xs font-medium rounded-xl transition-colors",
+              isSaved
+                ? "bg-green-50 text-green-700 cursor-default"
+                : "bg-emerald-600 text-white hover:bg-emerald-700"
+            )}
+          >
+            {isSaved ? (
+              <>
+                <Check className="w-3.5 h-3.5" />
+                Added
+              </>
+            ) : (
+              <>
+                <Plus className="w-3.5 h-3.5" />
+                Add to activities
+              </>
+            )}
+          </button>
+        )}
+      </div>
+    </div>
+  )
 }
 
 /* ─── Component ────────────────────────────────────────────────────────────── */
@@ -285,116 +582,12 @@ export function DiscoverView({ tripId, destination, destinations, arrivalCities 
       {!loading && results.length > 0 && (
         <div className="grid sm:grid-cols-2 gap-4">
           {results.map((place) => (
-            <div
+            <PlaceCard
               key={place.googlePlaceId}
-              className="bg-white border border-gray-100 rounded-2xl overflow-hidden hover:border-gray-200 hover:shadow-sm transition-all"
-            >
-              {/* Image */}
-              {place.imageUrl ? (
-                /* eslint-disable-next-line @next/next/no-img-element */
-                <img src={place.imageUrl} alt="" className="w-full h-40 object-cover" />
-              ) : (
-                <div className="w-full h-40 bg-gradient-to-br from-emerald-50 to-teal-50 flex items-center justify-center">
-                  <Compass className="w-8 h-8 text-emerald-200" />
-                </div>
-              )}
-
-              <div className="p-4 space-y-2.5">
-                {/* Name + rating */}
-                <div className="flex items-start justify-between gap-2">
-                  <h3 className="font-semibold text-gray-900 text-sm leading-tight">
-                    {place.name}
-                  </h3>
-                  {place.rating != null && (
-                    <span className="flex items-center gap-0.5 text-yellow-600 text-xs shrink-0 font-medium">
-                      <Star className="w-3.5 h-3.5 fill-current" />
-                      {place.rating.toFixed(1)}
-                      {place.ratingCount != null && (
-                        <span className="text-gray-400 font-normal ml-0.5">
-                          ({place.ratingCount.toLocaleString()})
-                        </span>
-                      )}
-                    </span>
-                  )}
-                </div>
-
-                {/* Address */}
-                <div className="flex items-start gap-1 text-xs text-gray-500">
-                  <MapPin className="w-3 h-3 shrink-0 mt-0.5" />
-                  <span className="line-clamp-2">{place.address}</span>
-                </div>
-
-                {/* Price + open status */}
-                <div className="flex items-center gap-2 text-xs">
-                  {place.priceLevel && PRICE_LABEL[place.priceLevel] && (
-                    <span className="font-semibold text-gray-700">
-                      {PRICE_LABEL[place.priceLevel]}
-                    </span>
-                  )}
-                  {place.openNow != null && (
-                    <span
-                      className={cn(
-                        "font-medium",
-                        place.openNow ? "text-green-600" : "text-red-500"
-                      )}
-                    >
-                      {place.openNow ? "Open now" : "Closed"}
-                    </span>
-                  )}
-                </div>
-
-                {/* Kids-friendly badge */}
-                {place.goodForChildren && (
-                  <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-green-50 border border-green-100 rounded-lg text-xs font-medium text-green-700">
-                    Kids friendly
-                  </div>
-                )}
-
-                {/* Type tags */}
-                {place.types.length > 0 && (
-                  <div className="flex gap-1 flex-wrap">
-                    {place.types
-                      .filter(
-                        (t) =>
-                          !["point_of_interest", "establishment", "food", "store"].includes(t)
-                      )
-                      .slice(0, 4)
-                      .map((type) => (
-                        <span
-                          key={type}
-                          className="px-1.5 py-0.5 text-[10px] bg-emerald-50 text-emerald-600 rounded capitalize"
-                        >
-                          {type.replace(/_/g, " ")}
-                        </span>
-                      ))}
-                  </div>
-                )}
-
-                {/* Add to activities button */}
-                <button
-                  onClick={() => handleSave(place)}
-                  disabled={savedIds.has(place.googlePlaceId)}
-                  className={cn(
-                    "w-full flex items-center justify-center gap-1.5 py-2 text-xs font-medium rounded-xl transition-colors",
-                    savedIds.has(place.googlePlaceId)
-                      ? "bg-green-50 text-green-700 cursor-default"
-                      : "bg-emerald-600 text-white hover:bg-emerald-700"
-                  )}
-                >
-                  {savedIds.has(place.googlePlaceId) ? (
-                    <>
-                      <Check className="w-3.5 h-3.5" />
-                      Added
-                    </>
-                  ) : (
-                    <>
-                      <Plus className="w-3.5 h-3.5" />
-                      Add to activities
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
+              place={place}
+              isSaved={savedIds.has(place.googlePlaceId)}
+              onSave={() => handleSave(place)}
+            />
           ))}
         </div>
       )}

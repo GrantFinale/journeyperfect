@@ -52,6 +52,15 @@ export function TripMap({ markers, center, apiKey, height = "400px", selectedDay
       setError("Google Maps API key not configured")
       return
     }
+
+    // Register global auth failure callback — Google Maps calls this when the API key
+    // is invalid, billing is not enabled, or Maps JavaScript API is not turned on.
+    ;(window as any).gm_authFailure = () => {
+      setError(
+        "Google Maps authentication failed. Ensure the Maps JavaScript API is enabled and billing is active on your Google Cloud project."
+      )
+    }
+
     if (window.google?.maps?.Map) {
       setLoaded(true)
       return
@@ -64,11 +73,11 @@ export function TripMap({ markers, center, apiKey, height = "400px", selectedDay
     }
 
     const script = document.createElement("script")
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=marker`
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=marker&loading=async`
     script.async = true
     script.defer = true
     script.onload = () => setLoaded(true)
-    script.onerror = () => setError("Failed to load Google Maps")
+    script.onerror = () => setError("Failed to load Google Maps. The Maps JavaScript API may not be enabled or billing may not be set up on the Google Cloud project.")
     document.head.appendChild(script)
   }, [apiKey])
 
@@ -219,10 +228,15 @@ export function TripMap({ markers, center, apiKey, height = "400px", selectedDay
   if (error) {
     return (
       <div
-        className="flex items-center justify-center bg-gray-50 border border-gray-200 rounded-2xl text-sm text-gray-500"
+        className="flex flex-col items-center justify-center bg-gray-50 border border-gray-200 rounded-2xl text-sm text-gray-500 px-6 text-center gap-2"
         style={{ height }}
       >
-        {error}
+        <svg className="w-8 h-8 text-gray-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+          <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z" />
+          <circle cx="12" cy="10" r="3" />
+        </svg>
+        <span className="font-medium text-gray-600">Map unavailable</span>
+        <span className="text-xs text-gray-400 max-w-sm">{error}</span>
       </div>
     )
   }

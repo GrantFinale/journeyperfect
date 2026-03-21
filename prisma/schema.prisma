@@ -361,6 +361,9 @@ model ItineraryItem {
   updatedAt DateTime @updatedAt
 
   @@index([tripId, date])
+  @@index([activityId])
+  @@index([flightId])
+  @@index([hotelId])
 }
 
 // ─── Travel Documents ─────────────────────────────────────────────────────────

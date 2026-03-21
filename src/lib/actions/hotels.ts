@@ -226,7 +226,7 @@ export async function updateHotel(tripId: string, hotelId: string, data: Partial
   await requireTripAccess(tripId, "EDITOR")
 
   const updated = await prisma.hotel.update({
-    where: { id: hotelId },
+    where: { id: hotelId, tripId },
     data: {
       ...data,
       ...(data.checkIn && { checkIn: new Date(data.checkIn) }),
@@ -240,6 +240,6 @@ export async function updateHotel(tripId: string, hotelId: string, data: Partial
 
 export async function deleteHotel(tripId: string, hotelId: string) {
   await requireTripAccess(tripId, "EDITOR")
-  await prisma.hotel.delete({ where: { id: hotelId } })
+  await prisma.hotel.delete({ where: { id: hotelId, tripId } })
   revalidatePath(`/trip/${tripId}`)
 }

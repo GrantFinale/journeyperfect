@@ -96,7 +96,7 @@ export async function updateRentalCar(tripId: string, carId: string, data: Parti
   await requireTripAccess(tripId, "EDITOR")
 
   const updated = await prisma.rentalCar.update({
-    where: { id: carId },
+    where: { id: carId, tripId },
     data: {
       ...data,
       ...(data.pickupTime && { pickupTime: new Date(data.pickupTime) }),
@@ -110,7 +110,7 @@ export async function updateRentalCar(tripId: string, carId: string, data: Parti
 
 export async function deleteRentalCar(tripId: string, carId: string) {
   await requireTripAccess(tripId, "EDITOR")
-  await prisma.rentalCar.delete({ where: { id: carId } })
+  await prisma.rentalCar.delete({ where: { id: carId, tripId } })
   revalidatePath(`/trip/${tripId}`)
 }
 

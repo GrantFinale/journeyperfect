@@ -43,6 +43,6 @@ export type DocumentFull = Awaited<ReturnType<typeof getDocuments>>[number]
 
 export async function deleteDocument(tripId: string, documentId: string) {
   await requireTripAccess(tripId, "EDITOR")
-  await prisma.travelDocument.delete({ where: { id: documentId } })
+  await prisma.travelDocument.delete({ where: { id: documentId, tripId } })
   revalidatePath(`/trip/${tripId}/documents`)
 }

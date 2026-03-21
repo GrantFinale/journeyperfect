@@ -138,6 +138,8 @@ export async function getHotelAffiliate(
   checkIn?: string,
   checkOut?: string
 ): Promise<AffiliateLink> {
+  const session = await auth()
+  if (!session?.user?.id) throw new Error("Unauthorized")
   return getHotelBookingLink(destination, checkIn, checkOut)
 }
 
@@ -146,11 +148,15 @@ export async function getCarRentalAffiliate(
   pickupDate?: string,
   dropoffDate?: string
 ): Promise<AffiliateLink> {
+  const session = await auth()
+  if (!session?.user?.id) throw new Error("Unauthorized")
   return getRentalCarLink(location, pickupDate, dropoffDate)
 }
 
 export async function getViatorDestinationAffiliate(
   destination: string
 ): Promise<AffiliateLink> {
+  const session = await auth()
+  if (!session?.user?.id) throw new Error("Unauthorized")
   return getViatorDestinationLink(destination)
 }

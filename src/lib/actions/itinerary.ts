@@ -61,7 +61,7 @@ export async function updateItineraryItem(
   await requireTripAccess(tripId, "EDITOR")
 
   const updated = await prisma.itineraryItem.update({
-    where: { id: itemId },
+    where: { id: itemId, tripId },
     data: {
       ...data,
       ...(data.date && { date: new Date(data.date) }),
@@ -74,7 +74,7 @@ export async function updateItineraryItem(
 
 export async function deleteItineraryItem(tripId: string, itemId: string) {
   await requireTripAccess(tripId, "EDITOR")
-  await prisma.itineraryItem.delete({ where: { id: itemId } })
+  await prisma.itineraryItem.delete({ where: { id: itemId, tripId } })
   revalidatePath(`/trip/${tripId}/itinerary`)
 }
 

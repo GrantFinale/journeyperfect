@@ -197,7 +197,7 @@ export async function updateFlight(tripId: string, flightId: string, data: Parti
   await requireTripAccess(tripId, "EDITOR")
 
   const updated = await prisma.flight.update({
-    where: { id: flightId },
+    where: { id: flightId, tripId },
     data: {
       ...data,
       ...(data.departureTime && { departureTime: new Date(data.departureTime) }),
@@ -211,6 +211,6 @@ export async function updateFlight(tripId: string, flightId: string, data: Parti
 
 export async function deleteFlight(tripId: string, flightId: string) {
   await requireTripAccess(tripId, "EDITOR")
-  await prisma.flight.delete({ where: { id: flightId } })
+  await prisma.flight.delete({ where: { id: flightId, tripId } })
   revalidatePath(`/trip/${tripId}`)
 }

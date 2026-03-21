@@ -289,6 +289,15 @@ ${text}`
 // Email is sent to: trips+{userId}@inbound.journeyperfect.com
 // The +{userId} part identifies the user
 export async function POST(request: NextRequest) {
+  // Verify webhook secret to prevent unauthorized access
+  const webhookSecret = process.env.INBOUND_WEBHOOK_SECRET
+  if (webhookSecret) {
+    const headerSecret = request.headers.get("x-webhook-secret")
+    if (headerSecret !== webhookSecret) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+  }
+
   try {
     const formData = await request.formData()
 

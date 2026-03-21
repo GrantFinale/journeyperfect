@@ -1,6 +1,7 @@
 "use server"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/db"
+import { requireTripAccess } from "@/lib/auth-trip"
 import { revalidatePath } from "next/cache"
 import { sendCollaboratorInvite } from "@/lib/email"
 
@@ -43,8 +44,8 @@ export async function inviteCollaborator(tripId: string, email: string, role: "V
 }
 
 export async function getCollaborators(tripId: string) {
-  const session = await auth()
-  if (!session?.user?.id) throw new Error("Unauthorized")
+  // Verify caller is owner or collaborator on this trip
+  await requireTripAccess(tripId)
 
   return prisma.tripCollaborator.findMany({
     where: { tripId },

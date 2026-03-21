@@ -51,17 +51,7 @@ export async function markAllNotificationsRead() {
   })
 }
 
-// ─── Create a notification (for server-side use) ─────────────────────────────
-
-export async function createNotification(data: {
-  userId: string
-  type: string
-  title: string
-  message: string
-  link?: string
-}) {
-  return prisma.notification.create({ data })
-}
+// createNotification is in src/lib/notifications-internal.ts (not a server action)
 
 // ─── Delete a notification ───────────────────────────────────────────────────
 

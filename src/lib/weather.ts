@@ -57,11 +57,20 @@ function getWeatherMeta(code: number): WeatherMeta {
 // ─── In-memory Cache ──────────────────────────────────────────────────────────
 
 const CACHE_TTL = 30 * 60_000 // 30 minutes
+const MAX_CACHE_SIZE = 500
 
 const forecastCache = new Map<
   string,
   { value: DayForecast[]; expiry: number }
 >()
+
+function cacheSet<K, V>(cache: Map<K, V>, key: K, value: V) {
+  if (cache.size >= MAX_CACHE_SIZE) {
+    const first = cache.keys().next().value
+    if (first !== undefined) cache.delete(first)
+  }
+  cache.set(key, value)
+}
 
 function cacheKey(lat: number, lng: number): string {
   // Round to 2 decimals to coalesce nearby lookups
@@ -130,7 +139,7 @@ export async function getWeatherForecast(
       }
     })
 
-    forecastCache.set(key, { value: forecasts, expiry: Date.now() + CACHE_TTL })
+    cacheSet(forecastCache, key, { value: forecasts, expiry: Date.now() + CACHE_TTL })
     return forecasts
   } catch (err) {
     console.error("[weather] Failed to fetch forecast:", err)

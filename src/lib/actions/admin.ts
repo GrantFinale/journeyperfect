@@ -22,22 +22,28 @@ export async function getAdminStats() {
   return { totalUsers, totalTrips, activeTrips }
 }
 
-export async function getAdminUsers() {
+export async function getAdminUsers(page = 1, pageSize = 50) {
   await requireAdmin()
-  const users = await prisma.user.findMany({
-    select: {
-      id: true,
-      name: true,
-      email: true,
-      image: true,
-      plan: true,
-      isAdmin: true,
-      createdAt: true,
-      _count: { select: { trips: true } },
-    },
-    orderBy: { createdAt: "desc" },
-  })
-  return users
+  const skip = (page - 1) * pageSize
+  const [users, total] = await Promise.all([
+    prisma.user.findMany({
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        image: true,
+        plan: true,
+        isAdmin: true,
+        createdAt: true,
+        _count: { select: { trips: true } },
+      },
+      orderBy: { createdAt: "desc" },
+      skip,
+      take: pageSize,
+    }),
+    prisma.user.count(),
+  ])
+  return { users, total, page, pageSize }
 }
 
 export async function toggleUserAdmin(userId: string) {

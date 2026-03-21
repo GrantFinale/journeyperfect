@@ -72,6 +72,7 @@ export async function getTrips() {
       _count: { select: { activities: true, itineraryItems: true } },
     },
     orderBy: { startDate: "asc" },
+    take: 100,
   })
 }
 

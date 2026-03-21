@@ -51,7 +51,7 @@ export async function updateActivity(tripId: string, activityId: string, data: P
   await requireTripAccess(tripId, "EDITOR")
 
   const updated = await prisma.activity.update({
-    where: { id: activityId },
+    where: { id: activityId, tripId },
     data: {
       ...data,
       ...(data.fixedDateTime && { fixedDateTime: new Date(data.fixedDateTime) }),
@@ -64,7 +64,7 @@ export async function updateActivity(tripId: string, activityId: string, data: P
 
 export async function deleteActivity(tripId: string, activityId: string) {
   await requireTripAccess(tripId, "EDITOR")
-  await prisma.activity.delete({ where: { id: activityId } })
+  await prisma.activity.delete({ where: { id: activityId, tripId } })
   revalidatePath(`/trip/${tripId}/activities`)
 }
 
@@ -80,6 +80,15 @@ export async function getActivities(tripId: string) {
 // Places search cache — 15 min TTL, keyed by query+location
 const placesSearchCache = new Map<string, { results: any[]; expiry: number }>()
 const PLACES_CACHE_TTL = 15 * 60 * 1000 // 15 minutes
+const MAX_CACHE_SIZE = 500
+
+function cacheSet<K, V>(cache: Map<K, V>, key: K, value: V) {
+  if (cache.size >= MAX_CACHE_SIZE) {
+    const first = cache.keys().next().value
+    if (first !== undefined) cache.delete(first)
+  }
+  cache.set(key, value)
+}
 
 // Google Places search — runs server-side to keep API key secret
 // Uses the Places API (New) endpoint: places:searchText
@@ -151,7 +160,7 @@ export async function searchPlaces(query: string, locationBias?: string) {
       primaryType: place.primaryType,
       priceLevel: place.priceLevel,
       imageUrl: place.photos?.[0]?.name
-        ? `https://places.googleapis.com/v1/${place.photos[0].name}/media?maxWidthPx=400&key=${apiKey}`
+        ? `/api/places/photo/${encodeURIComponent(place.photos[0].name)}`
         : null,
       // Dining-specific attributes
       goodForChildren: place.goodForChildren,
@@ -166,7 +175,7 @@ export async function searchPlaces(query: string, locationBias?: string) {
     }))
 
     // Cache results
-    placesSearchCache.set(cacheKey, { results, expiry: Date.now() + PLACES_CACHE_TTL })
+    cacheSet(placesSearchCache, cacheKey, { results, expiry: Date.now() + PLACES_CACHE_TTL })
 
     return { results, error: null }
   } catch (err) {

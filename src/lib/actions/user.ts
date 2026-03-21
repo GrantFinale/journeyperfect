@@ -16,6 +16,6 @@ export async function getUserId(): Promise<string | null> {
 }
 
 export async function getPlacesApiKey(): Promise<string> {
-  // Return the server-side key for client-side Google Maps
-  return process.env.GOOGLE_PLACES_KEY || process.env.NEXT_PUBLIC_GOOGLE_PLACES_KEY || ""
+  // Only return the public key — never expose the server-side GOOGLE_PLACES_KEY
+  return process.env.NEXT_PUBLIC_GOOGLE_PLACES_KEY || ""
 }

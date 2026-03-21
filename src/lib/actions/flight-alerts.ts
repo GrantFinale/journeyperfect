@@ -1,6 +1,7 @@
 "use server"
 import { prisma } from "@/lib/db"
 import { getConfig } from "@/lib/config"
+import { requireTripAccess } from "@/lib/auth-trip"
 
 export interface FlightStatus {
   flightNumber: string
@@ -64,6 +65,8 @@ export async function checkFlightStatus(
 export async function getTripFlightStatuses(
   tripId: string
 ): Promise<FlightStatus[]> {
+  await requireTripAccess(tripId)
+
   const flights = await prisma.flight.findMany({
     where: { tripId },
     select: { flightNumber: true, departureTime: true },

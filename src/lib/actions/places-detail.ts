@@ -5,6 +5,15 @@ import { auth } from "@/lib/auth"
 // Cache place details for 1 hour (place data doesn't change often)
 const placeDetailsCache = new Map<string, { data: any; expiry: number }>()
 const DETAIL_CACHE_TTL = 60 * 60 * 1000 // 1 hour
+const MAX_CACHE_SIZE = 500
+
+function cacheSet<K, V>(cache: Map<K, V>, key: K, value: V) {
+  if (cache.size >= MAX_CACHE_SIZE) {
+    const first = cache.keys().next().value
+    if (first !== undefined) cache.delete(first)
+  }
+  cache.set(key, value)
+}
 
 export async function getPlaceDetails(placeId: string) {
   const session = await auth()
@@ -51,7 +60,7 @@ export async function getPlaceDetails(placeId: string) {
     }
 
     // Cache it
-    placeDetailsCache.set(placeId, { data: result, expiry: Date.now() + DETAIL_CACHE_TTL })
+    cacheSet(placeDetailsCache, placeId, { data: result, expiry: Date.now() + DETAIL_CACHE_TTL })
 
     return result
   } catch {

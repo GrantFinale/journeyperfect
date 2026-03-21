@@ -64,7 +64,7 @@ export async function updateBudgetItem(tripId: string, itemId: string, data: Par
   await requireTripAccess(tripId, "EDITOR")
 
   const updated = await prisma.budgetItem.update({
-    where: { id: itemId },
+    where: { id: itemId, tripId },
     data: {
       ...data,
       ...(data.paidAt && { paidAt: new Date(data.paidAt) }),
@@ -80,6 +80,6 @@ export type BudgetSummaryResult = Awaited<ReturnType<typeof getBudgetSummary>>
 
 export async function deleteBudgetItem(tripId: string, itemId: string) {
   await requireTripAccess(tripId, "EDITOR")
-  await prisma.budgetItem.delete({ where: { id: itemId } })
+  await prisma.budgetItem.delete({ where: { id: itemId, tripId } })
   revalidatePath(`/trip/${tripId}/budget`)
 }

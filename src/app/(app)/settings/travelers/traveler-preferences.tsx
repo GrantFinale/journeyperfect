@@ -3,27 +3,19 @@
 import { useState, useCallback } from "react"
 import { toast } from "sonner"
 import { updateTravelerPreferences } from "@/lib/actions/travelers"
-import { cn } from "@/lib/utils"
-import { Save, ChevronDown } from "lucide-react"
+import { cn, getAgeGroupLabel } from "@/lib/utils"
+import { Save, ChevronDown, ChevronRight } from "lucide-react"
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-interface TravelerPreferencesData {
-  cuisineRatings: Record<string, number>
-  dietaryRestrictions: string[]
-  adventureLevel: number
-  walkingTolerance: number
-  culturalInterest: number
-  nightlifeInterest: number
-  shoppingInterest: number
-  natureInterest: number
-  mobilityNeeds: string[]
-  sleepSchedule: "early-bird" | "normal" | "night-owl"
-  budgetPreference: "budget" | "moderate" | "comfort" | "luxury"
-  travelPace: "relaxed" | "moderate" | "active" | "packed"
-  interests: string[]
-  heatTolerance: number
-  coldTolerance: number
+export interface TravelerPreferences {
+  cuisine?: Record<string, number> // only non-default (non-3) values
+  activities?: Record<string, number> // only non-default values
+  dietary?: string[] // checked items
+  mobility?: string[] // checked items
+  pace?: string // single value
+  sleepSchedule?: string // single value
+  budgetComfort?: string // single value
 }
 
 interface TravelerProfile {
@@ -41,103 +33,138 @@ interface Props {
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const CUISINES = [
-  "Italian", "Mexican", "Japanese/Sushi", "Chinese", "Indian", "Thai", "Korean",
-  "Mediterranean", "American/BBQ", "French", "Vietnamese", "Middle Eastern",
-  "Greek", "Cajun/Creole", "Caribbean", "Ethiopian", "Seafood",
-  "Vegetarian/Vegan", "Fast Food", "Fine Dining",
+const CUISINE_TYPES = [
+  "American", "Mexican", "Italian", "Chinese", "Japanese/Sushi", "Thai",
+  "Indian", "Mediterranean", "Korean", "Vietnamese", "BBQ", "Seafood",
+  "Pizza", "Burgers", "Vegetarian/Vegan", "Desserts/Sweets",
 ]
 
-const DIETARY_RESTRICTIONS = [
-  "Vegetarian", "Vegan", "Pescatarian", "Gluten-free", "Dairy-free",
-  "Nut allergy", "Halal", "Kosher", "Low-sodium", "Keto",
+const ACTIVITY_TYPES: { emoji: string; label: string }[] = [
+  { emoji: "\u{1F3D6}\uFE0F", label: "Beach/Pool" },
+  { emoji: "\u{1F97E}", label: "Hiking/Nature" },
+  { emoji: "\u{1F3A2}", label: "Theme Parks/Rides" },
+  { emoji: "\u{1F3DB}\uFE0F", label: "Museums/History" },
+  { emoji: "\u{1F6CD}\uFE0F", label: "Shopping" },
+  { emoji: "\u{1F3AD}", label: "Shows/Entertainment" },
+  { emoji: "\u26F7\uFE0F", label: "Winter Sports" },
+  { emoji: "\u{1F3A3}", label: "Water Activities" },
+  { emoji: "\u{1F3CC}\uFE0F", label: "Golf" },
+  { emoji: "\u{1F3A8}", label: "Arts/Creative" },
+  { emoji: "\u{1F377}", label: "Breweries/Wineries" },
+  { emoji: "\u{1F3B5}", label: "Live Music/Concerts" },
+  { emoji: "\u{1F3DF}\uFE0F", label: "Sports Events" },
+  { emoji: "\u{1F9D8}", label: "Spa/Relaxation" },
+  { emoji: "\u{1F3B0}", label: "Nightlife/Casinos" },
 ]
 
-const ACTIVITY_SLIDERS: { key: keyof TravelerPreferencesData; label: string; leftEmoji: string; leftLabel: string; rightEmoji: string; rightLabel: string }[] = [
-  { key: "adventureLevel", label: "Adventure Level", leftEmoji: "\u{1F6CB}\uFE0F", leftLabel: "Couch potato", rightEmoji: "\u{1FA82}", rightLabel: "Adrenaline junkie" },
-  { key: "walkingTolerance", label: "Walking Tolerance", leftEmoji: "\u{1F697}", leftLabel: "Drive everywhere", rightEmoji: "\u{1F97E}", rightLabel: "Walk all day" },
-  { key: "culturalInterest", label: "Cultural Interest", leftEmoji: "\u{1F4F1}", leftLabel: "Not really", rightEmoji: "\u{1F3DB}\uFE0F", rightLabel: "Every museum" },
-  { key: "nightlifeInterest", label: "Nightlife", leftEmoji: "\u{1F634}", leftLabel: "Early bed", rightEmoji: "\u{1F389}", rightLabel: "Night owl" },
-  { key: "shoppingInterest", label: "Shopping", leftEmoji: "\u{1F6AB}", leftLabel: "Avoid", rightEmoji: "\u{1F6CD}\uFE0F", rightLabel: "Shopaholic" },
-  { key: "natureInterest", label: "Nature", leftEmoji: "\u{1F3D9}\uFE0F", leftLabel: "City only", rightEmoji: "\u{1F332}", rightLabel: "Wilderness" },
+const DIETARY_OPTIONS = [
+  "Vegetarian", "Vegan", "Gluten-free", "Dairy-free", "Nut allergy",
+  "Shellfish allergy", "Halal", "Kosher", "No spicy food", "No raw fish",
 ]
 
-const INTERESTS = [
-  "History", "Art", "Food tours", "Photography", "Sports", "Live music",
-  "Architecture", "Wildlife", "Beaches", "Mountains", "Theme parks",
-  "Water sports", "Spa/Wellness", "Wine/Beer tasting", "Cooking classes",
-  "Street markets",
+const MOBILITY_OPTIONS = [
+  "Wheelchair accessible", "Limited walking ability", "Stroller needed",
+  "Elevator required", "Motion sickness prone", "Fear of heights", "Claustrophobic",
 ]
 
-const MOBILITY_NEEDS = [
-  "Wheelchair accessible", "Limited walking", "Stroller needed", "Elevator required",
+const PACE_OPTIONS = [
+  { value: "packed", label: "Packed schedule", desc: "go go go" },
+  { value: "moderate", label: "Moderate", desc: "mix of activities and downtime" },
+  { value: "relaxed", label: "Relaxed", desc: "take it easy" },
+  { value: "very-relaxed", label: "Very relaxed", desc: "minimal plans" },
 ]
 
-const SLEEP_SCHEDULES: { value: TravelerPreferencesData["sleepSchedule"]; label: string }[] = [
-  { value: "early-bird", label: "Early bird" },
-  { value: "normal", label: "Normal" },
-  { value: "night-owl", label: "Night owl" },
+const SLEEP_OPTIONS = [
+  { value: "early-bird", label: "Early bird", desc: "up by 6am" },
+  { value: "normal", label: "Normal", desc: "up by 8am" },
+  { value: "night-owl", label: "Night owl", desc: "up by 10am+" },
 ]
 
-const BUDGET_PREFERENCES: { value: TravelerPreferencesData["budgetPreference"]; label: string }[] = [
-  { value: "budget", label: "Budget" },
-  { value: "moderate", label: "Moderate" },
-  { value: "comfort", label: "Comfort" },
-  { value: "luxury", label: "Luxury" },
+const BUDGET_OPTIONS = [
+  { value: "budget", label: "Budget conscious" },
+  { value: "moderate", label: "Moderate spender" },
+  { value: "comfortable", label: "Comfortable" },
+  { value: "luxury", label: "Luxury preferred" },
 ]
 
-const TRAVEL_PACES: { value: TravelerPreferencesData["travelPace"]; label: string }[] = [
-  { value: "relaxed", label: "Relaxed" },
-  { value: "moderate", label: "Moderate" },
-  { value: "active", label: "Active" },
-  { value: "packed", label: "Packed" },
+const EMOJI_SCALE = [
+  { emoji: "\u{1F92E}", label: "Hate it" },
+  { emoji: "\u{1F615}", label: "Not a fan" },
+  { emoji: "\u{1F610}", label: "It's okay" },
+  { emoji: "\u{1F60A}", label: "Like it" },
+  { emoji: "\u{1F929}", label: "Love it" },
 ]
 
-const TABS = ["Food", "Activities", "Interests", "Practical", "Climate"] as const
-type Tab = (typeof TABS)[number]
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
-// ─── Default preferences ─────────────────────────────────────────────────────
+function cuisineKey(name: string): string {
+  return name.toLowerCase().replace(/[^a-z]/g, "-")
+}
 
-function defaultPreferences(): TravelerPreferencesData {
+function parsePreferences(raw: Record<string, unknown> | null): TravelerPreferences {
+  if (!raw) return {}
   return {
-    cuisineRatings: {},
-    dietaryRestrictions: [],
-    adventureLevel: 3,
-    walkingTolerance: 3,
-    culturalInterest: 3,
-    nightlifeInterest: 3,
-    shoppingInterest: 3,
-    natureInterest: 3,
-    mobilityNeeds: [],
-    sleepSchedule: "normal",
-    budgetPreference: "moderate",
-    travelPace: "moderate",
-    interests: [],
-    heatTolerance: 3,
-    coldTolerance: 3,
+    cuisine: (raw.cuisine as Record<string, number>) ?? undefined,
+    activities: (raw.activities as Record<string, number>) ?? undefined,
+    dietary: (raw.dietary as string[]) ?? undefined,
+    mobility: (raw.mobility as string[]) ?? undefined,
+    pace: (raw.pace as string) ?? undefined,
+    sleepSchedule: (raw.sleepSchedule as string) ?? undefined,
+    budgetComfort: (raw.budgetComfort as string) ?? undefined,
   }
 }
 
-function parsePreferences(raw: Record<string, unknown> | null): TravelerPreferencesData {
-  if (!raw) return defaultPreferences()
-  const d = defaultPreferences()
-  return {
-    cuisineRatings: (raw.cuisineRatings as Record<string, number>) ?? d.cuisineRatings,
-    dietaryRestrictions: (raw.dietaryRestrictions as string[]) ?? d.dietaryRestrictions,
-    adventureLevel: (raw.adventureLevel as number) ?? d.adventureLevel,
-    walkingTolerance: (raw.walkingTolerance as number) ?? d.walkingTolerance,
-    culturalInterest: (raw.culturalInterest as number) ?? d.culturalInterest,
-    nightlifeInterest: (raw.nightlifeInterest as number) ?? d.nightlifeInterest,
-    shoppingInterest: (raw.shoppingInterest as number) ?? d.shoppingInterest,
-    natureInterest: (raw.natureInterest as number) ?? d.natureInterest,
-    mobilityNeeds: (raw.mobilityNeeds as string[]) ?? d.mobilityNeeds,
-    sleepSchedule: (raw.sleepSchedule as TravelerPreferencesData["sleepSchedule"]) ?? d.sleepSchedule,
-    budgetPreference: (raw.budgetPreference as TravelerPreferencesData["budgetPreference"]) ?? d.budgetPreference,
-    travelPace: (raw.travelPace as TravelerPreferencesData["travelPace"]) ?? d.travelPace,
-    interests: (raw.interests as string[]) ?? d.interests,
-    heatTolerance: (raw.heatTolerance as number) ?? d.heatTolerance,
-    coldTolerance: (raw.coldTolerance as number) ?? d.coldTolerance,
-  }
+function toggleArrayItem(arr: string[], item: string): string[] {
+  return arr.includes(item) ? arr.filter((i) => i !== item) : [...arr, item]
+}
+
+// ─── Collapsible Section ─────────────────────────────────────────────────────
+
+function Section({ title, defaultOpen = false, children }: { title: string; defaultOpen?: boolean; children: React.ReactNode }) {
+  const [open, setOpen] = useState(defaultOpen)
+  return (
+    <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden">
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-center justify-between p-5 text-left hover:bg-gray-50 transition-colors"
+      >
+        <h3 className="font-semibold text-gray-900">{title}</h3>
+        {open ? (
+          <ChevronDown className="w-4 h-4 text-gray-400" />
+        ) : (
+          <ChevronRight className="w-4 h-4 text-gray-400" />
+        )}
+      </button>
+      {open && <div className="px-5 pb-5 -mt-1">{children}</div>}
+    </div>
+  )
+}
+
+// ─── Emoji Rating Row ────────────────────────────────────────────────────────
+
+function EmojiRating({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+  return (
+    <div className="flex items-center gap-1">
+      {EMOJI_SCALE.map((item, i) => {
+        const rating = i + 1
+        return (
+          <button
+            key={rating}
+            onClick={() => onChange(rating)}
+            title={item.label}
+            className={cn(
+              "w-8 h-8 text-lg rounded-lg transition-all flex items-center justify-center",
+              value === rating
+                ? "bg-indigo-100 scale-110 ring-2 ring-indigo-300"
+                : "hover:bg-gray-100 opacity-40 hover:opacity-70"
+            )}
+          >
+            {item.emoji}
+          </button>
+        )
+      })}
+    </div>
+  )
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -147,12 +174,10 @@ export function TravelerPreferences({ initialProfiles }: Props) {
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(
     initialProfiles.find((p) => p.isDefault)?.id ?? initialProfiles[0]?.id ?? null
   )
-  const [activeTab, setActiveTab] = useState<Tab>("Food")
   const [saving, setSaving] = useState(false)
 
-  // Each profile gets its own preferences state
-  const [prefsMap, setPrefsMap] = useState<Record<string, TravelerPreferencesData>>(() => {
-    const map: Record<string, TravelerPreferencesData> = {}
+  const [prefsMap, setPrefsMap] = useState<Record<string, TravelerPreferences>>(() => {
+    const map: Record<string, TravelerPreferences> = {}
     for (const p of initialProfiles) {
       map[p.id] = parsePreferences(p.preferences)
     }
@@ -160,22 +185,18 @@ export function TravelerPreferences({ initialProfiles }: Props) {
   })
 
   const selectedProfile = profiles.find((p) => p.id === selectedProfileId)
-  const prefs = selectedProfileId ? prefsMap[selectedProfileId] : null
+  const prefs = selectedProfileId ? (prefsMap[selectedProfileId] ?? {}) : null
 
   const updatePrefs = useCallback(
-    (updater: (prev: TravelerPreferencesData) => TravelerPreferencesData) => {
+    (updater: (prev: TravelerPreferences) => TravelerPreferences) => {
       if (!selectedProfileId) return
       setPrefsMap((prev) => ({
         ...prev,
-        [selectedProfileId]: updater(prev[selectedProfileId] ?? defaultPreferences()),
+        [selectedProfileId]: updater(prev[selectedProfileId] ?? {}),
       }))
     },
     [selectedProfileId]
   )
-
-  function toggleArrayItem(arr: string[], item: string): string[] {
-    return arr.includes(item) ? arr.filter((i) => i !== item) : [...arr, item]
-  }
 
   async function handleSave() {
     if (!selectedProfileId || !prefs) return
@@ -193,7 +214,7 @@ export function TravelerPreferences({ initialProfiles }: Props) {
   if (profiles.length === 0) {
     return (
       <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8">
-        <h1 className="text-2xl font-bold text-gray-900 mb-6">Traveler Profiles</h1>
+        <h1 className="text-2xl font-bold text-gray-900 mb-6">Traveler Preferences</h1>
         <div className="text-center py-16">
           <p className="text-gray-500 text-sm">No traveler profiles yet.</p>
           <p className="text-gray-400 text-xs mt-1">
@@ -206,7 +227,7 @@ export function TravelerPreferences({ initialProfiles }: Props) {
 
   return (
     <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8">
-      <h1 className="text-2xl font-bold text-gray-900 mb-2">Traveler Profiles</h1>
+      <h1 className="text-2xl font-bold text-gray-900 mb-2">Traveler Preferences</h1>
       <p className="text-sm text-gray-500 mb-6">
         Set detailed preferences for each traveler to get personalized recommendations.
       </p>
@@ -222,7 +243,9 @@ export function TravelerPreferences({ initialProfiles }: Props) {
           >
             {profiles.map((p) => (
               <option key={p.id} value={p.id}>
-                {p.name} {p.isDefault ? "(Default)" : ""}
+                {p.name}
+                {p.birthDate ? ` \u00B7 ${getAgeGroupLabel(p.birthDate)}` : ""}
+                {p.isDefault ? " (Default)" : ""}
               </option>
             ))}
           </select>
@@ -232,334 +255,207 @@ export function TravelerPreferences({ initialProfiles }: Props) {
 
       {selectedProfile && prefs && (
         <>
-          {/* Tabs */}
-          <div className="flex gap-1 bg-gray-100 p-1 rounded-xl mb-6 overflow-x-auto">
-            {TABS.map((tab) => (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                className={cn(
-                  "flex-1 py-2 text-sm font-medium rounded-lg transition-colors whitespace-nowrap px-3",
-                  activeTab === tab
-                    ? "bg-white text-gray-900 shadow-sm"
-                    : "text-gray-500 hover:text-gray-700"
-                )}
-              >
-                {tab}
-              </button>
-            ))}
-          </div>
-
-          {/* ─── Food Tab ──────────────────────────────────────────────── */}
-          {activeTab === "Food" && (
-            <div className="space-y-6">
-              <div className="bg-white border border-gray-100 rounded-2xl p-5">
-                <h3 className="font-semibold text-gray-900 mb-1">Cuisine Ratings</h3>
-                <p className="text-xs text-gray-500 mb-4">Rate each cuisine type from 1 (hate) to 5 (love)</p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {CUISINES.map((cuisine) => {
-                    const key = cuisine.toLowerCase().replace(/[^a-z]/g, "-")
-                    const value = prefs.cuisineRatings[key] ?? 3
-                    return (
-                      <div key={cuisine} className="flex items-center gap-3">
-                        <span className="text-sm text-gray-700 w-36 truncate">{cuisine}</span>
-                        <div className="flex items-center gap-1 flex-1">
-                          <span className="text-xs">{"\u{1F922}"}</span>
-                          <input
-                            type="range"
-                            min={1}
-                            max={5}
-                            value={value}
-                            onChange={(e) =>
-                              updatePrefs((p) => ({
-                                ...p,
-                                cuisineRatings: { ...p.cuisineRatings, [key]: parseInt(e.target.value) },
-                              }))
-                            }
-                            className="flex-1 h-2 accent-indigo-600"
-                          />
-                          <span className="text-xs">{"\u{1F60D}"}</span>
-                          <span className="text-xs font-medium text-gray-500 w-4 text-center">{value}</span>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-
-              <div className="bg-white border border-gray-100 rounded-2xl p-5">
-                <h3 className="font-semibold text-gray-900 mb-1">Dietary Restrictions</h3>
-                <p className="text-xs text-gray-500 mb-3">Select all that apply</p>
-                <div className="flex flex-wrap gap-2">
-                  {DIETARY_RESTRICTIONS.map((item) => (
-                    <button
-                      key={item}
-                      onClick={() =>
-                        updatePrefs((p) => ({
-                          ...p,
-                          dietaryRestrictions: toggleArrayItem(p.dietaryRestrictions, item),
-                        }))
-                      }
-                      className={cn(
-                        "px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors",
-                        prefs.dietaryRestrictions.includes(item)
-                          ? "bg-indigo-600 text-white border-indigo-600"
-                          : "bg-white text-gray-600 border-gray-200 hover:border-indigo-300"
-                      )}
-                    >
-                      {item}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* ─── Activities Tab ────────────────────────────────────────── */}
-          {activeTab === "Activities" && (
-            <div className="bg-white border border-gray-100 rounded-2xl p-5">
-              <h3 className="font-semibold text-gray-900 mb-1">Activity Preferences</h3>
-              <p className="text-xs text-gray-500 mb-4">Slide to set your comfort level for each category</p>
-              <div className="space-y-5">
-                {ACTIVITY_SLIDERS.map((slider) => {
-                  const value = prefs[slider.key] as number
+          <div className="space-y-4">
+            {/* ─── Cuisine Preferences ──────────────────────────────── */}
+            <Section title="Cuisine Preferences" defaultOpen={true}>
+              <p className="text-xs text-gray-500 mb-4">
+                Rate each cuisine type. Click the emoji that matches your feeling.
+              </p>
+              <div className="space-y-3">
+                {CUISINE_TYPES.map((cuisine) => {
+                  const key = cuisineKey(cuisine)
+                  const value = prefs.cuisine?.[key] ?? 3
                   return (
-                    <div key={slider.key}>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        {slider.label}
-                      </label>
-                      <div className="flex items-center gap-2">
-                        <span className="text-lg w-8 text-center">{slider.leftEmoji}</span>
-                        <span className="text-[10px] text-gray-400 w-24 hidden sm:block">{slider.leftLabel}</span>
-                        <input
-                          type="range"
-                          min={1}
-                          max={5}
-                          value={value}
-                          onChange={(e) =>
-                            updatePrefs((p) => ({
-                              ...p,
-                              [slider.key]: parseInt(e.target.value),
-                            }))
-                          }
-                          className="flex-1 h-2 accent-indigo-600"
-                        />
-                        <span className="text-[10px] text-gray-400 w-24 text-right hidden sm:block">{slider.rightLabel}</span>
-                        <span className="text-lg w-8 text-center">{slider.rightEmoji}</span>
-                      </div>
-                      <div className="flex justify-between mt-1 px-10 sm:px-36">
-                        {[1, 2, 3, 4, 5].map((n) => (
-                          <span
-                            key={n}
-                            className={cn(
-                              "text-[10px] font-medium",
-                              value === n ? "text-indigo-600" : "text-gray-300"
-                            )}
-                          >
-                            {n}
-                          </span>
-                        ))}
-                      </div>
+                    <div key={cuisine} className="flex items-center gap-3">
+                      <span className="text-sm text-gray-700 w-36 shrink-0 truncate">{cuisine}</span>
+                      <EmojiRating
+                        value={value}
+                        onChange={(v) =>
+                          updatePrefs((p) => {
+                            const cuisine = { ...p.cuisine }
+                            if (v === 3) {
+                              delete cuisine[key]
+                            } else {
+                              cuisine[key] = v
+                            }
+                            return { ...p, cuisine }
+                          })
+                        }
+                      />
                     </div>
                   )
                 })}
               </div>
-            </div>
-          )}
+            </Section>
 
-          {/* ─── Interests Tab ─────────────────────────────────────────── */}
-          {activeTab === "Interests" && (
-            <div className="bg-white border border-gray-100 rounded-2xl p-5">
-              <h3 className="font-semibold text-gray-900 mb-1">Interests</h3>
-              <p className="text-xs text-gray-500 mb-4">Select everything that sounds fun</p>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                {INTERESTS.map((interest) => (
+            {/* ─── Activity Preferences ─────────────────────────────── */}
+            <Section title="Activity Preferences">
+              <p className="text-xs text-gray-500 mb-4">
+                Rate how much you enjoy each activity type.
+              </p>
+              <div className="space-y-3">
+                {ACTIVITY_TYPES.map((activity) => {
+                  const key = cuisineKey(activity.label)
+                  const value = prefs.activities?.[key] ?? 3
+                  return (
+                    <div key={activity.label} className="flex items-center gap-3">
+                      <span className="text-sm text-gray-700 w-36 shrink-0 truncate">
+                        {activity.emoji} {activity.label}
+                      </span>
+                      <EmojiRating
+                        value={value}
+                        onChange={(v) =>
+                          updatePrefs((p) => {
+                            const activities = { ...p.activities }
+                            if (v === 3) {
+                              delete activities[key]
+                            } else {
+                              activities[key] = v
+                            }
+                            return { ...p, activities }
+                          })
+                        }
+                      />
+                    </div>
+                  )
+                })}
+              </div>
+            </Section>
+
+            {/* ─── Dietary Restrictions ──────────────────────────────── */}
+            <Section title="Dietary Restrictions">
+              <p className="text-xs text-gray-500 mb-3">Select all that apply</p>
+              <div className="flex flex-wrap gap-2">
+                {DIETARY_OPTIONS.map((item) => (
                   <button
-                    key={interest}
+                    key={item}
                     onClick={() =>
                       updatePrefs((p) => ({
                         ...p,
-                        interests: toggleArrayItem(p.interests, interest),
+                        dietary: toggleArrayItem(p.dietary ?? [], item),
                       }))
                     }
                     className={cn(
-                      "px-3 py-2.5 text-sm font-medium rounded-xl border transition-colors text-left",
-                      prefs.interests.includes(interest)
+                      "px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors",
+                      (prefs.dietary ?? []).includes(item)
                         ? "bg-indigo-600 text-white border-indigo-600"
                         : "bg-white text-gray-600 border-gray-200 hover:border-indigo-300"
                     )}
                   >
-                    {interest}
+                    {item}
                   </button>
                 ))}
               </div>
-            </div>
-          )}
+            </Section>
 
-          {/* ─── Practical Tab ─────────────────────────────────────────── */}
-          {activeTab === "Practical" && (
-            <div className="space-y-6">
-              <div className="bg-white border border-gray-100 rounded-2xl p-5">
-                <h3 className="font-semibold text-gray-900 mb-3">Mobility Needs</h3>
-                <div className="flex flex-wrap gap-2">
-                  {MOBILITY_NEEDS.map((need) => (
-                    <button
-                      key={need}
-                      onClick={() =>
-                        updatePrefs((p) => ({
-                          ...p,
-                          mobilityNeeds: toggleArrayItem(p.mobilityNeeds, need),
-                        }))
-                      }
-                      className={cn(
-                        "px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors",
-                        prefs.mobilityNeeds.includes(need)
-                          ? "bg-indigo-600 text-white border-indigo-600"
-                          : "bg-white text-gray-600 border-gray-200 hover:border-indigo-300"
+            {/* ─── Mobility / Comfort ────────────────────────────────── */}
+            <Section title="Mobility & Comfort">
+              <p className="text-xs text-gray-500 mb-3">Select all that apply</p>
+              <div className="flex flex-wrap gap-2">
+                {MOBILITY_OPTIONS.map((item) => (
+                  <button
+                    key={item}
+                    onClick={() =>
+                      updatePrefs((p) => ({
+                        ...p,
+                        mobility: toggleArrayItem(p.mobility ?? [], item),
+                      }))
+                    }
+                    className={cn(
+                      "px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors",
+                      (prefs.mobility ?? []).includes(item)
+                        ? "bg-indigo-600 text-white border-indigo-600"
+                        : "bg-white text-gray-600 border-gray-200 hover:border-indigo-300"
+                    )}
+                  >
+                    {item}
+                  </button>
+                ))}
+              </div>
+            </Section>
+
+            {/* ─── Travel Pace ────────────────────────────────────────── */}
+            <Section title="Travel Pace">
+              <div className="space-y-2">
+                {PACE_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.value}
+                    onClick={() => updatePrefs((p) => ({ ...p, pace: opt.value }))}
+                    className={cn(
+                      "w-full flex items-center gap-3 px-4 py-3 rounded-xl border transition-colors text-left",
+                      prefs.pace === opt.value
+                        ? "bg-indigo-50 border-indigo-300 ring-1 ring-indigo-200"
+                        : "bg-white border-gray-200 hover:border-indigo-200"
+                    )}
+                  >
+                    <div className={cn(
+                      "w-4 h-4 rounded-full border-2 shrink-0 flex items-center justify-center",
+                      prefs.pace === opt.value ? "border-indigo-600" : "border-gray-300"
+                    )}>
+                      {prefs.pace === opt.value && (
+                        <div className="w-2 h-2 rounded-full bg-indigo-600" />
                       )}
-                    >
-                      {need}
-                    </button>
-                  ))}
-                </div>
+                    </div>
+                    <div>
+                      <span className="text-sm font-medium text-gray-900">{opt.label}</span>
+                      <span className="text-xs text-gray-500 ml-2">({opt.desc})</span>
+                    </div>
+                  </button>
+                ))}
               </div>
+            </Section>
 
-              <div className="bg-white border border-gray-100 rounded-2xl p-5">
-                <h3 className="font-semibold text-gray-900 mb-3">Sleep Schedule</h3>
-                <div className="flex gap-2">
-                  {SLEEP_SCHEDULES.map((opt) => (
-                    <button
-                      key={opt.value}
-                      onClick={() => updatePrefs((p) => ({ ...p, sleepSchedule: opt.value }))}
-                      className={cn(
-                        "flex-1 px-3 py-2.5 text-sm font-medium rounded-xl border transition-colors",
-                        prefs.sleepSchedule === opt.value
-                          ? "bg-indigo-600 text-white border-indigo-600"
-                          : "bg-white text-gray-600 border-gray-200 hover:border-indigo-300"
+            {/* ─── Sleep Schedule ──────────────────────────────────────── */}
+            <Section title="Sleep Schedule">
+              <div className="space-y-2">
+                {SLEEP_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.value}
+                    onClick={() => updatePrefs((p) => ({ ...p, sleepSchedule: opt.value }))}
+                    className={cn(
+                      "w-full flex items-center gap-3 px-4 py-3 rounded-xl border transition-colors text-left",
+                      prefs.sleepSchedule === opt.value
+                        ? "bg-indigo-50 border-indigo-300 ring-1 ring-indigo-200"
+                        : "bg-white border-gray-200 hover:border-indigo-200"
+                    )}
+                  >
+                    <div className={cn(
+                      "w-4 h-4 rounded-full border-2 shrink-0 flex items-center justify-center",
+                      prefs.sleepSchedule === opt.value ? "border-indigo-600" : "border-gray-300"
+                    )}>
+                      {prefs.sleepSchedule === opt.value && (
+                        <div className="w-2 h-2 rounded-full bg-indigo-600" />
                       )}
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
-                </div>
+                    </div>
+                    <div>
+                      <span className="text-sm font-medium text-gray-900">{opt.label}</span>
+                      <span className="text-xs text-gray-500 ml-2">({opt.desc})</span>
+                    </div>
+                  </button>
+                ))}
               </div>
+            </Section>
 
-              <div className="bg-white border border-gray-100 rounded-2xl p-5">
-                <h3 className="font-semibold text-gray-900 mb-3">Budget Preference</h3>
-                <div className="flex gap-2">
-                  {BUDGET_PREFERENCES.map((opt) => (
-                    <button
-                      key={opt.value}
-                      onClick={() => updatePrefs((p) => ({ ...p, budgetPreference: opt.value }))}
-                      className={cn(
-                        "flex-1 px-3 py-2.5 text-sm font-medium rounded-xl border transition-colors",
-                        prefs.budgetPreference === opt.value
-                          ? "bg-indigo-600 text-white border-indigo-600"
-                          : "bg-white text-gray-600 border-gray-200 hover:border-indigo-300"
-                      )}
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
-                </div>
+            {/* ─── Budget Comfort ──────────────────────────────────────── */}
+            <Section title="Budget Comfort">
+              <div className="flex gap-2 flex-wrap">
+                {BUDGET_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.value}
+                    onClick={() => updatePrefs((p) => ({ ...p, budgetComfort: opt.value }))}
+                    className={cn(
+                      "flex-1 min-w-[120px] px-3 py-2.5 text-sm font-medium rounded-xl border transition-colors",
+                      prefs.budgetComfort === opt.value
+                        ? "bg-indigo-600 text-white border-indigo-600"
+                        : "bg-white text-gray-600 border-gray-200 hover:border-indigo-300"
+                    )}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
               </div>
-
-              <div className="bg-white border border-gray-100 rounded-2xl p-5">
-                <h3 className="font-semibold text-gray-900 mb-3">Travel Pace</h3>
-                <div className="flex gap-2">
-                  {TRAVEL_PACES.map((opt) => (
-                    <button
-                      key={opt.value}
-                      onClick={() => updatePrefs((p) => ({ ...p, travelPace: opt.value }))}
-                      className={cn(
-                        "flex-1 px-3 py-2.5 text-sm font-medium rounded-xl border transition-colors",
-                        prefs.travelPace === opt.value
-                          ? "bg-indigo-600 text-white border-indigo-600"
-                          : "bg-white text-gray-600 border-gray-200 hover:border-indigo-300"
-                      )}
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* ─── Climate Tab ───────────────────────────────────────────── */}
-          {activeTab === "Climate" && (
-            <div className="bg-white border border-gray-100 rounded-2xl p-5">
-              <h3 className="font-semibold text-gray-900 mb-1">Climate Preferences</h3>
-              <p className="text-xs text-gray-500 mb-6">How do you handle temperature extremes?</p>
-              <div className="space-y-8">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-3">Heat Tolerance</label>
-                  <div className="flex items-center gap-3">
-                    <span className="text-lg">{"\u2744\uFE0F"}</span>
-                    <span className="text-xs text-gray-400 w-20 hidden sm:block">Hate heat</span>
-                    <input
-                      type="range"
-                      min={1}
-                      max={5}
-                      value={prefs.heatTolerance}
-                      onChange={(e) =>
-                        updatePrefs((p) => ({ ...p, heatTolerance: parseInt(e.target.value) }))
-                      }
-                      className="flex-1 h-2 accent-indigo-600"
-                    />
-                    <span className="text-xs text-gray-400 w-20 text-right hidden sm:block">Love heat</span>
-                    <span className="text-lg">{"\u{1F525}"}</span>
-                  </div>
-                  <div className="flex justify-between mt-1 px-8 sm:px-28">
-                    {[1, 2, 3, 4, 5].map((n) => (
-                      <span
-                        key={n}
-                        className={cn(
-                          "text-[10px] font-medium",
-                          prefs.heatTolerance === n ? "text-indigo-600" : "text-gray-300"
-                        )}
-                      >
-                        {n}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-3">Cold Tolerance</label>
-                  <div className="flex items-center gap-3">
-                    <span className="text-lg">{"\u{1F525}"}</span>
-                    <span className="text-xs text-gray-400 w-20 hidden sm:block">Hate cold</span>
-                    <input
-                      type="range"
-                      min={1}
-                      max={5}
-                      value={prefs.coldTolerance}
-                      onChange={(e) =>
-                        updatePrefs((p) => ({ ...p, coldTolerance: parseInt(e.target.value) }))
-                      }
-                      className="flex-1 h-2 accent-indigo-600"
-                    />
-                    <span className="text-xs text-gray-400 w-20 text-right hidden sm:block">Love cold</span>
-                    <span className="text-lg">{"\u2744\uFE0F"}</span>
-                  </div>
-                  <div className="flex justify-between mt-1 px-8 sm:px-28">
-                    {[1, 2, 3, 4, 5].map((n) => (
-                      <span
-                        key={n}
-                        className={cn(
-                          "text-[10px] font-medium",
-                          prefs.coldTolerance === n ? "text-indigo-600" : "text-gray-300"
-                        )}
-                      >
-                        {n}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
+            </Section>
+          </div>
 
           {/* Save button */}
           <div className="mt-6">

@@ -8,6 +8,7 @@ import { createHotel, createHotelsBatch, deleteHotel, parseAndPreviewHotel } fro
 import { createRentalCar, deleteRentalCar, parseAndPreviewRentalCar } from "@/lib/actions/rental-cars"
 import { getCompanyInfo, RENTAL_CAR_COMPANIES } from "@/lib/rental-car-logos"
 import { addTravelerToTrip, removeTravelerFromTrip, updateTravelerProfile, deleteTravelerProfile } from "@/lib/actions/travelers"
+import { getAgeGroupLabel, getCustomTags } from "@/lib/utils"
 import { updateTrip, deleteTrip, shareTrip, unshareTrip, addDestination, removeDestination } from "@/lib/actions/trips"
 import { inviteCollaborator, removeCollaborator, updateCollaboratorRole } from "@/lib/actions/collaborators"
 import { getSingleFlightStatus } from "@/lib/actions/flight-alerts"
@@ -146,7 +147,7 @@ function TravelerCard({ profile, added, tripId, onToggle }: { profile: TravelerP
   const [tags, setTags] = useState(profile.tags.join(", "))
   const [saving, setSaving] = useState(false)
 
-  const TAG_OPTIONS = ["adult", "child", "infant", "senior"]
+  const CUSTOM_TAG_OPTIONS = ["stroller-needed", "thrill-seeker", "picky-eater", "motion-sickness", "accessibility-needs"]
 
   async function handleSave() {
     setSaving(true)
@@ -196,9 +197,9 @@ function TravelerCard({ profile, added, tripId, onToggle }: { profile: TravelerP
             />
           </div>
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Tags</label>
+            <label className="block text-xs text-gray-500 mb-1">Custom tags</label>
             <div className="flex flex-wrap gap-1">
-              {TAG_OPTIONS.map(tag => (
+              {CUSTOM_TAG_OPTIONS.map(tag => (
                 <button
                   key={tag}
                   type="button"
@@ -242,10 +243,17 @@ function TravelerCard({ profile, added, tripId, onToggle }: { profile: TravelerP
         {profile.name.charAt(0).toUpperCase()}
       </div>
       <div className="flex-1 min-w-0">
-        <div className="font-medium text-sm text-gray-900">{profile.name}</div>
-        {profile.tags.length > 0 && (
+        <div className="font-medium text-sm text-gray-900">
+          {profile.name}
+          {profile.birthDate && (
+            <span className="text-gray-400 font-normal">
+              {" "}&middot; {getAgeGroupLabel(profile.birthDate)}
+            </span>
+          )}
+        </div>
+        {getCustomTags(profile.tags).length > 0 && (
           <div className="flex gap-1 mt-0.5 flex-wrap">
-            {profile.tags.map((tag) => (
+            {getCustomTags(profile.tags).map((tag) => (
               <span key={tag} className="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded">{tag}</span>
             ))}
           </div>

@@ -1,6 +1,6 @@
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
-import { format, differenceInDays } from "date-fns"
+import { format, differenceInDays, differenceInYears } from "date-fns"
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -43,4 +43,38 @@ export function priorityLabel(priority: string) {
     LOW: "Low",
   }
   return labels[priority] || priority
+}
+
+export function getAge(birthDate: Date | string): number {
+  return differenceInYears(new Date(), new Date(birthDate))
+}
+
+export function getAgeGroup(birthDate: Date | string): string {
+  const age = getAge(birthDate)
+  if (age < 2) return "infant"
+  if (age <= 4) return "toddler"
+  if (age <= 12) return "child"
+  if (age <= 17) return "teen"
+  if (age <= 64) return "adult"
+  return "senior"
+}
+
+export function getAgeGroupLabel(birthDate: Date | string): string {
+  const age = getAge(birthDate)
+  const group = getAgeGroup(birthDate)
+  const label = group.charAt(0).toUpperCase() + group.slice(1)
+  if (group === "child" || group === "teen" || group === "toddler") {
+    return `${label} (${age})`
+  }
+  return label
+}
+
+const AGE_GROUP_TAGS = ["adult", "child", "infant", "senior", "teen", "toddler"]
+
+export function isAgeGroupTag(tag: string): boolean {
+  return AGE_GROUP_TAGS.includes(tag.toLowerCase())
+}
+
+export function getCustomTags(tags: string[]): string[] {
+  return tags.filter((t) => !isAgeGroupTag(t))
 }

@@ -9,7 +9,7 @@ import {
 } from "@/lib/actions/travelers"
 import type { TravelerProfileResult } from "@/lib/actions/travelers"
 import { updatePreferences, updateTimezone } from "@/lib/actions/preferences"
-import { cn } from "@/lib/utils"
+import { cn, getAgeGroupLabel, getCustomTags, isAgeGroupTag } from "@/lib/utils"
 import { User, Users, Settings, Plus, Trash2, X, Save, Mail, Copy, Check, Globe } from "lucide-react"
 
 type TravelerProfile = {
@@ -53,7 +53,11 @@ const PACING_STYLES = ["CHILL", "LEISURELY", "MODERATE", "ACTIVE", "PACKED"] as 
 const TABS = ["Travelers", "Preferences", "Account"] as const
 type Tab = (typeof TABS)[number]
 
-const COMMON_TAGS = ["adult", "child", "senior", "stroller-needed", "thrill-seeker", "accessibility-needs"]
+const SUGGESTED_CUSTOM_TAGS = [
+  "stroller-needed", "thrill-seeker", "picky-eater", "motion-sickness",
+  "accessibility-needs", "early-riser", "nap-time", "vegetarian",
+  "food-allergies", "fear-of-heights",
+]
 const MEAL_PREFS = ["quick", "sit-down", "local", "upscale", "vegetarian-friendly", "allergy-aware"]
 const ACTIVITY_MIX = ["sightseeing", "beach", "food", "adventure", "relaxation", "museums", "nightlife", "shopping"]
 
@@ -226,7 +230,14 @@ export function GlobalSettingsView({ user, initialProfiles, initialPrefs, initia
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    <span className="font-medium text-gray-900 text-sm">{profile.name}</span>
+                    <span className="font-medium text-gray-900 text-sm">
+                      {profile.name}
+                      {profile.birthDate && (
+                        <span className="text-gray-400 font-normal">
+                          {" "}&middot; {getAgeGroupLabel(profile.birthDate)}
+                        </span>
+                      )}
+                    </span>
                     {profile.isDefault && (
                       <span className="px-1.5 py-0.5 text-[10px] bg-indigo-50 text-indigo-600 rounded font-medium">
                         Default
@@ -238,9 +249,9 @@ export function GlobalSettingsView({ user, initialProfiles, initialPrefs, initia
                       Born {new Date(profile.birthDate).toLocaleDateString()}
                     </div>
                   )}
-                  {profile.tags.length > 0 && (
+                  {getCustomTags(profile.tags).length > 0 && (
                     <div className="flex gap-1 mt-1 flex-wrap">
-                      {profile.tags.map((tag) => (
+                      {getCustomTags(profile.tags).map((tag) => (
                         <span
                           key={tag}
                           className="px-1.5 py-0.5 text-[10px] bg-gray-100 text-gray-600 rounded"
@@ -294,9 +305,12 @@ export function GlobalSettingsView({ user, initialProfiles, initialPrefs, initia
                 </div>
 
                 <div>
-                  <label className="block text-xs text-gray-500 mb-2">Tags</label>
+                  <label className="block text-xs text-gray-500 mb-1">Custom tags</label>
+                  <p className="text-[10px] text-gray-400 mb-2">
+                    Age group is auto-derived from birth date. Add custom tags for special needs or traits.
+                  </p>
                   <div className="flex flex-wrap gap-1.5">
-                    {COMMON_TAGS.map((tag) => (
+                    {SUGGESTED_CUSTOM_TAGS.map((tag) => (
                       <button
                         key={tag}
                         onClick={() =>

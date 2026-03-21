@@ -42,6 +42,7 @@ import {
   ToggleRight,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { CalendarExportButton } from "@/components/calendar-export"
 import { WeatherBar } from "@/components/weather-bar"
 import { FlightStatusBadge } from "@/components/flight-status-badge"
 import { AirportMapLink } from "@/components/airport-info"
@@ -655,6 +656,7 @@ export function ItineraryView({ tripId, initialItems, tripStartDate, tripEndDate
           <p className="text-gray-500 text-sm mt-0.5">{items.length} items planned</p>
         </div>
         <div className="flex items-center gap-2">
+          <CalendarExportButton tripId={tripId} />
           {/* Free time toggle */}
           <div className="flex items-center gap-1.5">
             <button

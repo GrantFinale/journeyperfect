@@ -33,7 +33,15 @@ export default async function TripMapPage({ params }: { params: Promise<{ tripId
     return Math.floor((new Date(date).getTime() - tripStart.getTime()) / (1000 * 60 * 60 * 24))
   }
 
-  // Hotels
+  // Hotels — build markers and hotel-to-day mapping
+  const hotelsForDays: {
+    lat: number
+    lng: number
+    name: string
+    checkInDay: number
+    checkOutDay: number
+  }[] = []
+
   for (const hotel of trip.hotels) {
     if (hotel.lat && hotel.lng) {
       markers.push({
@@ -41,6 +49,13 @@ export default async function TripMapPage({ params }: { params: Promise<{ tripId
         lng: hotel.lng,
         label: hotel.name,
         type: "hotel",
+      })
+      hotelsForDays.push({
+        lat: hotel.lat,
+        lng: hotel.lng,
+        name: hotel.name,
+        checkInDay: dateToDayIndex(hotel.checkIn),
+        checkOutDay: dateToDayIndex(hotel.checkOut),
       })
     }
   }
@@ -164,6 +179,7 @@ export default async function TripMapPage({ params }: { params: Promise<{ tripId
       apiKey={apiKey}
       totalDays={totalDays}
       tripTitle={trip.title}
+      hotels={hotelsForDays}
     />
   )
 }

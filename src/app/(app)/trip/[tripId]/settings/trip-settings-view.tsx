@@ -45,6 +45,7 @@ import {
 import PlacesAutocomplete from "@/components/places-autocomplete"
 import { AffiliateBadge } from "@/components/affiliate-links"
 import { ForwardingEmail } from "@/components/forwarding-email"
+import { CalendarExportCard } from "@/components/calendar-export"
 import { getHotelAffiliate, getCarRentalAffiliate } from "@/lib/actions/affiliates"
 import type { AffiliateLink } from "@/lib/affiliates"
 
@@ -1968,6 +1969,9 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles, initi
               </div>
             )}
           </div>
+
+          {/* Calendar export */}
+          <CalendarExportCard tripId={tripId} />
         </div>
       )}
 

@@ -11,6 +11,7 @@ import { getUserTimezone } from "@/lib/actions/preferences"
 import { formatDate, formatTime, tripDuration, formatCurrency } from "@/lib/utils"
 import { AffiliateSmartSuggestions, BookingReturnPrompt } from "@/components/affiliate-links"
 import { ForwardingEmail } from "@/components/forwarding-email"
+import { CalendarExportButton } from "@/components/calendar-export"
 import { TripOverviewMap } from "./overview-map"
 import {
   Plane,
@@ -26,7 +27,6 @@ import {
   Clock,
   Map,
   ArrowRight,
-  Calendar,
   Package,
   Navigation,
 } from "lucide-react"
@@ -157,13 +157,7 @@ export default async function TripOverviewPage({ params }: { params: Promise<{ t
           </div>
         </div>
         <div className="flex items-center gap-1 shrink-0">
-          <a
-            href={`/api/trip/${tripId}/calendar`}
-            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-            title="Export to Calendar"
-          >
-            <Calendar className="w-5 h-5" />
-          </a>
+          <CalendarExportButton tripId={tripId} />
           <Link
             href={`/trip/${tripId}/settings`}
             className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"

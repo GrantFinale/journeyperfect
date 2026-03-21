@@ -10,12 +10,36 @@ export interface MapMarker {
   day?: number
 }
 
+export interface HotelForDay {
+  lat: number
+  lng: number
+  name: string
+  checkInDay: number
+  checkOutDay: number
+}
+
+export interface RouteSegment {
+  from: string
+  to: string
+  duration: string
+  distance: string
+  travelMode: string
+}
+
+export interface DayRoute {
+  day: number
+  segments: RouteSegment[]
+  totalDuration: string
+}
+
 interface TripMapProps {
   markers: MapMarker[]
   center?: { lat: number; lng: number }
   apiKey: string
   height?: string
   selectedDay?: number | null
+  hotels?: HotelForDay[]
+  onRoutesComputed?: (routes: DayRoute[]) => void
 }
 
 const DAY_COLORS = [
@@ -37,14 +61,46 @@ function getDayColor(day: number): string {
   return DAY_COLORS[day % DAY_COLORS.length]
 }
 
-export function TripMap({ markers, center, apiKey, height = "400px", selectedDay }: TripMapProps) {
+function formatDuration(seconds: number): string {
+  if (seconds < 60) return "< 1 min"
+  const mins = Math.round(seconds / 60)
+  if (mins < 60) return `${mins} min`
+  const hrs = Math.floor(mins / 60)
+  const remainMins = mins % 60
+  return remainMins > 0 ? `${hrs} hr ${remainMins} min` : `${hrs} hr`
+}
+
+function sumDurationSeconds(segments: RouteSegment[]): number {
+  let total = 0
+  for (const seg of segments) {
+    // Parse "X min" or "X hr Y min" back to seconds
+    const hrMatch = seg.duration.match(/(\d+)\s*hr/)
+    const minMatch = seg.duration.match(/(\d+)\s*min/)
+    if (hrMatch) total += parseInt(hrMatch[1]) * 3600
+    if (minMatch) total += parseInt(minMatch[1]) * 60
+  }
+  return total
+}
+
+export function TripMap({
+  markers,
+  center,
+  apiKey,
+  height = "400px",
+  selectedDay,
+  hotels = [],
+  onRoutesComputed,
+}: TripMapProps) {
   const mapRef = useRef<HTMLDivElement>(null)
   const mapInstanceRef = useRef<google.maps.Map | null>(null)
   const markersRef = useRef<google.maps.marker.AdvancedMarkerElement[]>([])
   const polylinesRef = useRef<google.maps.Polyline[]>([])
+  const directionsRenderersRef = useRef<google.maps.DirectionsRenderer[]>([])
   const infoWindowRef = useRef<google.maps.InfoWindow | null>(null)
   const [loaded, setLoaded] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [routeLoading, setRouteLoading] = useState(false)
+  const routesCacheRef = useRef<Map<string, { routes: DayRoute[]; directions: Map<string, google.maps.DirectionsResult> }>>(new Map())
 
   // Load Google Maps script
   useEffect(() => {
@@ -53,8 +109,6 @@ export function TripMap({ markers, center, apiKey, height = "400px", selectedDay
       return
     }
 
-    // Register global auth failure callback — Google Maps calls this when the API key
-    // is invalid, billing is not enabled, or Maps JavaScript API is not turned on.
     ;(window as any).gm_authFailure = () => {
       setError(
         "Google Maps authentication failed. Ensure the Maps JavaScript API is enabled and billing is active on your Google Cloud project."
@@ -77,23 +131,280 @@ export function TripMap({ markers, center, apiKey, height = "400px", selectedDay
     script.async = true
     script.defer = true
     script.onload = () => setLoaded(true)
-    script.onerror = () => setError("Failed to load Google Maps. The Maps JavaScript API may not be enabled or billing may not be set up on the Google Cloud project.")
+    script.onerror = () =>
+      setError(
+        "Failed to load Google Maps. The Maps JavaScript API may not be enabled or billing may not be set up on the Google Cloud project."
+      )
     document.head.appendChild(script)
   }, [apiKey])
+
+  // Find the hotel for a given day index
+  const getHotelForDay = useCallback(
+    (day: number): HotelForDay | null => {
+      return hotels.find((h) => day >= h.checkInDay && day < h.checkOutDay) || null
+    },
+    [hotels]
+  )
+
+  // Build ordered waypoints for a day: hotel -> activity1 -> activity2 -> ... -> hotel
+  const buildDayWaypoints = useCallback(
+    (day: number, visibleMarkers: MapMarker[]): { lat: number; lng: number; label: string }[] => {
+      const hotel = getHotelForDay(day)
+      const dayActivities = visibleMarkers.filter(
+        (m) => m.day === day && m.type !== "hotel" && m.type !== "flight"
+      )
+
+      if (dayActivities.length === 0) return []
+
+      const waypoints: { lat: number; lng: number; label: string }[] = []
+
+      // Start from hotel if available
+      if (hotel) {
+        waypoints.push({ lat: hotel.lat, lng: hotel.lng, label: hotel.name })
+      }
+
+      // Add activities in order
+      for (const act of dayActivities) {
+        waypoints.push({ lat: act.lat, lng: act.lng, label: act.label })
+      }
+
+      // Return to hotel if we started from one and have activities
+      if (hotel && dayActivities.length > 0) {
+        waypoints.push({ lat: hotel.lat, lng: hotel.lng, label: hotel.name })
+      }
+
+      return waypoints
+    },
+    [getHotelForDay]
+  )
+
+  // Request directions between two points
+  const getDirections = useCallback(
+    (
+      origin: { lat: number; lng: number },
+      destination: { lat: number; lng: number },
+      waypoints?: google.maps.DirectionsWaypoint[]
+    ): Promise<google.maps.DirectionsResult | null> => {
+      return new Promise((resolve) => {
+        try {
+          const directionsService = new google.maps.DirectionsService()
+          directionsService.route(
+            {
+              origin,
+              destination,
+              waypoints,
+              travelMode: google.maps.TravelMode.DRIVING,
+              optimizeWaypoints: false,
+            },
+            (result, status) => {
+              if (status === google.maps.DirectionsStatus.OK && result) {
+                resolve(result)
+              } else {
+                resolve(null)
+              }
+            }
+          )
+        } catch {
+          resolve(null)
+        }
+      })
+    },
+    []
+  )
+
+  // Compute routes for visible days and render them
+  const computeAndRenderRoutes = useCallback(
+    async (map: google.maps.Map, visibleMarkers: MapMarker[], daysToRoute: number[]) => {
+      setRouteLoading(true)
+
+      // Clean up previous direction renderers
+      directionsRenderersRef.current.forEach((r) => r.setMap(null))
+      directionsRenderersRef.current = []
+
+      const allDayRoutes: DayRoute[] = []
+      const cacheKey = `${selectedDay ?? "all"}`
+
+      // Check cache
+      const cached = routesCacheRef.current.get(cacheKey)
+      if (cached) {
+        // Re-render cached directions
+        cached.directions.forEach((result, key) => {
+          const day = parseInt(key)
+          const renderer = new google.maps.DirectionsRenderer({
+            map,
+            directions: result,
+            suppressMarkers: true,
+            polylineOptions: {
+              strokeColor: getDayColor(day),
+              strokeOpacity: 0.8,
+              strokeWeight: 4,
+            },
+          })
+          directionsRenderersRef.current.push(renderer)
+        })
+        onRoutesComputed?.(cached.routes)
+        setRouteLoading(false)
+        return
+      }
+
+      const directionsCache = new Map<string, google.maps.DirectionsResult>()
+      let directionsApiAvailable = true
+
+      for (const day of daysToRoute) {
+        const waypoints = buildDayWaypoints(day, visibleMarkers)
+        if (waypoints.length < 2) continue
+
+        const segments: RouteSegment[] = []
+
+        if (directionsApiAvailable) {
+          // Try Directions API: send as a single request with waypoints
+          const origin = waypoints[0]
+          const destination = waypoints[waypoints.length - 1]
+          const intermediateWaypoints =
+            waypoints.length > 2
+              ? waypoints.slice(1, -1).map((wp) => ({
+                  location: new google.maps.LatLng(wp.lat, wp.lng),
+                  stopover: true,
+                }))
+              : undefined
+
+          const result = await getDirections(
+            { lat: origin.lat, lng: origin.lng },
+            { lat: destination.lat, lng: destination.lng },
+            intermediateWaypoints
+          )
+
+          if (result && result.routes[0]?.legs) {
+            // Render the route on the map
+            const renderer = new google.maps.DirectionsRenderer({
+              map,
+              directions: result,
+              suppressMarkers: true,
+              polylineOptions: {
+                strokeColor: getDayColor(day),
+                strokeOpacity: 0.8,
+                strokeWeight: 4,
+              },
+            })
+            directionsRenderersRef.current.push(renderer)
+            directionsCache.set(String(day), result)
+
+            // Extract segments from legs
+            const legs = result.routes[0].legs
+            for (let i = 0; i < legs.length; i++) {
+              const leg = legs[i]
+              segments.push({
+                from: waypoints[i].label,
+                to: waypoints[i + 1].label,
+                duration: formatDuration(leg.duration?.value || 0),
+                distance: leg.distance?.text || "",
+                travelMode: "drive",
+              })
+            }
+          } else {
+            // Directions API failed - fall back to straight lines for ALL days
+            directionsApiAvailable = false
+            // Clean up any renderers we already added
+            directionsRenderersRef.current.forEach((r) => r.setMap(null))
+            directionsRenderersRef.current = []
+            // Restart with fallback for all days
+            break
+          }
+        }
+
+        if (segments.length > 0) {
+          const totalSeconds = sumDurationSeconds(segments)
+          allDayRoutes.push({
+            day,
+            segments,
+            totalDuration: formatDuration(totalSeconds),
+          })
+        }
+      }
+
+      // If Directions API wasn't available, draw straight-line polylines as fallback
+      if (!directionsApiAvailable) {
+        // Clean existing polylines too
+        polylinesRef.current.forEach((p) => p.setMap(null))
+        polylinesRef.current = []
+
+        for (const day of daysToRoute) {
+          const waypoints = buildDayWaypoints(day, visibleMarkers)
+          if (waypoints.length < 2) continue
+
+          const path = waypoints.map((wp) => ({ lat: wp.lat, lng: wp.lng }))
+          const polyline = new google.maps.Polyline({
+            path,
+            geodesic: true,
+            strokeColor: getDayColor(day),
+            strokeOpacity: 0.7,
+            strokeWeight: 3,
+            icons: [
+              {
+                icon: { path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW, scale: 3 },
+                offset: "50%",
+              },
+            ],
+            map,
+          })
+          polylinesRef.current.push(polyline)
+
+          // Estimate straight-line distances for fallback route panel
+          const segments: RouteSegment[] = []
+          for (let i = 0; i < waypoints.length - 1; i++) {
+            const from = waypoints[i]
+            const to = waypoints[i + 1]
+            const dist = google.maps.geometry?.spherical?.computeDistanceBetween
+              ? google.maps.geometry.spherical.computeDistanceBetween(
+                  new google.maps.LatLng(from.lat, from.lng),
+                  new google.maps.LatLng(to.lat, to.lng)
+                )
+              : haversineDistance(from.lat, from.lng, to.lat, to.lng)
+            // Rough estimate: 30 km/h average speed for driving
+            const durationSec = (dist / 1000 / 30) * 3600
+            segments.push({
+              from: from.label,
+              to: to.label,
+              duration: formatDuration(durationSec),
+              distance: dist > 1000 ? `${(dist / 1000).toFixed(1)} km` : `${Math.round(dist)} m`,
+              travelMode: "estimate",
+            })
+          }
+          if (segments.length > 0) {
+            const totalSeconds = sumDurationSeconds(segments)
+            allDayRoutes.push({
+              day,
+              segments,
+              totalDuration: formatDuration(totalSeconds),
+            })
+          }
+        }
+      }
+
+      // Cache and report
+      routesCacheRef.current.set(cacheKey, { routes: allDayRoutes, directions: directionsCache })
+      onRoutesComputed?.(allDayRoutes)
+      setRouteLoading(false)
+    },
+    [buildDayWaypoints, getDirections, onRoutesComputed, selectedDay]
+  )
 
   const renderMap = useCallback(() => {
     if (!loaded || !mapRef.current) return
 
     // Filter markers by selected day
-    const visibleMarkers = selectedDay != null
-      ? markers.filter((m) => m.day === selectedDay || m.type === "hotel")
-      : markers
+    const visibleMarkers =
+      selectedDay != null
+        ? markers.filter((m) => m.day === selectedDay || m.type === "hotel")
+        : markers
 
-    // Clean up previous markers and polylines
+    // Clean up previous markers, polylines, and direction renderers
     markersRef.current.forEach((m) => (m.map = null))
     markersRef.current = []
     polylinesRef.current.forEach((p) => p.setMap(null))
     polylinesRef.current = []
+    directionsRenderersRef.current.forEach((r) => r.setMap(null))
+    directionsRenderersRef.current = []
 
     if (visibleMarkers.length === 0) return
 
@@ -117,10 +428,7 @@ export function TripMap({ markers, center, apiKey, height = "400px", selectedDay
 
     const bounds = new google.maps.LatLngBounds()
 
-    // Group markers by day for polylines
-    const dayGroups = new Map<number, { lat: number; lng: number }[]>()
-
-    visibleMarkers.forEach((marker, idx) => {
+    visibleMarkers.forEach((marker) => {
       const position = { lat: marker.lat, lng: marker.lng }
       bounds.extend(position)
 
@@ -154,7 +462,6 @@ export function TripMap({ markers, center, apiKey, height = "400px", selectedDay
         markerEl.style.height = "26px"
         markerEl.style.backgroundColor = color
         markerEl.style.color = "white"
-        // Number the activities per day
         const dayActivities = visibleMarkers.filter(
           (m) => m.day === marker.day && m.type !== "hotel" && m.type !== "flight"
         )
@@ -186,26 +493,6 @@ export function TripMap({ markers, center, apiKey, height = "400px", selectedDay
       } catch {
         // Fallback: AdvancedMarkerElement not available, skip
       }
-
-      // Group by day for route lines
-      if (marker.day != null && marker.type !== "hotel") {
-        if (!dayGroups.has(marker.day)) dayGroups.set(marker.day, [])
-        dayGroups.get(marker.day)!.push(position)
-      }
-    })
-
-    // Draw polylines per day
-    dayGroups.forEach((points, day) => {
-      if (points.length < 2) return
-      const polyline = new google.maps.Polyline({
-        path: points,
-        geodesic: true,
-        strokeColor: getDayColor(day),
-        strokeOpacity: 0.7,
-        strokeWeight: 3,
-        map,
-      })
-      polylinesRef.current.push(polyline)
     })
 
     // Fit bounds
@@ -215,15 +502,30 @@ export function TripMap({ markers, center, apiKey, height = "400px", selectedDay
       map.setCenter({ lat: visibleMarkers[0].lat, lng: visibleMarkers[0].lng })
       map.setZoom(14)
     }
-  }, [loaded, markers, center, selectedDay])
+
+    // Compute routes
+    const daysToRoute =
+      selectedDay != null
+        ? [selectedDay]
+        : [...new Set(markers.filter((m) => m.day != null).map((m) => m.day!))].sort(
+            (a, b) => a - b
+          )
+
+    if (daysToRoute.length > 0) {
+      computeAndRenderRoutes(map, selectedDay != null ? visibleMarkers : markers, daysToRoute)
+    } else {
+      onRoutesComputed?.([])
+    }
+  }, [loaded, markers, center, selectedDay, computeAndRenderRoutes, onRoutesComputed])
 
   useEffect(() => {
     renderMap()
   }, [renderMap])
 
   // Determine unique days for legend
-  const uniqueDays = [...new Set(markers.filter((m) => m.day != null).map((m) => m.day!))]
-    .sort((a, b) => a - b)
+  const uniqueDays = [
+    ...new Set(markers.filter((m) => m.day != null).map((m) => m.day!)),
+  ].sort((a, b) => a - b)
 
   if (error) {
     return (
@@ -231,7 +533,13 @@ export function TripMap({ markers, center, apiKey, height = "400px", selectedDay
         className="flex flex-col items-center justify-center bg-gray-50 border border-gray-200 rounded-2xl text-sm text-gray-500 px-6 text-center gap-2"
         style={{ height }}
       >
-        <svg className="w-8 h-8 text-gray-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+        <svg
+          className="w-8 h-8 text-gray-300"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+        >
           <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z" />
           <circle cx="12" cy="10" r="3" />
         </svg>
@@ -244,6 +552,15 @@ export function TripMap({ markers, center, apiKey, height = "400px", selectedDay
   return (
     <div className="relative">
       <div ref={mapRef} className="rounded-2xl overflow-hidden" style={{ height, width: "100%" }} />
+      {routeLoading && (
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 bg-white/90 backdrop-blur-sm text-xs text-gray-600 px-3 py-1.5 rounded-full shadow-sm border border-gray-200 flex items-center gap-2">
+          <svg className="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+          </svg>
+          Computing routes...
+        </div>
+      )}
       {/* Day color legend */}
       {uniqueDays.length > 1 && (
         <div className="flex flex-wrap gap-2 mt-2">
@@ -264,4 +581,16 @@ export function TripMap({ markers, center, apiKey, height = "400px", selectedDay
       )}
     </div>
   )
+}
+
+// Haversine distance fallback when geometry library isn't loaded
+function haversineDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371000 // Earth radius in meters
+  const toRad = (deg: number) => (deg * Math.PI) / 180
+  const dLat = toRad(lat2 - lat1)
+  const dLng = toRad(lng2 - lng1)
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) * Math.sin(dLng / 2)
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
 }

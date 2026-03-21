@@ -61,6 +61,16 @@ export async function checkFlightStatus(
   }
 }
 
+// Check status for a single flight by flight number and date (client-callable)
+export async function getSingleFlightStatus(
+  tripId: string,
+  flightNumber: string,
+  departureDate: string
+): Promise<FlightStatus | null> {
+  await requireTripAccess(tripId)
+  return checkFlightStatus(flightNumber, departureDate)
+}
+
 // Get flight statuses for all flights in a trip
 export async function getTripFlightStatuses(
   tripId: string

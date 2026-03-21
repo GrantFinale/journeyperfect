@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { createFlight, createFlightsBatch, deleteFlight, parseAndPreviewFlight } from "@/lib/actions/flights"
@@ -10,6 +10,9 @@ import { getCompanyInfo, RENTAL_CAR_COMPANIES } from "@/lib/rental-car-logos"
 import { addTravelerToTrip, removeTravelerFromTrip, updateTravelerProfile, deleteTravelerProfile } from "@/lib/actions/travelers"
 import { updateTrip, deleteTrip, shareTrip, unshareTrip, addDestination, removeDestination } from "@/lib/actions/trips"
 import { inviteCollaborator, removeCollaborator, updateCollaboratorRole } from "@/lib/actions/collaborators"
+import { getSingleFlightStatus } from "@/lib/actions/flight-alerts"
+import type { FlightStatus } from "@/lib/actions/flight-alerts"
+import { hasFeature } from "@/lib/features"
 import { formatDate } from "@/lib/utils"
 import { cn } from "@/lib/utils"
 import {
@@ -34,6 +37,9 @@ import {
   Eye,
   Pencil,
   Mail,
+  Clock,
+  Loader2,
+  Lock,
 } from "lucide-react"
 import PlacesAutocomplete from "@/components/places-autocomplete"
 import { AffiliateBadge } from "@/components/affiliate-links"
@@ -120,6 +126,7 @@ interface Props {
   initialCollaborators?: Collaborator[]
   placesApiKey?: string
   userId?: string
+  userPlan?: string
 }
 
 const TABS = ["Flights", "Hotels", "Cars", "Travelers", "Sharing", "General"] as const
@@ -263,7 +270,198 @@ function TravelerCard({ profile, added, tripId, onToggle }: { profile: TravelerP
   )
 }
 
-export function TripSettingsView({ tripId, trip: initialTrip, allProfiles, initialTab, isOwner = true, ownerName, ownerEmail, initialCollaborators = [], placesApiKey, userId }: Props) {
+// Flight status color coding
+function getStatusDisplay(status: FlightStatus["status"]): { label: string; color: string; bgColor: string } {
+  switch (status) {
+    case "active": return { label: "In Flight", color: "text-blue-700", bgColor: "bg-blue-50 border-blue-200" }
+    case "landed": return { label: "Landed", color: "text-green-700", bgColor: "bg-green-50 border-green-200" }
+    case "cancelled": return { label: "Cancelled", color: "text-red-700", bgColor: "bg-red-50 border-red-200" }
+    case "diverted": return { label: "Diverted", color: "text-orange-700", bgColor: "bg-orange-50 border-orange-200" }
+    case "delayed": return { label: "Delayed", color: "text-amber-700", bgColor: "bg-amber-50 border-amber-200" }
+    case "scheduled": return { label: "On Time", color: "text-green-700", bgColor: "bg-green-50 border-green-200" }
+    default: return { label: "Unknown", color: "text-gray-600", bgColor: "bg-gray-50 border-gray-200" }
+  }
+}
+
+function FlightStatusPanel({
+  flight,
+  tripId,
+  isPaid,
+}: {
+  flight: Trip["flights"][0]
+  tripId: string
+  isPaid: boolean
+}) {
+  const [expanded, setExpanded] = useState(false)
+  const [status, setStatus] = useState<FlightStatus | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(false)
+
+  const isToday = (() => {
+    const today = new Date()
+    const dep = new Date(flight.departureTime)
+    const arr = new Date(flight.arrivalTime)
+    return (
+      today.toDateString() === dep.toDateString() ||
+      today.toDateString() === arr.toDateString() ||
+      (today >= dep && today <= arr)
+    )
+  })()
+
+  const fetchStatus = useCallback(async () => {
+    if (!flight.flightNumber || !isPaid) return
+    setLoading(true)
+    setError(false)
+    try {
+      const date = new Date(flight.departureTime).toISOString().split("T")[0]
+      const result = await getSingleFlightStatus(tripId, flight.flightNumber, date)
+      setStatus(result)
+      if (!result) setError(true)
+    } catch {
+      setError(true)
+    } finally {
+      setLoading(false)
+    }
+  }, [flight.flightNumber, flight.departureTime, tripId, isPaid])
+
+  useEffect(() => {
+    if (expanded && isPaid && !status && !loading) {
+      fetchStatus()
+    }
+  }, [expanded, isPaid, status, loading, fetchStatus])
+
+  const statusDisplay = status ? getStatusDisplay(status.status) : null
+
+  return (
+    <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden group">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full p-4 flex items-center gap-3 text-left hover:bg-gray-50/50 transition-colors"
+      >
+        <div className="w-9 h-9 bg-blue-50 rounded-xl flex items-center justify-center shrink-0">
+          <Plane className="w-4 h-4 text-blue-600" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="font-medium text-sm text-gray-900 truncate">
+              {flight.flightNumber || "Flight"} · {flight.departureAirport} &rarr; {flight.arrivalAirport}
+            </span>
+            {isToday && (
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-blue-100 text-blue-700 text-[10px] font-semibold rounded-full shrink-0">
+                <span className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse" />
+                Live
+              </span>
+            )}
+          </div>
+          <div className="text-xs text-gray-500 truncate">
+            {formatDate(flight.departureTime, "MMM d, h:mm a")} &rarr;{" "}
+            {formatDate(flight.arrivalTime, "MMM d, h:mm a")}
+            {flight.confirmationNumber && ` · ${flight.confirmationNumber}`}
+            {flight.cabin && ` · ${flight.cabin}`}
+          </div>
+        </div>
+        <ChevronDown className={cn("w-4 h-4 text-gray-400 transition-transform shrink-0", expanded && "rotate-180")} />
+      </button>
+
+      {expanded && (
+        <div className="px-4 pb-4 border-t border-gray-100">
+          {!isPaid ? (
+            <div className="mt-3 flex items-center gap-2 px-3 py-2.5 bg-gray-50 rounded-xl">
+              <Lock className="w-4 h-4 text-gray-400 shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-xs text-gray-600 font-medium">Live flight tracking</p>
+                <p className="text-[10px] text-gray-400">Upgrade for real-time status, gate info, and delay alerts</p>
+              </div>
+              <a
+                href="/settings/billing"
+                className="px-2.5 py-1 bg-indigo-600 text-white text-[10px] font-semibold rounded-lg hover:bg-indigo-700 transition-colors shrink-0"
+              >
+                Upgrade
+              </a>
+            </div>
+          ) : loading ? (
+            <div className="mt-3 flex items-center justify-center gap-2 py-4 text-gray-400">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span className="text-xs">Checking flight status...</span>
+            </div>
+          ) : error ? (
+            <div className="mt-3 text-center py-4">
+              <p className="text-xs text-gray-400">Flight status unavailable</p>
+              <button onClick={fetchStatus} className="text-xs text-indigo-600 hover:text-indigo-700 mt-1">
+                Try again
+              </button>
+            </div>
+          ) : status ? (
+            <div className="mt-3 space-y-3">
+              {/* Status badge */}
+              <div className={cn("inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-semibold", statusDisplay?.bgColor, statusDisplay?.color)}>
+                {status.status === "active" && <span className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse" />}
+                {statusDisplay?.label}
+                {status.delayMinutes && status.delayMinutes > 0 && (
+                  <span className="font-normal ml-1">({status.delayMinutes} min delay)</span>
+                )}
+              </div>
+
+              {/* Details grid */}
+              <div className="grid grid-cols-2 gap-2">
+                {/* Departure info */}
+                <div className="bg-gray-50 rounded-xl p-3 space-y-1.5">
+                  <div className="text-[10px] font-medium text-gray-400 uppercase tracking-wide">Departure</div>
+                  <div className="text-sm font-medium text-gray-900">{flight.departureAirport}</div>
+                  {status.departureTerminal && (
+                    <div className="text-xs text-gray-600">Terminal {status.departureTerminal}</div>
+                  )}
+                  {status.departureGate && (
+                    <div className="text-xs text-gray-600">Gate {status.departureGate}</div>
+                  )}
+                  <div className="text-xs text-gray-500">
+                    Scheduled: {formatDate(flight.departureTime, "h:mm a")}
+                  </div>
+                  {status.actualDeparture && (
+                    <div className={cn("text-xs font-medium", status.delayMinutes && status.delayMinutes > 0 ? "text-amber-600" : "text-green-600")}>
+                      Actual: {new Date(status.actualDeparture).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
+                    </div>
+                  )}
+                </div>
+
+                {/* Arrival info */}
+                <div className="bg-gray-50 rounded-xl p-3 space-y-1.5">
+                  <div className="text-[10px] font-medium text-gray-400 uppercase tracking-wide">Arrival</div>
+                  <div className="text-sm font-medium text-gray-900">{flight.arrivalAirport}</div>
+                  {status.arrivalTerminal && (
+                    <div className="text-xs text-gray-600">Terminal {status.arrivalTerminal}</div>
+                  )}
+                  {status.arrivalGate && (
+                    <div className="text-xs text-gray-600">Gate {status.arrivalGate}</div>
+                  )}
+                  <div className="text-xs text-gray-500">
+                    Scheduled: {formatDate(flight.arrivalTime, "h:mm a")}
+                  </div>
+                  {status.actualArrival && (
+                    <div className="text-xs font-medium text-green-600">
+                      Actual: {new Date(status.actualArrival).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Last checked */}
+              <div className="text-[10px] text-gray-400 flex items-center gap-1">
+                <Clock className="w-3 h-3" />
+                Updated {new Date(status.lastChecked).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
+                <button onClick={fetchStatus} className="ml-auto text-indigo-500 hover:text-indigo-600 font-medium">
+                  Refresh
+                </button>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      )}
+    </div>
+  )
+}
+
+export function TripSettingsView({ tripId, trip: initialTrip, allProfiles, initialTab, isOwner = true, ownerName, ownerEmail, initialCollaborators = [], placesApiKey, userId, userPlan = "FREE" }: Props) {
   const router = useRouter()
   const [activeTab, setActiveTab] = useState<Tab>(tabFromParam(initialTab))
   const [trip, setTrip] = useState<Trip>(initialTrip)
@@ -872,6 +1070,13 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles, initi
     <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8">
       <h1 className="text-2xl font-bold text-gray-900 mb-6">Trip Settings</h1>
 
+      {/* Forwarding email bar - above tabs */}
+      {userId && (
+        <div className="mb-4">
+          <ForwardingEmail userId={userId} variant="compact" />
+        </div>
+      )}
+
       {/* Tabs - scrollable on mobile */}
       <div className="flex gap-1 bg-gray-100 p-1 rounded-xl mb-8 overflow-x-auto">
         {TABS.map((tab) => (
@@ -891,11 +1096,6 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles, initi
       {/* FLIGHTS TAB */}
       {activeTab === "Flights" && (
         <div>
-          {userId && (
-            <div className="mb-4">
-              <ForwardingEmail userId={userId} variant="compact" />
-            </div>
-          )}
           {trip.flights.length === 0 && !showFlightForm && (
             <div className="text-center py-12">
               <Plane className="w-10 h-10 text-gray-200 mx-auto mb-3" />
@@ -906,30 +1106,18 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles, initi
             </div>
           )}
 
-          {/* Flight list */}
+          {/* Flight list with expandable status */}
           <div className="space-y-2 mb-4">
             {trip.flights.map((flight) => (
-              <div
-                key={flight.id}
-                className="bg-white border border-gray-100 rounded-2xl p-4 flex items-center gap-3 group"
-              >
-                <div className="w-9 h-9 bg-blue-50 rounded-xl flex items-center justify-center shrink-0">
-                  <Plane className="w-4 h-4 text-blue-600" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="font-medium text-sm text-gray-900 truncate">
-                    {flight.flightNumber || "Flight"} · {flight.departureAirport} &rarr; {flight.arrivalAirport}
-                  </div>
-                  <div className="text-xs text-gray-500 truncate">
-                    {formatDate(flight.departureTime, "MMM d, h:mm a")} &rarr;{" "}
-                    {formatDate(flight.arrivalTime, "MMM d, h:mm a")}
-                    {flight.confirmationNumber && ` · ${flight.confirmationNumber}`}
-                    {flight.cabin && ` · ${flight.cabin}`}
-                  </div>
-                </div>
+              <div key={flight.id} className="relative">
+                <FlightStatusPanel
+                  flight={flight}
+                  tripId={tripId}
+                  isPaid={hasFeature(userPlan, "liveFlightTracking")}
+                />
                 <button
                   onClick={() => handleDeleteFlight(flight.id)}
-                  className="p-2 text-gray-400 hover:text-red-500 transition-colors sm:opacity-0 sm:group-hover:opacity-100"
+                  className="absolute top-4 right-4 p-2 text-gray-400 hover:text-red-500 transition-colors sm:opacity-0 sm:group-hover:opacity-100 z-10"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>
@@ -1123,11 +1311,6 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles, initi
       {/* HOTELS TAB */}
       {activeTab === "Hotels" && (
         <div>
-          {userId && (
-            <div className="mb-4">
-              <ForwardingEmail userId={userId} variant="compact" />
-            </div>
-          )}
           {/* Booking.com affiliate suggestion */}
           {hotelAffiliateLink && (
             <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 mb-4">
@@ -1352,11 +1535,6 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles, initi
       {/* CARS TAB */}
       {activeTab === "Cars" && (
         <div>
-          {userId && (
-            <div className="mb-4">
-              <ForwardingEmail userId={userId} variant="compact" />
-            </div>
-          )}
           {/* Booking.com affiliate suggestion */}
           {carRentalLink && (
             <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-4 mb-4">

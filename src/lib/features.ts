@@ -8,6 +8,7 @@ export const PAID_FEATURES = {
   placesAutocomplete: { name: "Smart Destination Search", minPlan: "PERSONAL" as Plan },
   weatherAlerts: { name: "Weather Alerts & Rescheduling", minPlan: "PERSONAL" as Plan },
   tripSharing: { name: "Trip Sharing", minPlan: "PERSONAL" as Plan },
+  liveFlightTracking: { name: "Live Flight Tracking", minPlan: "PERSONAL" as Plan },
 } as const
 
 const PLAN_ORDER: Plan[] = ["FREE", "PERSONAL", "FAMILY", "PRO"]

@@ -32,6 +32,7 @@ export default async function TripSettingsPage({
 
     const isOwner = session?.user?.id === trip.userId
     const placesApiKey = process.env.GOOGLE_PLACES_KEY || process.env.NEXT_PUBLIC_GOOGLE_PLACES_KEY || ""
+    const userPlan = owner ? (await prisma.user.findUnique({ where: { id: session?.user?.id || "" }, select: { plan: true } }))?.plan || "FREE" : "FREE"
 
     return (
       <TripSettingsView
@@ -45,6 +46,7 @@ export default async function TripSettingsPage({
         initialCollaborators={collaborators}
         placesApiKey={placesApiKey}
         userId={session?.user?.id || ""}
+        userPlan={userPlan}
       />
     )
   } catch {

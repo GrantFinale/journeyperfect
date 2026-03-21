@@ -240,20 +240,23 @@ export default async function TripOverviewPage({ params }: { params: Promise<{ t
         </div>
       )}
 
-      {/* Flight/Hotel/Car summary cards */}
+      {/* Flight/Hotel/Car summary cards - each tile is fully clickable */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-        <div className="bg-white border border-gray-100 rounded-2xl p-4">
+        <Link
+          href={`/trip/${tripId}/settings?tab=flights`}
+          className="bg-white border border-gray-100 rounded-2xl p-4 hover:border-indigo-200 hover:shadow-sm transition-all group block"
+        >
           <div className="flex items-center gap-2 mb-2">
             <Plane className="w-4 h-4 text-indigo-500" />
-            <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Flights</span>
+            <span className="text-xs font-medium text-gray-500 uppercase tracking-wide flex-1">Flights</span>
+            <ChevronRight className="w-3.5 h-3.5 text-gray-300 group-hover:text-indigo-500 transition-colors" />
           </div>
           {trip.flights.length > 0 ? (
             <div className="space-y-1.5 mt-1">
               {trip.flights.map((flight) => (
-                <Link
+                <div
                   key={flight.id}
-                  href={`/trip/${tripId}/settings?tab=flights`}
-                  className="block text-xs text-gray-700 hover:text-indigo-600 transition-colors truncate"
+                  className="text-xs text-gray-700 truncate"
                 >
                   {[flight.airline, flight.flightNumber].filter(Boolean).join(" ") || "Flight"}{" "}
                   {flight.departureAirport && flight.arrivalAirport
@@ -262,94 +265,82 @@ export default async function TripOverviewPage({ params }: { params: Promise<{ t
                   <span className="text-gray-400">
                     {formatDate(flight.departureTime, "MMM d")}
                   </span>
-                </Link>
+                </div>
               ))}
-              <Link
-                href={`/trip/${tripId}/settings?tab=flights`}
-                className="text-xs text-indigo-500 hover:underline inline-block mt-1"
-              >
-                + Add more
-              </Link>
+              <span className="text-xs text-indigo-500 inline-block mt-1">
+                {trip.flights.length} flight{trip.flights.length !== 1 ? "s" : ""}
+              </span>
             </div>
           ) : (
-            <Link
-              href={`/trip/${tripId}/settings?tab=flights`}
-              className="text-xs text-indigo-500 hover:underline p-2 -m-2 inline-block"
-            >
+            <span className="text-xs text-indigo-500 inline-block">
               Add flights
-            </Link>
+            </span>
           )}
-        </div>
-        <div className="bg-white border border-gray-100 rounded-2xl p-4">
+        </Link>
+        <Link
+          href={`/trip/${tripId}/settings?tab=hotels`}
+          className="bg-white border border-gray-100 rounded-2xl p-4 hover:border-indigo-200 hover:shadow-sm transition-all group block"
+        >
           <div className="flex items-center gap-2 mb-2">
             <Hotel className="w-4 h-4 text-purple-500" />
-            <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Hotels</span>
+            <span className="text-xs font-medium text-gray-500 uppercase tracking-wide flex-1">Hotels</span>
+            <ChevronRight className="w-3.5 h-3.5 text-gray-300 group-hover:text-indigo-500 transition-colors" />
           </div>
           {trip.hotels.length > 0 ? (
             <div className="space-y-1.5 mt-1">
               {trip.hotels.map((hotel) => (
-                <Link
+                <div
                   key={hotel.id}
-                  href={`/trip/${tripId}/settings?tab=hotels`}
-                  className="block text-xs text-gray-700 hover:text-indigo-600 transition-colors truncate"
+                  className="text-xs text-gray-700 truncate"
                 >
                   {hotel.name}{" "}
                   <span className="text-gray-400">
                     {formatDate(hotel.checkIn, "MMM d")}&ndash;{formatDate(hotel.checkOut, "MMM d")}
                   </span>
-                </Link>
+                </div>
               ))}
-              <Link
-                href={`/trip/${tripId}/settings?tab=hotels`}
-                className="text-xs text-indigo-500 hover:underline inline-block mt-1"
-              >
-                + Add more
-              </Link>
+              <span className="text-xs text-indigo-500 inline-block mt-1">
+                {trip.hotels.length} hotel{trip.hotels.length !== 1 ? "s" : ""}
+              </span>
             </div>
           ) : (
-            <Link
-              href={`/trip/${tripId}/settings?tab=hotels`}
-              className="text-xs text-indigo-500 hover:underline p-2 -m-2 inline-block"
-            >
+            <span className="text-xs text-indigo-500 inline-block">
               Add hotels
-            </Link>
+            </span>
           )}
-        </div>
-        <div className="bg-white border border-gray-100 rounded-2xl p-4">
+        </Link>
+        <Link
+          href={`/trip/${tripId}/settings?tab=cars`}
+          className="bg-white border border-gray-100 rounded-2xl p-4 hover:border-indigo-200 hover:shadow-sm transition-all group block"
+        >
           <div className="flex items-center gap-2 mb-2">
             <Car className="w-4 h-4 text-green-600" />
-            <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Rental Cars</span>
+            <span className="text-xs font-medium text-gray-500 uppercase tracking-wide flex-1">Rental Cars</span>
+            <ChevronRight className="w-3.5 h-3.5 text-gray-300 group-hover:text-indigo-500 transition-colors" />
           </div>
           {trip.rentalCars.length > 0 ? (
             <div className="space-y-1.5 mt-1">
               {trip.rentalCars.map((car) => (
-                <Link
+                <div
                   key={car.id}
-                  href={`/trip/${tripId}/settings?tab=cars`}
-                  className="block text-xs text-gray-700 hover:text-indigo-600 transition-colors truncate"
+                  className="text-xs text-gray-700 truncate"
                 >
                   {car.company || car.vehicleType || "Rental Car"}{" "}
                   <span className="text-gray-400">
                     {formatDate(car.pickupTime, "MMM d")}&ndash;{formatDate(car.dropoffTime, "MMM d")}
                   </span>
-                </Link>
+                </div>
               ))}
-              <Link
-                href={`/trip/${tripId}/settings?tab=cars`}
-                className="text-xs text-indigo-500 hover:underline inline-block mt-1"
-              >
-                + Add more
-              </Link>
+              <span className="text-xs text-indigo-500 inline-block mt-1">
+                {trip.rentalCars.length} rental{trip.rentalCars.length !== 1 ? "s" : ""}
+              </span>
             </div>
           ) : (
-            <Link
-              href={`/trip/${tripId}/settings?tab=cars`}
-              className="text-xs text-indigo-500 hover:underline p-2 -m-2 inline-block"
-            >
+            <span className="text-xs text-indigo-500 inline-block">
               Add rental car
-            </Link>
+            </span>
           )}
-        </div>
+        </Link>
       </div>
 
       {/* Trip Cost Summary — clickable to budget page */}

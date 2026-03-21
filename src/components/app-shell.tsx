@@ -161,7 +161,7 @@ export function AppShell({ children, user }: AppShellProps) {
       {sidebarOpen && (
         <div className="fixed inset-0 z-40 md:hidden">
           <div className="absolute inset-0 bg-black/40" onClick={() => setSidebarOpen(false)} />
-          <aside className="absolute left-0 top-0 bottom-0 w-72 bg-card border-r border-border flex flex-col z-50">
+          <aside className="absolute left-0 top-0 bottom-0 w-72 bg-white border-r border-border flex flex-col z-50">
             <div className="flex items-center justify-between px-4 py-4 border-b border-border">
               <Link href="/dashboard" className="flex items-center gap-2 hover:opacity-80 transition-opacity" onClick={() => setSidebarOpen(false)}>
                 <img src="/jp-icon.png" alt="JourneyPerfect" className="w-8 h-8" />

@@ -80,8 +80,19 @@ export async function getTripWeather(tripId: string): Promise<TripWeatherData | 
   const tripStart = trip.startDate.toISOString().split("T")[0]
   const tripEnd = trip.endDate.toISOString().split("T")[0]
 
-  const forecasts = await getWeatherForecast(lat, lng)
-  if (forecasts.length === 0) return null
+  const allForecasts = await getWeatherForecast(lat, lng)
+  if (allForecasts.length === 0) return null
+
+  // Filter forecasts to trip date range
+  // If trip hasn't started yet, show forecast starting from startDate
+  // If trip is ongoing, start from today
+  // If trip is over, show nothing (no forecast data for past dates anyway)
+  const today = new Date().toISOString().split("T")[0]
+  const effectiveStart = tripStart > today ? tripStart : today
+
+  // Only show forecasts that overlap with the trip dates
+  const forecasts = allForecasts.filter((f) => f.date >= effectiveStart && f.date <= tripEnd)
+  if (forecasts.length === 0 && tripEnd < today) return null // trip is over
 
   // Build activity list with dates from itinerary items
   const activitiesWithDates = trip.itineraryItems

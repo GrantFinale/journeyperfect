@@ -4,6 +4,8 @@ import { useState, useEffect, useRef, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import { createTrip } from "@/lib/actions/trips"
 import { parseAndPreviewFlight, createFlightsBatch } from "@/lib/actions/flights"
+import { createHotel } from "@/lib/actions/hotels"
+import { createRentalCar } from "@/lib/actions/rental-cars"
 import { getUserPlan, getPlacesApiKey, getUserId } from "@/lib/actions/user"
 import { checkPendingEmails, markEmailsProcessed, type PendingEmailItem } from "@/lib/actions/inbound-emails"
 import { hasFeature } from "@/lib/features"
@@ -206,15 +208,20 @@ function extractAutoFillData(emails: PendingEmailItem[]) {
     if (arrCity && homeCity && arrCity.toLowerCase() === homeCity.toLowerCase()) continue
     if (arrAirport && homeAirport && arrAirport.toLowerCase() === homeAirport.toLowerCase()) continue
 
-    // Check if this is a layover (next flight departs from same airport within 3 hours)
+    // Check if this is a layover (next flight departs from same airport/city within 4 hours)
     if (i < allFlightLegs.length - 1) {
       const nextLeg = allFlightLegs[i + 1]
-      const nextDeptAirport = nextLeg.departureAirport
-      if (arrAirport && nextDeptAirport && arrAirport === nextDeptAirport) {
+      const nextDeptAirport = nextLeg.departureAirport?.trim().toUpperCase()
+      const nextDeptCity = nextLeg.departureCity?.trim().toLowerCase()
+      const thisArrAirport = arrAirport?.trim().toUpperCase()
+      const thisArrCity = arrCity?.trim().toLowerCase()
+      const airportMatch = thisArrAirport && nextDeptAirport && thisArrAirport === nextDeptAirport
+      const cityMatch = thisArrCity && nextDeptCity && thisArrCity === nextDeptCity
+      if (airportMatch || cityMatch) {
         const arrTime = f.arrivalTime ? new Date(f.arrivalTime).getTime() : 0
         const nextDeptTime = nextLeg.departureTime ? new Date(nextLeg.departureTime).getTime() : 0
         const layoverHours = (nextDeptTime - arrTime) / (1000 * 60 * 60)
-        if (layoverHours > 0 && layoverHours < 3) continue // Skip layover city
+        if (layoverHours > 0 && layoverHours < 4) continue // Skip layover city
       }
     }
 
@@ -528,8 +535,84 @@ export default function NewTripPage() {
         }
       }
 
-      // Mark pending emails as processed
+      // Create flights, hotels, and rental cars from pending emails
       if (pendingEmails.length > 0) {
+        for (const email of pendingEmails) {
+          const data = email.parsedData
+          if (!data) continue
+          try {
+            if (email.type === "flight" && data.flights) {
+              const flights = data.flights as Array<Record<string, string>>
+              const flightsToCreate = flights
+                .filter((f) => f.departureTime && f.arrivalTime)
+                .map((f) => ({
+                  airline: f.airline,
+                  flightNumber: f.flightNumber,
+                  departureAirport: f.departureAirport,
+                  departureCity: f.departureCity,
+                  departureTime: f.departureTime,
+                  departureTimezone: f.departureTimezone || "UTC",
+                  arrivalAirport: f.arrivalAirport,
+                  arrivalCity: f.arrivalCity,
+                  arrivalTime: f.arrivalTime,
+                  arrivalTimezone: f.arrivalTimezone || "UTC",
+                  confirmationNumber: f.confirmationNumber,
+                  cabin: f.cabin,
+                  price: f.price ? Number(f.price) : undefined,
+                  priceCurrency: f.priceCurrency,
+                }))
+              if (flightsToCreate.length > 0) {
+                await createFlightsBatch(trip.id, flightsToCreate)
+              }
+            }
+            if (email.type === "hotel" && data.hotels) {
+              const hotels = data.hotels as Array<Record<string, string>>
+              for (const h of hotels) {
+                if (h.checkIn && h.checkOut) {
+                  await createHotel(trip.id, {
+                    name: h.name || "Hotel",
+                    address: h.address,
+                    checkIn: h.checkIn,
+                    checkOut: h.checkOut,
+                    confirmationNumber: h.confirmationNumber,
+                    notes: h.notes,
+                    price: h.price ? Number(h.price) : undefined,
+                    priceCurrency: h.priceCurrency,
+                    roomType: h.roomType,
+                    isVacationRental: h.isVacationRental === "true",
+                    roomCount: h.roomCount ? Number(h.roomCount) : 1,
+                  })
+                }
+              }
+            }
+            if (email.type === "rental_car" && data.rentalCars) {
+              const cars = data.rentalCars as Array<Record<string, string>>
+              for (const c of cars) {
+                if (c.pickupTime && c.dropoffTime) {
+                  await createRentalCar(trip.id, {
+                    company: c.company,
+                    confirmationNumber: c.confirmationNumber,
+                    vehicleType: c.vehicleType,
+                    pickupLocation: c.pickupLocation,
+                    pickupAddress: c.pickupAddress,
+                    pickupTime: c.pickupTime,
+                    pickupTimezone: c.pickupTimezone || "UTC",
+                    dropoffLocation: c.dropoffLocation,
+                    dropoffAddress: c.dropoffAddress,
+                    dropoffTime: c.dropoffTime,
+                    dropoffTimezone: c.dropoffTimezone || "UTC",
+                    price: c.price ? Number(c.price) : undefined,
+                    priceCurrency: c.priceCurrency,
+                  })
+                }
+              }
+            }
+          } catch (err) {
+            console.error(`[NewTrip] Failed to create items from email ${email.id}:`, err)
+          }
+        }
+
+        // Mark pending emails as processed
         const emailIds = pendingEmails.map((e) => e.id)
         await markEmailsProcessed(emailIds).catch(() => {})
       }

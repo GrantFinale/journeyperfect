@@ -26,6 +26,8 @@ export async function getPlaceDetails(placeId: string) {
         "X-Goog-FieldMask":
           "id,displayName,formattedAddress,location,rating,userRatingCount,types,photos,priceLevel,currentOpeningHours,regularOpeningHours,websiteUri,nationalPhoneNumber,goodForChildren,servesVegetarianFood,dineIn,delivery,takeout",
       },
+      referrer: "",
+      referrerPolicy: "no-referrer",
     })
     if (!res.ok) return null
     const data = await res.json()

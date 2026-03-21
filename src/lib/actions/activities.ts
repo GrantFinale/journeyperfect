@@ -124,6 +124,10 @@ export async function searchPlaces(query: string, locationBias?: string) {
         "X-Goog-FieldMask": "places.id,places.displayName,places.formattedAddress,places.location,places.rating,places.userRatingCount,places.types,places.photos,places.priceLevel,places.currentOpeningHours,places.servesVegetarianFood,places.goodForChildren,places.servesBeer,places.servesWine,places.dineIn,places.delivery,places.takeout,places.primaryType",
       },
       body: JSON.stringify(body),
+      // Prevent sending Referer header — server-side calls with HTTP referrer
+      // restrictions on the API key will get 403 if a Referer is sent
+      referrer: "",
+      referrerPolicy: "no-referrer",
     })
 
     if (!res.ok) {

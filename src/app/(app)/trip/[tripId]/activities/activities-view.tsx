@@ -525,6 +525,74 @@ export function ActivitiesView({ tripId, initialActivities, destination, destina
         </button>
       </div>
 
+      {/* Location selector */}
+      <div className="mb-4">
+        <label className="block text-xs font-medium text-gray-500 mb-1.5">Search in</label>
+        <div className="relative inline-block w-full sm:w-72">
+          <select
+            value={selectedLocation}
+            onChange={(e) => setSelectedLocation(e.target.value)}
+            className="w-full appearance-none pl-3 pr-8 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          >
+            {locationOptions.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+          <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+        </div>
+        {selectedLocation === "__other__" && (
+          <input
+            type="text"
+            placeholder="Enter a city or area..."
+            value={customLocation}
+            onChange={(e) => setCustomLocation(e.target.value)}
+            className="mt-2 w-full sm:w-72 pl-3 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          />
+        )}
+      </div>
+
+      {/* Search field */}
+      <div className="flex gap-2 mb-4">
+        <div className="flex-1 relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <input
+            type="text"
+            placeholder={`Search "museums", "parks", "tours"...`}
+            value={customQuery}
+            onChange={(e) => setCustomQuery(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleSearchSubmit()}
+            className="w-full pl-9 pr-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          />
+        </div>
+        <button
+          onClick={handleSearchSubmit}
+          disabled={loading}
+          className="px-5 py-3 bg-gray-900 text-white text-sm font-medium rounded-xl hover:bg-gray-800 disabled:opacity-50 transition-colors"
+        >
+          Search
+        </button>
+      </div>
+
+      {/* Quick filter pills */}
+      <div className="flex gap-2 flex-wrap mb-6">
+        {QUICK_FILTERS.map((filter) => (
+          <button
+            key={filter.query}
+            onClick={() => handleFilterSelect(filter)}
+            className={cn(
+              "px-3 py-1.5 text-xs font-medium rounded-full border transition-colors",
+              activeFilter === filter.query
+                ? "bg-indigo-600 text-white border-indigo-600"
+                : "bg-white text-gray-600 border-gray-200 hover:border-indigo-300 hover:text-indigo-600"
+            )}
+          >
+            {filter.label}
+          </button>
+        ))}
+      </div>
+
       {/* Auto-suggested activities */}
       {!suggestionsDismissed && (suggestionsLoading || suggestions.length > 0) && (
         <div className="mb-8">
@@ -629,74 +697,6 @@ export function ActivitiesView({ tripId, initialActivities, destination, destina
           )}
         </div>
       )}
-
-      {/* Location selector */}
-      <div className="mb-4">
-        <label className="block text-xs font-medium text-gray-500 mb-1.5">Search in</label>
-        <div className="relative inline-block w-full sm:w-72">
-          <select
-            value={selectedLocation}
-            onChange={(e) => setSelectedLocation(e.target.value)}
-            className="w-full appearance-none pl-3 pr-8 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-          >
-            {locationOptions.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-          <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-        </div>
-        {selectedLocation === "__other__" && (
-          <input
-            type="text"
-            placeholder="Enter a city or area..."
-            value={customLocation}
-            onChange={(e) => setCustomLocation(e.target.value)}
-            className="mt-2 w-full sm:w-72 pl-3 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-          />
-        )}
-      </div>
-
-      {/* Search field */}
-      <div className="flex gap-2 mb-4">
-        <div className="flex-1 relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-          <input
-            type="text"
-            placeholder={`Search "museums", "parks", "tours"...`}
-            value={customQuery}
-            onChange={(e) => setCustomQuery(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleSearchSubmit()}
-            className="w-full pl-9 pr-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-          />
-        </div>
-        <button
-          onClick={handleSearchSubmit}
-          disabled={loading}
-          className="px-5 py-3 bg-gray-900 text-white text-sm font-medium rounded-xl hover:bg-gray-800 disabled:opacity-50 transition-colors"
-        >
-          Search
-        </button>
-      </div>
-
-      {/* Quick filter pills */}
-      <div className="flex gap-2 flex-wrap mb-6">
-        {QUICK_FILTERS.map((filter) => (
-          <button
-            key={filter.query}
-            onClick={() => handleFilterSelect(filter)}
-            className={cn(
-              "px-3 py-1.5 text-xs font-medium rounded-full border transition-colors",
-              activeFilter === filter.query
-                ? "bg-indigo-600 text-white border-indigo-600"
-                : "bg-white text-gray-600 border-gray-200 hover:border-indigo-300 hover:text-indigo-600"
-            )}
-          >
-            {filter.label}
-          </button>
-        ))}
-      </div>
 
       {/* Loading */}
       {loading && (

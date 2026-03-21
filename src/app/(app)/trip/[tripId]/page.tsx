@@ -63,8 +63,12 @@ export default async function TripOverviewPage({ params }: { params: Promise<{ t
     .slice(0, 3)
 
   const duration = tripDuration(trip.startDate, trip.endDate)
-  const daysUntil = Math.ceil(
-    (new Date(trip.startDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
+  // Calculate days until trip using date-only comparison (no timezone drift)
+  const todayStr = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" }) // YYYY-MM-DD
+  const todayMidnight = new Date(todayStr + "T00:00:00")
+  const startMidnight = new Date(trip.startDate + "T00:00:00")
+  const daysUntil = Math.round(
+    (startMidnight.getTime() - todayMidnight.getTime()) / (1000 * 60 * 60 * 24)
   )
 
   // Build map markers from activities and hotels

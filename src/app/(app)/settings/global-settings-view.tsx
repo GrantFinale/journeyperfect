@@ -8,9 +8,9 @@ import {
   updateTravelerProfile,
 } from "@/lib/actions/travelers"
 import type { TravelerProfileResult } from "@/lib/actions/travelers"
-import { updatePreferences } from "@/lib/actions/preferences"
+import { updatePreferences, updateTimezone } from "@/lib/actions/preferences"
 import { cn } from "@/lib/utils"
-import { User, Users, Settings, Plus, Trash2, X, Save, Mail, Copy, Check } from "lucide-react"
+import { User, Users, Settings, Plus, Trash2, X, Save, Mail, Copy, Check, Globe } from "lucide-react"
 
 type TravelerProfile = {
   id: string
@@ -36,7 +36,18 @@ interface Props {
   user: { name?: string | null; email?: string | null; image?: string | null; id?: string } | null
   initialProfiles: TravelerProfile[]
   initialPrefs: Preferences
+  initialTimezone: string
 }
+
+const TIMEZONE_OPTIONS = [
+  { value: "AUTO", label: "Auto-detect (uses browser timezone)" },
+  { value: "America/New_York", label: "Eastern (America/New_York)" },
+  { value: "America/Chicago", label: "Central (America/Chicago)" },
+  { value: "America/Denver", label: "Mountain (America/Denver)" },
+  { value: "America/Los_Angeles", label: "Pacific (America/Los_Angeles)" },
+  { value: "America/Anchorage", label: "Alaska (America/Anchorage)" },
+  { value: "Pacific/Honolulu", label: "Hawaii (Pacific/Honolulu)" },
+]
 
 const PACING_STYLES = ["CHILL", "LEISURELY", "MODERATE", "ACTIVE", "PACKED"] as const
 const TABS = ["Travelers", "Preferences", "Account"] as const
@@ -46,7 +57,7 @@ const COMMON_TAGS = ["adult", "child", "senior", "stroller-needed", "thrill-seek
 const MEAL_PREFS = ["quick", "sit-down", "local", "upscale", "vegetarian-friendly", "allergy-aware"]
 const ACTIVITY_MIX = ["sightseeing", "beach", "food", "adventure", "relaxation", "museums", "nightlife", "shopping"]
 
-export function GlobalSettingsView({ user, initialProfiles, initialPrefs }: Props) {
+export function GlobalSettingsView({ user, initialProfiles, initialPrefs, initialTimezone }: Props) {
   const [activeTab, setActiveTab] = useState<Tab>("Travelers")
   const [profiles, setProfiles] = useState<TravelerProfile[]>(initialProfiles)
   const [prefs, setPrefs] = useState<Preferences>(
@@ -62,6 +73,8 @@ export function GlobalSettingsView({ user, initialProfiles, initialPrefs }: Prop
       maxDailyTravelMins: 60,
     }
   )
+  const [timezone, setTimezone] = useState(initialTimezone)
+  const [savingTimezone, setSavingTimezone] = useState(false)
   const [showAddProfile, setShowAddProfile] = useState(false)
   const [savingPrefs, setSavingPrefs] = useState(false)
   const [copiedEmail, setCopiedEmail] = useState(false)
@@ -111,6 +124,19 @@ export function GlobalSettingsView({ user, initialProfiles, initialPrefs }: Prop
       toast.success("Traveler removed")
     } catch {
       toast.error("Failed to remove traveler")
+    }
+  }
+
+  async function handleTimezoneChange(newTimezone: string) {
+    setTimezone(newTimezone)
+    setSavingTimezone(true)
+    try {
+      await updateTimezone(newTimezone)
+      toast.success("Timezone updated")
+    } catch {
+      toast.error("Failed to update timezone")
+    } finally {
+      setSavingTimezone(false)
     }
   }
 
@@ -322,6 +348,33 @@ export function GlobalSettingsView({ user, initialProfiles, initialPrefs }: Prop
       {/* PREFERENCES */}
       {activeTab === "Preferences" && prefs && (
         <div className="space-y-6">
+          <div className="bg-white border border-gray-100 rounded-2xl p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <Globe className="w-4 h-4 text-indigo-500" />
+              <h3 className="font-semibold text-gray-900">Timezone</h3>
+            </div>
+            <p className="text-sm text-gray-500 mb-3">
+              Used for displaying dates and countdown timers across the app.
+            </p>
+            <select
+              value={timezone}
+              onChange={(e) => handleTimezoneChange(e.target.value)}
+              disabled={savingTimezone}
+              className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white disabled:opacity-50"
+            >
+              {TIMEZONE_OPTIONS.map((tz) => (
+                <option key={tz.value} value={tz.value}>
+                  {tz.label}
+                </option>
+              ))}
+            </select>
+            {timezone === "AUTO" && (
+              <p className="text-xs text-gray-400 mt-2">
+                Your browser reports: {typeof window !== "undefined" ? Intl.DateTimeFormat().resolvedOptions().timeZone : "detecting..."}
+              </p>
+            )}
+          </div>
+
           <div className="bg-white border border-gray-100 rounded-2xl p-5">
             <h3 className="font-semibold text-gray-900 mb-4">Schedule & Pacing</h3>
             <div className="space-y-4">

@@ -29,6 +29,9 @@ model User {
   referralsMade     Referral[] @relation("referralsMade")
   referralUsed      Referral?  @relation("referralUsed")
 
+  // Timezone
+  timezone         String   @default("America/New_York")
+
   // Relations
   accounts         Account[]
   sessions         Session[]

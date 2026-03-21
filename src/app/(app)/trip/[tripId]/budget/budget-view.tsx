@@ -7,7 +7,7 @@ import type { BudgetItemResult } from "@/lib/actions/budget"
 import type { TripPerson } from "@/lib/actions/expenses"
 import { cn } from "@/lib/utils"
 import { formatCurrency } from "@/lib/utils"
-import { Plus, Trash2, X, TrendingUp, DollarSign, CreditCard, Receipt, ArrowRightLeft, ArrowRight, Users } from "lucide-react"
+import { Plus, Trash2, X, TrendingUp, DollarSign, CreditCard, Receipt, ArrowRightLeft, ArrowRight, Users, Plane, Hotel as HotelIcon, Car, Star } from "lucide-react"
 import {
   CURRENCIES,
   type CurrencyCode,
@@ -79,16 +79,29 @@ const CATEGORY_LIGHT: Record<Category, string> = {
   OTHER: "bg-teal-50 text-teal-700",
 }
 
+type CostSummary = {
+  flights: number
+  hotels: number
+  activities: number
+  dining: number
+  transport: number
+  other: number
+  totalPaid: number
+  totalEstimated: number
+  grandTotal: number
+}
+
 interface Props {
   tripId: string
   initialBudget: BudgetSummary
   tripTitle: string
+  costSummary: CostSummary
   settlements: { from: string; to: string; amount: number }[]
   balances: Record<string, number>
   people: TripPerson[]
 }
 
-export function BudgetView({ tripId, initialBudget, tripTitle, settlements, balances, people }: Props) {
+export function BudgetView({ tripId, initialBudget, tripTitle, costSummary, settlements, balances, people }: Props) {
   const [budget, setBudget] = useState<BudgetSummary>(initialBudget)
   const [showForm, setShowForm] = useState(false)
   const [filterCategory, setFilterCategory] = useState<string>("ALL")
@@ -331,6 +344,63 @@ export function BudgetView({ tripId, initialBudget, tripTitle, settlements, bala
           </div>
         </div>
       </div>
+
+      {/* Trip Cost Estimate (flights + hotels + rental cars + budget items) */}
+      {costSummary.grandTotal > 0 && (
+        <div className="bg-white border border-gray-100 rounded-2xl p-5 mb-6">
+          <div className="flex items-center gap-2 mb-3">
+            <DollarSign className="w-4 h-4 text-green-600" />
+            <h2 className="text-sm font-semibold text-gray-700">Trip Cost Estimate</h2>
+          </div>
+          <div className="text-2xl font-bold text-gray-900 mb-4">
+            {formatCurrency(costSummary.grandTotal)}
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            {costSummary.flights > 0 && (
+              <div className="flex items-center gap-2 bg-blue-50 rounded-xl px-3 py-2">
+                <Plane className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                <span className="text-xs text-blue-800">Flights</span>
+                <span className="text-xs font-semibold text-blue-900 ml-auto">{formatCurrency(costSummary.flights)}</span>
+              </div>
+            )}
+            {costSummary.hotels > 0 && (
+              <div className="flex items-center gap-2 bg-purple-50 rounded-xl px-3 py-2">
+                <HotelIcon className="w-3.5 h-3.5 text-purple-600 shrink-0" />
+                <span className="text-xs text-purple-800">Hotels</span>
+                <span className="text-xs font-semibold text-purple-900 ml-auto">{formatCurrency(costSummary.hotels)}</span>
+              </div>
+            )}
+            {costSummary.transport > 0 && (
+              <div className="flex items-center gap-2 bg-green-50 rounded-xl px-3 py-2">
+                <Car className="w-3.5 h-3.5 text-green-600 shrink-0" />
+                <span className="text-xs text-green-800">Transport</span>
+                <span className="text-xs font-semibold text-green-900 ml-auto">{formatCurrency(costSummary.transport)}</span>
+              </div>
+            )}
+            {costSummary.activities > 0 && (
+              <div className="flex items-center gap-2 bg-amber-50 rounded-xl px-3 py-2">
+                <Star className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                <span className="text-xs text-amber-800">Activities</span>
+                <span className="text-xs font-semibold text-amber-900 ml-auto">{formatCurrency(costSummary.activities)}</span>
+              </div>
+            )}
+            {costSummary.dining > 0 && (
+              <div className="flex items-center gap-2 bg-orange-50 rounded-xl px-3 py-2">
+                <span className="text-xs text-orange-800 shrink-0">F</span>
+                <span className="text-xs text-orange-800">Dining</span>
+                <span className="text-xs font-semibold text-orange-900 ml-auto">{formatCurrency(costSummary.dining)}</span>
+              </div>
+            )}
+            {costSummary.other > 0 && (
+              <div className="flex items-center gap-2 bg-gray-50 rounded-xl px-3 py-2">
+                <span className="text-xs text-gray-600 shrink-0">$</span>
+                <span className="text-xs text-gray-800">Other</span>
+                <span className="text-xs font-semibold text-gray-900 ml-auto">{formatCurrency(costSummary.other)}</span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Settlements section */}
       {settlements.length > 0 && (

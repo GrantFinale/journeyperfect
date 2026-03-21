@@ -12,12 +12,13 @@ import { z } from "zod"
 const itemSchema = z.object({
   date: z.string(),
   startTime: z.string().optional(),
-  type: z.enum(["FLIGHT","HOTEL_CHECK_IN","HOTEL_CHECK_OUT","ACTIVITY","MEAL","TRANSIT","BUFFER","CUSTOM"]),
+  type: z.enum(["FLIGHT","HOTEL_CHECK_IN","HOTEL_CHECK_OUT","RENTAL_CAR_PICKUP","RENTAL_CAR_DROPOFF","ACTIVITY","MEAL","TRANSIT","BUFFER","CUSTOM"]),
   title: z.string().min(1),
   notes: z.string().optional(),
   activityId: z.string().optional(),
   flightId: z.string().optional(),
   hotelId: z.string().optional(),
+  rentalCarId: z.string().optional(),
   durationMins: z.number().int().min(5).default(60),
   costEstimate: z.number().min(0).default(0),
   position: z.number().int().default(0),
@@ -32,6 +33,7 @@ export async function getItinerary(tripId: string) {
       activity: true,
       flight: true,
       hotel: true,
+      rentalCar: true,
     },
     orderBy: [{ date: "asc" }, { position: "asc" }, { startTime: "asc" }],
   })

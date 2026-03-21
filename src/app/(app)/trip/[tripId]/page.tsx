@@ -7,6 +7,7 @@ import { getTripCostSummary } from "@/lib/actions/costs"
 import { getItinerary, type ItineraryItemFull } from "@/lib/actions/itinerary"
 import { getSmartSuggestions } from "@/lib/actions/affiliates"
 import { getPlacesApiKey } from "@/lib/actions/user"
+import { getUserTimezone } from "@/lib/actions/preferences"
 import { formatDate, formatTime, tripDuration, formatCurrency } from "@/lib/utils"
 import { AffiliateSmartSuggestions, BookingReturnPrompt } from "@/components/affiliate-links"
 import { ForwardingEmail } from "@/components/forwarding-email"
@@ -40,16 +41,18 @@ export default async function TripOverviewPage({ params }: { params: Promise<{ t
   let smartSuggestions: Awaited<ReturnType<typeof getSmartSuggestions>> = []
 
   let apiKey = ""
+  let userTimezone = "America/New_York"
   const session = await auth()
 
   try {
-    ;[trip, budget, costSummary, allItems, smartSuggestions, apiKey] = await Promise.all([
+    ;[trip, budget, costSummary, allItems, smartSuggestions, apiKey, userTimezone] = await Promise.all([
       getTrip(tripId),
       getBudgetSummary(tripId),
       getTripCostSummary(tripId),
       getItinerary(tripId),
       getSmartSuggestions(tripId),
       getPlacesApiKey(),
+      getUserTimezone(),
     ])
   } catch {
     notFound()
@@ -64,7 +67,9 @@ export default async function TripOverviewPage({ params }: { params: Promise<{ t
 
   const duration = tripDuration(trip.startDate, trip.endDate)
   // Calculate days until trip using date-only comparison (no timezone drift)
-  const todayStr = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" }) // YYYY-MM-DD
+  // Use user's timezone preference (falls back to America/New_York; "AUTO" resolved client-side)
+  const effectiveTimezone = userTimezone === "AUTO" ? "America/New_York" : userTimezone
+  const todayStr = new Date().toLocaleDateString("en-CA", { timeZone: effectiveTimezone }) // YYYY-MM-DD
   const todayMidnight = new Date(todayStr + "T00:00:00")
   const startMidnight = new Date(trip.startDate + "T00:00:00")
   const daysUntil = Math.round(
@@ -242,10 +247,29 @@ export default async function TripOverviewPage({ params }: { params: Promise<{ t
             <Plane className="w-4 h-4 text-indigo-500" />
             <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Flights</span>
           </div>
-          <div className="text-2xl font-bold text-gray-900">{trip.flights.length}</div>
           {trip.flights.length > 0 ? (
-            <div className="text-xs text-gray-500 mt-1 truncate">
-              {trip.flights[0].departureAirport} &rarr; {trip.flights[0].arrivalAirport}
+            <div className="space-y-1.5 mt-1">
+              {trip.flights.map((flight) => (
+                <Link
+                  key={flight.id}
+                  href={`/trip/${tripId}/settings?tab=flights`}
+                  className="block text-xs text-gray-700 hover:text-indigo-600 transition-colors truncate"
+                >
+                  {[flight.airline, flight.flightNumber].filter(Boolean).join(" ") || "Flight"}{" "}
+                  {flight.departureAirport && flight.arrivalAirport
+                    ? `${flight.departureAirport}\u2192${flight.arrivalAirport}`
+                    : ""}{" "}
+                  <span className="text-gray-400">
+                    {formatDate(flight.departureTime, "MMM d")}
+                  </span>
+                </Link>
+              ))}
+              <Link
+                href={`/trip/${tripId}/settings?tab=flights`}
+                className="text-xs text-indigo-500 hover:underline inline-block mt-1"
+              >
+                + Add more
+              </Link>
             </div>
           ) : (
             <Link
@@ -261,9 +285,27 @@ export default async function TripOverviewPage({ params }: { params: Promise<{ t
             <Hotel className="w-4 h-4 text-purple-500" />
             <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Hotels</span>
           </div>
-          <div className="text-2xl font-bold text-gray-900">{trip.hotels.length}</div>
           {trip.hotels.length > 0 ? (
-            <div className="text-xs text-gray-500 mt-1 truncate">{trip.hotels[0].name}</div>
+            <div className="space-y-1.5 mt-1">
+              {trip.hotels.map((hotel) => (
+                <Link
+                  key={hotel.id}
+                  href={`/trip/${tripId}/settings?tab=hotels`}
+                  className="block text-xs text-gray-700 hover:text-indigo-600 transition-colors truncate"
+                >
+                  {hotel.name}{" "}
+                  <span className="text-gray-400">
+                    {formatDate(hotel.checkIn, "MMM d")}&ndash;{formatDate(hotel.checkOut, "MMM d")}
+                  </span>
+                </Link>
+              ))}
+              <Link
+                href={`/trip/${tripId}/settings?tab=hotels`}
+                className="text-xs text-indigo-500 hover:underline inline-block mt-1"
+              >
+                + Add more
+              </Link>
+            </div>
           ) : (
             <Link
               href={`/trip/${tripId}/settings?tab=hotels`}
@@ -278,12 +320,26 @@ export default async function TripOverviewPage({ params }: { params: Promise<{ t
             <Car className="w-4 h-4 text-green-600" />
             <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">Rental Cars</span>
           </div>
-          <div className="text-2xl font-bold text-gray-900">{trip.rentalCars.length}</div>
           {trip.rentalCars.length > 0 ? (
-            <div className="text-xs text-gray-500 mt-1 truncate">
-              {trip.rentalCars.length === 1 && trip.rentalCars[0].company
-                ? trip.rentalCars[0].company
-                : `${trip.rentalCars.length} car${trip.rentalCars.length > 1 ? "s" : ""}`}
+            <div className="space-y-1.5 mt-1">
+              {trip.rentalCars.map((car) => (
+                <Link
+                  key={car.id}
+                  href={`/trip/${tripId}/settings?tab=cars`}
+                  className="block text-xs text-gray-700 hover:text-indigo-600 transition-colors truncate"
+                >
+                  {car.company || car.vehicleType || "Rental Car"}{" "}
+                  <span className="text-gray-400">
+                    {formatDate(car.pickupTime, "MMM d")}&ndash;{formatDate(car.dropoffTime, "MMM d")}
+                  </span>
+                </Link>
+              ))}
+              <Link
+                href={`/trip/${tripId}/settings?tab=cars`}
+                className="text-xs text-indigo-500 hover:underline inline-block mt-1"
+              >
+                + Add more
+              </Link>
             </div>
           ) : (
             <Link
@@ -296,12 +352,15 @@ export default async function TripOverviewPage({ params }: { params: Promise<{ t
         </div>
       </div>
 
-      {/* Trip Cost Summary */}
+      {/* Trip Cost Summary — clickable to budget page */}
       {costSummary.grandTotal > 0 && (
-        <div className="bg-white border border-gray-100 rounded-2xl p-5 mb-6">
-          <div className="flex items-center gap-2 mb-3">
-            <DollarSign className="w-4 h-4 text-green-600" />
-            <h2 className="text-sm font-semibold text-gray-700">Trip Cost Estimate</h2>
+        <Link href={`/trip/${tripId}/budget`} className="block bg-white border border-gray-100 rounded-2xl p-5 mb-6 hover:border-indigo-200 hover:shadow-sm transition-all group">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <DollarSign className="w-4 h-4 text-green-600" />
+              <h2 className="text-sm font-semibold text-gray-700">Trip Cost Estimate</h2>
+            </div>
+            <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-indigo-500 transition-colors" />
           </div>
           <div className="text-2xl font-bold text-gray-900 mb-3">
             {formatCurrency(costSummary.grandTotal)}
@@ -329,7 +388,7 @@ export default async function TripOverviewPage({ params }: { params: Promise<{ t
               </div>
             )}
           </div>
-        </div>
+        </Link>
       )}
 
       {/* Booking return prompt (shown when user returns from affiliate click) */}

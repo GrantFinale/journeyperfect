@@ -36,3 +36,42 @@ export async function updatePreferences(data: {
   revalidatePath("/settings")
   return prefs
 }
+
+export async function getUserTimezone(): Promise<string> {
+  const session = await auth()
+  if (!session?.user?.id) return "America/New_York"
+
+  const user = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { timezone: true },
+  })
+
+  return user?.timezone || "America/New_York"
+}
+
+export async function updateTimezone(timezone: string) {
+  const session = await auth()
+  if (!session?.user?.id) throw new Error("Unauthorized")
+
+  const validTimezones = [
+    "AUTO",
+    "America/New_York",
+    "America/Chicago",
+    "America/Denver",
+    "America/Los_Angeles",
+    "America/Anchorage",
+    "Pacific/Honolulu",
+  ]
+
+  if (!validTimezones.includes(timezone)) {
+    throw new Error("Invalid timezone")
+  }
+
+  await prisma.user.update({
+    where: { id: session.user.id },
+    data: { timezone },
+  })
+
+  revalidatePath("/settings")
+  return { timezone }
+}

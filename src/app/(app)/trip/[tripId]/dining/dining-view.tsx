@@ -434,6 +434,28 @@ export function DiningView({ tripId, destination, destinations, arrivalCities, i
                     </span>
                   ))}
                 </div>
+                <button
+                  onClick={async () => {
+                    // Search Google Places for this restaurant, then show in search results
+                    const query = `${rec.name} ${rec.neighborhood || ""} ${effectiveLocation || destination}`
+                    setCustomQuery(rec.name)
+                    try {
+                      const result = await searchPlaces(query, locationBias || undefined)
+                      if (result.results && result.results.length > 0) {
+                        setResults(result.results)
+                        toast.success(`Found ${result.results.length} result${result.results.length > 1 ? "s" : ""} for "${rec.name}"`)
+                      } else {
+                        toast.info(`No Google Places results for "${rec.name}". Try searching manually.`)
+                      }
+                    } catch {
+                      toast.error("Search failed")
+                    }
+                  }}
+                  className="w-full flex items-center justify-center gap-1.5 py-2 text-xs font-medium rounded-xl bg-violet-600 text-white hover:bg-violet-700 transition-colors"
+                >
+                  <Search className="w-3.5 h-3.5" />
+                  Find &amp; add from Google Places
+                </button>
               </div>
             ))}
           </div>

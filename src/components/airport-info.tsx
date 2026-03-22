@@ -9,7 +9,7 @@ const AIRPORT_MAPS: Record<string, { name: string; url: string }> = {
   ATL: { name: "Hartsfield-Jackson Atlanta", url: "https://www.atl.com/airport-maps/" },
   DFW: { name: "Dallas/Fort Worth Intl", url: "https://www.dfwairport.com/maps/" },
   SFO: { name: "San Francisco Intl", url: "https://www.flysfo.com/passengers/airport-maps" },
-  DEN: { name: "Denver Intl", url: "https://www.flydenver.com/maps" },
+  DEN: { name: "Denver Intl", url: "https://www.flydenver.com/at-dia/maps-directions" },
   IAH: { name: "George Bush Intercontinental", url: "https://www.fly2houston.com/iah/maps" },
   AUS: { name: "Austin-Bergstrom Intl", url: "https://www.austintexas.gov/airport/terminal-map" },
   SAT: { name: "San Antonio Intl", url: "https://www.sanantonio.gov/SAT/Traveler-Information/Airport-Maps" },

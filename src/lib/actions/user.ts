@@ -16,6 +16,9 @@ export async function getUserId(): Promise<string | null> {
 }
 
 export async function getPlacesApiKey(): Promise<string> {
-  // Only return the public key — never expose the server-side GOOGLE_PLACES_KEY
-  return process.env.NEXT_PUBLIC_GOOGLE_PLACES_KEY || ""
+  // NEXT_PUBLIC_ vars are baked at build time — in Docker they're "build-placeholder"
+  // Use the runtime GOOGLE_PLACES_KEY instead, which is available at request time
+  const key = process.env.GOOGLE_PLACES_KEY || process.env.NEXT_PUBLIC_GOOGLE_PLACES_KEY || ""
+  if (key === "build-placeholder") return ""
+  return key
 }

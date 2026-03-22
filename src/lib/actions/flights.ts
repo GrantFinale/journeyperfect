@@ -7,6 +7,7 @@ import { revalidatePath } from "next/cache"
 import { parseFlightTextWithAI } from "@/lib/flight-parser-ai"
 import { z } from "zod"
 import { hasFeature } from "@/lib/features"
+import { formatDateInTimezone } from "@/lib/utils"
 
 const flightSchema = z.object({
   airline: z.string().optional(),
@@ -73,16 +74,22 @@ export async function createFlight(tripId: string, data: z.infer<typeof flightSc
   const arrTime = new Date(parsed.arrivalTime)
   const calcDuration = Math.ceil((arrTime.getTime() - depTime.getTime()) / 60000)
   const durationMins = parsed.durationMins || calcDuration
-  const route = [parsed.departureAirport, parsed.arrivalAirport].filter(Boolean).join(" → ")
+  const route = [parsed.departureAirport, parsed.arrivalAirport].filter(Boolean).join(" \u2192 ")
+  // Use departure timezone for the itinerary date so it shows on the correct day
+  const depTz = parsed.departureTimezone || "UTC"
+  const localDate = formatDateInTimezone(depTime, "yyyy-MM-dd", depTz)
+  const localTime = formatDateInTimezone(depTime, "HH:mm", depTz)
+  const localEndTime = formatDateInTimezone(arrTime, "HH:mm", parsed.arrivalTimezone || "UTC")
   await prisma.itineraryItem.createMany({
     data: [
       {
         tripId,
         flightId: flight.id,
-        date: depTime,
-        startTime: depTime.toTimeString().slice(0, 5),
+        date: new Date(localDate + "T00:00:00Z"),
+        startTime: localTime,
+        endTime: localEndTime,
         type: "FLIGHT",
-        title: `${parsed.airline || ""} ${parsed.flightNumber || "Flight"}${route ? ` · ${route}` : ""}`.trim(),
+        title: `${parsed.airline || ""} ${parsed.flightNumber || "Flight"}${route ? ` \u00B7 ${route}` : ""}`.trim(),
         durationMins,
         position: 0,
         isConfirmed: true,
@@ -129,7 +136,12 @@ export async function createFlightsBatch(tripId: string, flights: z.infer<typeof
       const arrTime = new Date(parsed.arrivalTime)
       const calcDuration = Math.round((arrTime.getTime() - depTime.getTime()) / 60000)
       const durationMins = parsed.durationMins || calcDuration
-      const route = [parsed.departureAirport, parsed.arrivalAirport].filter(Boolean).join(" → ")
+      const route = [parsed.departureAirport, parsed.arrivalAirport].filter(Boolean).join(" \u2192 ")
+      // Use departure timezone for the itinerary date so it shows on the correct day
+      const depTz = parsed.departureTimezone || "UTC"
+      const localDate = formatDateInTimezone(depTime, "yyyy-MM-dd", depTz)
+      const localTime = formatDateInTimezone(depTime, "HH:mm", depTz)
+      const localEndTime = formatDateInTimezone(arrTime, "HH:mm", parsed.arrivalTimezone || "UTC")
       return prisma.flight.create({
         data: {
           tripId,
@@ -139,11 +151,11 @@ export async function createFlightsBatch(tripId: string, flights: z.infer<typeof
           itineraryItems: {
             create: {
               tripId,
-              date: depTime,
-              startTime: depTime.toTimeString().slice(0, 5),
-              endTime: arrTime.toTimeString().slice(0, 5),
+              date: new Date(localDate + "T00:00:00Z"),
+              startTime: localTime,
+              endTime: localEndTime,
               type: "FLIGHT",
-              title: `${parsed.airline || ""} ${parsed.flightNumber || "Flight"}${route ? ` · ${route}` : ""}`.trim(),
+              title: `${parsed.airline || ""} ${parsed.flightNumber || "Flight"}${route ? ` \u00B7 ${route}` : ""}`.trim(),
               durationMins,
               position: 0,
               isConfirmed: true,

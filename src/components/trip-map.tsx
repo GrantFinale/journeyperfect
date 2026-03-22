@@ -217,31 +217,36 @@ export function TripMap({
     async (map: google.maps.Map, visibleMarkers: MapMarker[], daysToRoute: number[]) => {
       setRouteLoading(true)
 
+      try {
       // Clean up previous direction renderers
-      directionsRenderersRef.current.forEach((r) => r.setMap(null))
+      directionsRenderersRef.current.forEach((r) => { try { r.setMap(null) } catch { /* ignore */ } })
       directionsRenderersRef.current = []
 
-      const allDayRoutes: DayRoute[] = []
+      let allDayRoutes: DayRoute[] = []
       const cacheKey = `${selectedDay ?? "all"}`
 
       // Check cache
       const cached = routesCacheRef.current.get(cacheKey)
       if (cached) {
         // Re-render cached directions
-        cached.directions.forEach((result, key) => {
-          const day = parseInt(key)
-          const renderer = new google.maps.DirectionsRenderer({
-            map,
-            directions: result,
-            suppressMarkers: true,
-            polylineOptions: {
-              strokeColor: getDayColor(day),
-              strokeOpacity: 0.8,
-              strokeWeight: 4,
-            },
+        try {
+          cached.directions.forEach((result, key) => {
+            const day = parseInt(key)
+            const renderer = new google.maps.DirectionsRenderer({
+              map,
+              directions: result,
+              suppressMarkers: true,
+              polylineOptions: {
+                strokeColor: getDayColor(day),
+                strokeOpacity: 0.8,
+                strokeWeight: 4,
+              },
+            })
+            directionsRenderersRef.current.push(renderer)
           })
-          directionsRenderersRef.current.push(renderer)
-        })
+        } catch {
+          // DirectionsRenderer may fail if map state changed
+        }
         onRoutesComputed?.(cached.routes)
         setRouteLoading(false)
         return
@@ -257,57 +262,67 @@ export function TripMap({
         const segments: RouteSegment[] = []
 
         if (directionsApiAvailable) {
-          // Try Directions API: send as a single request with waypoints
-          const origin = waypoints[0]
-          const destination = waypoints[waypoints.length - 1]
-          const intermediateWaypoints =
-            waypoints.length > 2
-              ? waypoints.slice(1, -1).map((wp) => ({
-                  location: new google.maps.LatLng(wp.lat, wp.lng),
-                  stopover: true,
-                }))
-              : undefined
+          try {
+            // Try Directions API: send as a single request with waypoints
+            const origin = waypoints[0]
+            const destination = waypoints[waypoints.length - 1]
+            const intermediateWaypoints =
+              waypoints.length > 2
+                ? waypoints.slice(1, -1).map((wp) => ({
+                    location: new google.maps.LatLng(wp.lat, wp.lng),
+                    stopover: true,
+                  }))
+                : undefined
 
-          const result = await getDirections(
-            { lat: origin.lat, lng: origin.lng },
-            { lat: destination.lat, lng: destination.lng },
-            intermediateWaypoints
-          )
+            const result = await getDirections(
+              { lat: origin.lat, lng: origin.lng },
+              { lat: destination.lat, lng: destination.lng },
+              intermediateWaypoints
+            )
 
-          if (result && result.routes[0]?.legs) {
-            // Render the route on the map
-            const renderer = new google.maps.DirectionsRenderer({
-              map,
-              directions: result,
-              suppressMarkers: true,
-              polylineOptions: {
-                strokeColor: getDayColor(day),
-                strokeOpacity: 0.8,
-                strokeWeight: 4,
-              },
-            })
-            directionsRenderersRef.current.push(renderer)
-            directionsCache.set(String(day), result)
-
-            // Extract segments from legs
-            const legs = result.routes[0].legs
-            for (let i = 0; i < legs.length; i++) {
-              const leg = legs[i]
-              segments.push({
-                from: waypoints[i].label,
-                to: waypoints[i + 1].label,
-                duration: formatDuration(leg.duration?.value || 0),
-                distance: leg.distance?.text || "",
-                travelMode: "drive",
+            if (result && result.routes?.[0]?.legs) {
+              // Render the route on the map
+              const renderer = new google.maps.DirectionsRenderer({
+                map,
+                directions: result,
+                suppressMarkers: true,
+                polylineOptions: {
+                  strokeColor: getDayColor(day),
+                  strokeOpacity: 0.8,
+                  strokeWeight: 4,
+                },
               })
+              directionsRenderersRef.current.push(renderer)
+              directionsCache.set(String(day), result)
+
+              // Extract segments from legs
+              const legs = result.routes[0].legs
+              for (let i = 0; i < legs.length; i++) {
+                const leg = legs[i]
+                segments.push({
+                  from: waypoints[i]?.label || "Unknown",
+                  to: waypoints[i + 1]?.label || "Unknown",
+                  duration: formatDuration(leg.duration?.value || 0),
+                  distance: leg.distance?.text || "",
+                  travelMode: "drive",
+                })
+              }
+            } else {
+              // Directions API failed - fall back to straight lines for ALL days
+              directionsApiAvailable = false
+              // Clean up any renderers we already added
+              directionsRenderersRef.current.forEach((r) => r.setMap(null))
+              directionsRenderersRef.current = []
+              // Clear partial results before restarting with fallback
+              allDayRoutes = []
+              break
             }
-          } else {
-            // Directions API failed - fall back to straight lines for ALL days
+          } catch {
+            // Directions API threw — fall back to straight lines
             directionsApiAvailable = false
-            // Clean up any renderers we already added
             directionsRenderersRef.current.forEach((r) => r.setMap(null))
             directionsRenderersRef.current = []
-            // Restart with fallback for all days
+            allDayRoutes = []
             break
           }
         }
@@ -332,34 +347,33 @@ export function TripMap({
           const waypoints = buildDayWaypoints(day, visibleMarkers)
           if (waypoints.length < 2) continue
 
-          const path = waypoints.map((wp) => ({ lat: wp.lat, lng: wp.lng }))
-          const polyline = new google.maps.Polyline({
-            path,
-            geodesic: true,
-            strokeColor: getDayColor(day),
-            strokeOpacity: 0.7,
-            strokeWeight: 3,
-            icons: [
-              {
-                icon: { path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW, scale: 3 },
-                offset: "50%",
-              },
-            ],
-            map,
-          })
-          polylinesRef.current.push(polyline)
+          try {
+            const path = waypoints.map((wp) => ({ lat: wp.lat, lng: wp.lng }))
+            const polyline = new google.maps.Polyline({
+              path,
+              geodesic: true,
+              strokeColor: getDayColor(day),
+              strokeOpacity: 0.7,
+              strokeWeight: 3,
+              icons: [
+                {
+                  icon: { path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW, scale: 3 },
+                  offset: "50%",
+                },
+              ],
+              map,
+            })
+            polylinesRef.current.push(polyline)
+          } catch {
+            // Polyline creation failed, skip this day's route line
+          }
 
           // Estimate straight-line distances for fallback route panel
           const segments: RouteSegment[] = []
           for (let i = 0; i < waypoints.length - 1; i++) {
             const from = waypoints[i]
             const to = waypoints[i + 1]
-            const dist = google.maps.geometry?.spherical?.computeDistanceBetween
-              ? google.maps.geometry.spherical.computeDistanceBetween(
-                  new google.maps.LatLng(from.lat, from.lng),
-                  new google.maps.LatLng(to.lat, to.lng)
-                )
-              : haversineDistance(from.lat, from.lng, to.lat, to.lng)
+            const dist = haversineDistance(from.lat, from.lng, to.lat, to.lng)
             // Rough estimate: 30 km/h average speed for driving
             const durationSec = (dist / 1000 / 30) * 3600
             segments.push({
@@ -384,7 +398,12 @@ export function TripMap({
       // Cache and report
       routesCacheRef.current.set(cacheKey, { routes: allDayRoutes, directions: directionsCache })
       onRoutesComputed?.(allDayRoutes)
-      setRouteLoading(false)
+      } catch (err) {
+        console.error("[TripMap] Route computation error:", err)
+        onRoutesComputed?.([])
+      } finally {
+        setRouteLoading(false)
+      }
     },
     [buildDayWaypoints, getDirections, onRoutesComputed, selectedDay]
   )
@@ -392,129 +411,145 @@ export function TripMap({
   const renderMap = useCallback(() => {
     if (!loaded || !mapRef.current) return
 
-    // Filter markers by selected day
-    const visibleMarkers =
-      selectedDay != null
-        ? markers.filter((m) => m.day === selectedDay || m.type === "hotel")
-        : markers
+    try {
+      // Filter markers by selected day
+      const visibleMarkers =
+        selectedDay != null
+          ? markers.filter((m) => m.day === selectedDay || m.type === "hotel")
+          : markers
 
-    // Clean up previous markers, polylines, and direction renderers
-    markersRef.current.forEach((m) => (m.map = null))
-    markersRef.current = []
-    polylinesRef.current.forEach((p) => p.setMap(null))
-    polylinesRef.current = []
-    directionsRenderersRef.current.forEach((r) => r.setMap(null))
-    directionsRenderersRef.current = []
+      // Clean up previous markers, polylines, and direction renderers
+      markersRef.current.forEach((m) => { try { m.map = null } catch { /* ignore */ } })
+      markersRef.current = []
+      polylinesRef.current.forEach((p) => { try { p.setMap(null) } catch { /* ignore */ } })
+      polylinesRef.current = []
+      directionsRenderersRef.current.forEach((r) => { try { r.setMap(null) } catch { /* ignore */ } })
+      directionsRenderersRef.current = []
 
-    if (visibleMarkers.length === 0) return
+      if (visibleMarkers.length === 0) {
+        onRoutesComputed?.([])
+        return
+      }
 
-    // Create or reuse map
-    if (!mapInstanceRef.current) {
-      mapInstanceRef.current = new google.maps.Map(mapRef.current, {
-        center: center || { lat: visibleMarkers[0].lat, lng: visibleMarkers[0].lng },
-        zoom: 13,
-        mapId: "trip-map",
-        disableDefaultUI: false,
-        zoomControl: true,
-        mapTypeControl: false,
-        streetViewControl: false,
-        fullscreenControl: true,
+      // Create or reuse map
+      if (!mapInstanceRef.current) {
+        mapInstanceRef.current = new google.maps.Map(mapRef.current, {
+          center: center || { lat: visibleMarkers[0].lat, lng: visibleMarkers[0].lng },
+          zoom: 13,
+          mapId: "trip-map",
+          disableDefaultUI: false,
+          zoomControl: true,
+          mapTypeControl: false,
+          streetViewControl: false,
+          fullscreenControl: true,
+        })
+      }
+
+      const map = mapInstanceRef.current
+      const infoWindow = infoWindowRef.current || new google.maps.InfoWindow()
+      infoWindowRef.current = infoWindow
+
+      const bounds = new google.maps.LatLngBounds()
+
+      visibleMarkers.forEach((marker) => {
+        const position = { lat: marker.lat, lng: marker.lng }
+        bounds.extend(position)
+
+        // Create marker element
+        const markerEl = document.createElement("div")
+        markerEl.style.display = "flex"
+        markerEl.style.alignItems = "center"
+        markerEl.style.justifyContent = "center"
+        markerEl.style.fontWeight = "700"
+        markerEl.style.fontSize = "11px"
+        markerEl.style.borderRadius = marker.type === "hotel" ? "6px" : "50%"
+        markerEl.style.border = "2px solid white"
+        markerEl.style.boxShadow = "0 2px 6px rgba(0,0,0,0.3)"
+        markerEl.style.cursor = "pointer"
+
+        if (marker.type === "hotel") {
+          markerEl.style.width = "28px"
+          markerEl.style.height = "28px"
+          markerEl.style.backgroundColor = "#7C3AED"
+          markerEl.style.color = "white"
+          markerEl.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M3 21V7a2 2 0 012-2h14a2 2 0 012 2v14"/><path d="M3 11h18"/><rect x="7" y="11" width="4" height="6"/><rect x="13" y="11" width="4" height="6"/></svg>`
+        } else if (marker.type === "flight") {
+          markerEl.style.width = "28px"
+          markerEl.style.height = "28px"
+          markerEl.style.backgroundColor = "#2563EB"
+          markerEl.style.color = "white"
+          markerEl.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M17.8 19.2L16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg>`
+        } else {
+          const color = marker.day != null ? getDayColor(marker.day) : "#4F46E5"
+          markerEl.style.width = "26px"
+          markerEl.style.height = "26px"
+          markerEl.style.backgroundColor = color
+          markerEl.style.color = "white"
+          const dayActivities = visibleMarkers.filter(
+            (m) => m.day === marker.day && m.type !== "hotel" && m.type !== "flight"
+          )
+          const actIdx = dayActivities.indexOf(marker)
+          markerEl.textContent = String(actIdx + 1)
+        }
+
+        try {
+          const advancedMarker = new google.maps.marker.AdvancedMarkerElement({
+            map,
+            position,
+            content: markerEl,
+            title: marker.label,
+          })
+
+          advancedMarker.addListener("click", () => {
+            const dayLabel = marker.day != null ? `Day ${marker.day + 1}` : ""
+            const typeLabel = marker.type.charAt(0).toUpperCase() + marker.type.slice(1)
+            infoWindow.setContent(
+              `<div style="padding:4px 8px;max-width:200px">` +
+                `<div style="font-weight:600;font-size:13px">${marker.label}</div>` +
+                `<div style="font-size:11px;color:#666;margin-top:2px">${typeLabel}${dayLabel ? ` &middot; ${dayLabel}` : ""}</div>` +
+                `</div>`
+            )
+            infoWindow.open({ anchor: advancedMarker, map })
+          })
+
+          markersRef.current.push(advancedMarker)
+        } catch {
+          // Fallback: AdvancedMarkerElement not available, skip
+        }
       })
-    }
 
-    const map = mapInstanceRef.current
-    const infoWindow = infoWindowRef.current || new google.maps.InfoWindow()
-    infoWindowRef.current = infoWindow
+      // Fit bounds
+      if (visibleMarkers.length > 1) {
+        map.fitBounds(bounds, { top: 40, bottom: 40, left: 40, right: 40 })
+      } else if (visibleMarkers.length === 1) {
+        map.setCenter({ lat: visibleMarkers[0].lat, lng: visibleMarkers[0].lng })
+        map.setZoom(14)
+      }
 
-    const bounds = new google.maps.LatLngBounds()
+      // Compute routes — only for days that have activities (not just hotels/flights)
+      const daysToRoute =
+        selectedDay != null
+          ? [selectedDay]
+          : [...new Set(markers.filter((m) => m.day != null).map((m) => m.day!))].sort(
+              (a, b) => a - b
+            )
 
-    visibleMarkers.forEach((marker) => {
-      const position = { lat: marker.lat, lng: marker.lng }
-      bounds.extend(position)
-
-      // Create marker element
-      const markerEl = document.createElement("div")
-      markerEl.style.display = "flex"
-      markerEl.style.alignItems = "center"
-      markerEl.style.justifyContent = "center"
-      markerEl.style.fontWeight = "700"
-      markerEl.style.fontSize = "11px"
-      markerEl.style.borderRadius = marker.type === "hotel" ? "6px" : "50%"
-      markerEl.style.border = "2px solid white"
-      markerEl.style.boxShadow = "0 2px 6px rgba(0,0,0,0.3)"
-      markerEl.style.cursor = "pointer"
-
-      if (marker.type === "hotel") {
-        markerEl.style.width = "28px"
-        markerEl.style.height = "28px"
-        markerEl.style.backgroundColor = "#7C3AED"
-        markerEl.style.color = "white"
-        markerEl.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M3 21V7a2 2 0 012-2h14a2 2 0 012 2v14"/><path d="M3 11h18"/><rect x="7" y="11" width="4" height="6"/><rect x="13" y="11" width="4" height="6"/></svg>`
-      } else if (marker.type === "flight") {
-        markerEl.style.width = "28px"
-        markerEl.style.height = "28px"
-        markerEl.style.backgroundColor = "#2563EB"
-        markerEl.style.color = "white"
-        markerEl.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M17.8 19.2L16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg>`
-      } else {
-        const color = marker.day != null ? getDayColor(marker.day) : "#4F46E5"
-        markerEl.style.width = "26px"
-        markerEl.style.height = "26px"
-        markerEl.style.backgroundColor = color
-        markerEl.style.color = "white"
-        const dayActivities = visibleMarkers.filter(
-          (m) => m.day === marker.day && m.type !== "hotel" && m.type !== "flight"
+      // Filter to only days that actually have routable activities
+      const routableDays = daysToRoute.filter((day) => {
+        const dayActivities = (selectedDay != null ? visibleMarkers : markers).filter(
+          (m) => m.day === day && m.type !== "hotel" && m.type !== "flight"
         )
-        const actIdx = dayActivities.indexOf(marker)
-        markerEl.textContent = String(actIdx + 1)
+        return dayActivities.length > 0
+      })
+
+      if (routableDays.length > 0) {
+        computeAndRenderRoutes(map, selectedDay != null ? visibleMarkers : markers, routableDays)
+      } else {
+        onRoutesComputed?.([])
       }
-
-      try {
-        const advancedMarker = new google.maps.marker.AdvancedMarkerElement({
-          map,
-          position,
-          content: markerEl,
-          title: marker.label,
-        })
-
-        advancedMarker.addListener("click", () => {
-          const dayLabel = marker.day != null ? `Day ${marker.day + 1}` : ""
-          const typeLabel = marker.type.charAt(0).toUpperCase() + marker.type.slice(1)
-          infoWindow.setContent(
-            `<div style="padding:4px 8px;max-width:200px">` +
-              `<div style="font-weight:600;font-size:13px">${marker.label}</div>` +
-              `<div style="font-size:11px;color:#666;margin-top:2px">${typeLabel}${dayLabel ? ` &middot; ${dayLabel}` : ""}</div>` +
-              `</div>`
-          )
-          infoWindow.open({ anchor: advancedMarker, map })
-        })
-
-        markersRef.current.push(advancedMarker)
-      } catch {
-        // Fallback: AdvancedMarkerElement not available, skip
-      }
-    })
-
-    // Fit bounds
-    if (visibleMarkers.length > 1) {
-      map.fitBounds(bounds, { top: 40, bottom: 40, left: 40, right: 40 })
-    } else if (visibleMarkers.length === 1) {
-      map.setCenter({ lat: visibleMarkers[0].lat, lng: visibleMarkers[0].lng })
-      map.setZoom(14)
-    }
-
-    // Compute routes
-    const daysToRoute =
-      selectedDay != null
-        ? [selectedDay]
-        : [...new Set(markers.filter((m) => m.day != null).map((m) => m.day!))].sort(
-            (a, b) => a - b
-          )
-
-    if (daysToRoute.length > 0) {
-      computeAndRenderRoutes(map, selectedDay != null ? visibleMarkers : markers, daysToRoute)
-    } else {
-      onRoutesComputed?.([])
+    } catch (err) {
+      console.error("[TripMap] renderMap error:", err)
+      setError("Failed to render map. Please try refreshing the page.")
     }
   }, [loaded, markers, center, selectedDay, computeAndRenderRoutes, onRoutesComputed])
 

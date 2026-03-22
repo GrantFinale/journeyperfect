@@ -6,6 +6,7 @@ import { parseRentalCarTextWithAI } from "@/lib/rental-car-parser-ai"
 import { sendInboundConfirmation } from "@/lib/email"
 import { getConfig } from "@/lib/config"
 import { logAIUsage } from "@/lib/ai-usage"
+import { formatDateInTimezone } from "@/lib/utils"
 
 export const dynamic = "force-dynamic"
 
@@ -410,6 +411,17 @@ export async function POST(request: NextRequest) {
         if (flightResult && flightResult.flights.length > 0) {
           for (const f of flightResult.flights) {
             if (f.departureTime && f.arrivalTime) {
+              const depTime = new Date(f.departureTime)
+              const arrTime = new Date(f.arrivalTime)
+              const durationMins = Math.round((arrTime.getTime() - depTime.getTime()) / 60000)
+              const route = [f.departureAirport, f.arrivalAirport].filter(Boolean).join(" \u2192 ")
+              const title = `${f.airline || ""} ${f.flightNumber || "Flight"}${route ? ` \u00B7 ${route}` : ""}`.trim()
+              // Use departure timezone for the itinerary date
+              const depTz = f.departureTimezone || "UTC"
+              const localDate = formatDateInTimezone(depTime, "yyyy-MM-dd", depTz)
+              const localTime = formatDateInTimezone(depTime, "HH:mm", depTz)
+              const localEndTime = formatDateInTimezone(arrTime, "HH:mm", f.arrivalTimezone || "UTC")
+
               await prisma.flight.create({
                 data: {
                   tripId: trip.id,
@@ -417,14 +429,27 @@ export async function POST(request: NextRequest) {
                   flightNumber: f.flightNumber,
                   departureAirport: f.departureAirport,
                   departureCity: f.departureCity,
-                  departureTime: new Date(f.departureTime),
-                  departureTimezone: f.departureTimezone || "UTC",
+                  departureTime: depTime,
+                  departureTimezone: depTz,
                   arrivalAirport: f.arrivalAirport,
                   arrivalCity: f.arrivalCity,
-                  arrivalTime: new Date(f.arrivalTime),
+                  arrivalTime: arrTime,
                   arrivalTimezone: f.arrivalTimezone || "UTC",
                   confirmationNumber: f.confirmationNumber,
                   cabin: f.cabin,
+                  itineraryItems: {
+                    create: {
+                      tripId: trip.id,
+                      date: new Date(localDate + "T00:00:00Z"),
+                      startTime: localTime,
+                      endTime: localEndTime,
+                      type: "FLIGHT",
+                      title,
+                      durationMins,
+                      position: 0,
+                      isConfirmed: true,
+                    },
+                  },
                 },
               })
               results.push(`Flight: ${f.airline || ""} ${f.flightNumber || ""}`.trim())
@@ -575,7 +600,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Process event tickets (create as Activity)
-    if (detectedTypes.includes("event")) {
+    // Skip if this email was also detected as a flight — flight emails often
+    // contain "e-ticket" or "ticket confirmation" which triggers event detection
+    if (detectedTypes.includes("event") && !detectedTypes.includes("flight")) {
       try {
         const events = await parseEventWithAI(fullContent, userId)
         if (events && events.length > 0) {

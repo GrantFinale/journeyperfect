@@ -51,6 +51,7 @@ const TRIP_NAV_ITEMS = (tripId: string): NavItem[] => [
   { href: `/trip/${tripId}`, label: "Overview", icon: Map, exact: true },
   { href: `/trip/${tripId}/itinerary`, label: "Itinerary", icon: CalendarDays },
   { href: `/trip/${tripId}/map`, label: "Map", icon: Navigation },
+  { href: `/trip/${tripId}/explore`, label: "Explore", icon: Compass },
   { href: `/trip/${tripId}/activities`, label: "Activities", icon: Star },
   { href: `/trip/${tripId}/discover`, label: "Discover", icon: Compass },
   { href: `/trip/${tripId}/dining`, label: "Dining", icon: Utensils },
@@ -74,9 +75,9 @@ export function AppShell({ children, user }: AppShellProps) {
     ? [
         { href: `/trip/${currentTripId}`, label: "Overview", icon: Map },
         { href: `/trip/${currentTripId}/itinerary`, label: "Itinerary", icon: CalendarDays },
+        { href: `/trip/${currentTripId}/explore`, label: "Explore", icon: Compass },
         { href: `/trip/${currentTripId}/activities`, label: "Activities", icon: Star },
         { href: `/trip/${currentTripId}/budget`, label: "Budget", icon: DollarSign },
-        { href: `/trip/${currentTripId}/discover`, label: "Discover", icon: Compass },
       ]
     : [
         { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },

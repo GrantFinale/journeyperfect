@@ -29,6 +29,7 @@ import {
   Phone,
   Sparkles,
 } from "lucide-react"
+import Link from "next/link"
 import { ActivityBookingLinks, ViatorDestinationBanner } from "@/components/affiliate-links"
 
 type Activity = {
@@ -159,6 +160,7 @@ function getLocationBias(
 /* ─── Component ────────────────────────────────────────────────────────────── */
 
 export function ActivitiesView({ tripId, initialActivities, destination, destinations, arrivalCities, travelerTags = [], dietaryRestrictions = [] }: Props) {
+  const explorePath = `/trip/${tripId}/explore`
   const locationOptions = buildLocationOptions(destinations, arrivalCities, destination)
 
   const [activities, setActivities] = useState<Activity[]>(initialActivities)
@@ -524,6 +526,19 @@ export function ActivitiesView({ tripId, initialActivities, destination, destina
           <span className="sm:hidden">Add</span>
         </button>
       </div>
+
+      {/* Explore banner */}
+      <Link
+        href={explorePath}
+        className="flex items-center gap-3 px-4 py-3 mb-6 bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-100 rounded-xl hover:border-indigo-200 hover:shadow-sm transition-all group"
+      >
+        <Sparkles className="w-5 h-5 text-indigo-500 shrink-0" />
+        <div className="flex-1 min-w-0">
+          <span className="text-sm font-medium text-indigo-900">Try the new Explore page</span>
+          <span className="text-xs text-indigo-500 ml-2">Browse, wishlist, and plan your itinerary in one place</span>
+        </div>
+        <span className="text-indigo-400 group-hover:text-indigo-600 transition-colors text-xs font-medium shrink-0">Go &rarr;</span>
+      </Link>
 
       {/* Location selector */}
       <div className="mb-4">

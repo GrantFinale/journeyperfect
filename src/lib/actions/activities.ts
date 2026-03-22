@@ -114,6 +114,156 @@ function cacheSet<K, V>(cache: Map<K, V>, key: K, value: V) {
 
 // Google Places search — runs server-side to keep API key secret
 // Uses the Places API (New) endpoint: places:searchText
+export async function getAllActivitiesForTrip(tripId: string) {
+  await requireTripAccess(tripId)
+
+  return prisma.activity.findMany({
+    where: { tripId },
+    orderBy: [{ priority: "asc" }, { createdAt: "desc" }],
+  })
+}
+
+export async function cycleActivityInterest(tripId: string, data: {
+  googlePlaceId: string
+  name: string
+  address?: string
+  lat?: number
+  lng?: number
+  rating?: number
+  imageUrl?: string
+  category?: string
+  durationMins?: number
+  currentPriority?: string | null // current state, null if not saved
+}) {
+  await requireTripAccess(tripId, "EDITOR")
+
+  // Find existing activity by googlePlaceId
+  const existing = await prisma.activity.findFirst({
+    where: { tripId, googlePlaceId: data.googlePlaceId },
+  })
+
+  if (!existing) {
+    // Not saved -> create with WISHLIST/LOW (Looks Cool)
+    const activity = await prisma.activity.create({
+      data: {
+        tripId,
+        name: data.name,
+        address: data.address,
+        lat: data.lat,
+        lng: data.lng,
+        googlePlaceId: data.googlePlaceId,
+        rating: data.rating,
+        imageUrl: data.imageUrl,
+        category: data.category,
+        durationMins: data.durationMins || 120,
+        costPerAdult: 0,
+        costPerChild: 0,
+        priority: "LOW",
+        status: "WISHLIST",
+        indoorOutdoor: "BOTH",
+        reservationNeeded: false,
+        isFixed: false,
+      },
+    })
+    revalidatePath(`/trip/${tripId}/explore`)
+    return { activity, newPriority: "LOW" as const, action: "created" as const }
+  }
+
+  // Cycle: LOW -> HIGH -> MUST_DO -> delete
+  if (existing.priority === "LOW") {
+    const activity = await prisma.activity.update({
+      where: { id: existing.id },
+      data: { priority: "HIGH" },
+    })
+    revalidatePath(`/trip/${tripId}/explore`)
+    return { activity, newPriority: "HIGH" as const, action: "updated" as const }
+  }
+
+  if (existing.priority === "HIGH") {
+    const activity = await prisma.activity.update({
+      where: { id: existing.id },
+      data: { priority: "MUST_DO" },
+    })
+    revalidatePath(`/trip/${tripId}/explore`)
+    return { activity, newPriority: "MUST_DO" as const, action: "updated" as const }
+  }
+
+  if (existing.priority === "MUST_DO") {
+    await prisma.activity.delete({ where: { id: existing.id } })
+    revalidatePath(`/trip/${tripId}/explore`)
+    return { activity: null, newPriority: null, action: "deleted" as const }
+  }
+
+  // MEDIUM priority -> treat as LOW for cycling
+  const activity = await prisma.activity.update({
+    where: { id: existing.id },
+    data: { priority: "HIGH" },
+  })
+  revalidatePath(`/trip/${tripId}/explore`)
+  return { activity, newPriority: "HIGH" as const, action: "updated" as const }
+}
+
+export async function addToItineraryFromExplore(tripId: string, activityId: string, date: string, startTime: string) {
+  await requireTripAccess(tripId, "EDITOR")
+
+  const activity = await prisma.activity.findFirstOrThrow({
+    where: { id: activityId, tripId },
+  })
+
+  // Calculate end time
+  const [h, m] = startTime.split(":").map(Number)
+  const endMins = h * 60 + m + activity.durationMins
+  const endTime = `${String(Math.floor(endMins / 60)).padStart(2, "0")}:${String(endMins % 60).padStart(2, "0")}`
+
+  // Get next position for that day
+  const lastItem = await prisma.itineraryItem.findFirst({
+    where: { tripId, date: new Date(date) },
+    orderBy: { position: "desc" },
+    select: { position: true },
+  })
+
+  const item = await prisma.itineraryItem.create({
+    data: {
+      tripId,
+      activityId: activity.id,
+      date: new Date(date),
+      startTime,
+      endTime,
+      type: activity.category === "restaurant" ? "MEAL" : "ACTIVITY",
+      title: activity.name,
+      durationMins: activity.durationMins,
+      costEstimate: activity.costPerAdult,
+      position: (lastItem?.position ?? -1) + 1,
+    },
+  })
+
+  // Update activity status to SCHEDULED
+  await prisma.activity.update({
+    where: { id: activityId },
+    data: { status: "SCHEDULED" },
+  })
+
+  revalidatePath(`/trip/${tripId}/explore`)
+  revalidatePath(`/trip/${tripId}/itinerary`)
+  return item
+}
+
+export async function removeFromShortlist(tripId: string, activityId: string) {
+  await requireTripAccess(tripId, "EDITOR")
+  await prisma.activity.delete({ where: { id: activityId, tripId } })
+  revalidatePath(`/trip/${tripId}/explore`)
+}
+
+export async function updateActivityPriority(tripId: string, activityId: string, priority: "MUST_DO" | "HIGH" | "LOW") {
+  await requireTripAccess(tripId, "EDITOR")
+  const activity = await prisma.activity.update({
+    where: { id: activityId, tripId },
+    data: { priority },
+  })
+  revalidatePath(`/trip/${tripId}/explore`)
+  return activity
+}
+
 export async function searchPlaces(query: string, locationBias?: string) {
   const session = await auth()
   if (!session?.user?.id) throw new Error("Unauthorized")

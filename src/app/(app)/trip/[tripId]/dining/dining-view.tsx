@@ -271,6 +271,160 @@ export function DiningView({ tripId, destination, destinations, arrivalCities, i
         )}
       </div>
 
+      {/* Location selector */}
+      <div className="mb-4">
+        <label className="block text-xs font-medium text-gray-500 mb-1.5">Search in</label>
+        <div className="relative inline-block w-full sm:w-72">
+          <select
+            value={selectedLocation}
+            onChange={(e) => setSelectedLocation(e.target.value)}
+            className="w-full appearance-none pl-3 pr-8 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          >
+            {locationOptions.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+          <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+        </div>
+        {selectedLocation === "__other__" && (
+          <input
+            type="text"
+            placeholder="Enter a city or area..."
+            value={customLocation}
+            onChange={(e) => setCustomLocation(e.target.value)}
+            className="mt-2 w-full sm:w-72 pl-3 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          />
+        )}
+      </div>
+
+      {/* Search field */}
+      <div className="flex gap-2 mb-4">
+        <div className="flex-1 relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <input
+            type="text"
+            placeholder={`Search "sushi", "Italian", "BBQ"...`}
+            value={customQuery}
+            onChange={(e) => setCustomQuery(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleSearchSubmit()}
+            className="w-full pl-9 pr-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          />
+        </div>
+        <button
+          onClick={handleSearchSubmit}
+          disabled={loading}
+          className="px-5 py-3 bg-gray-900 text-white text-sm font-medium rounded-xl hover:bg-gray-800 disabled:opacity-50 transition-colors"
+        >
+          Search
+        </button>
+      </div>
+
+      {/* Quick filter pills */}
+      <div className="flex gap-2 flex-wrap mb-6">
+        {QUICK_FILTERS.map((filter) => (
+          <button
+            key={filter.query}
+            onClick={() => handleFilterSelect(filter)}
+            className={cn(
+              "px-3 py-1.5 text-xs font-medium rounded-full border transition-colors",
+              activeFilter === filter.query
+                ? "bg-orange-500 text-white border-orange-500"
+                : "bg-white text-gray-600 border-gray-200 hover:border-orange-300 hover:text-orange-600"
+            )}
+          >
+            {filter.label}
+          </button>
+        ))}
+      </div>
+
+      {/* AI Recommendations section */}
+      {aiLoaded && aiRecommendations.length > 0 && (
+        <div className="mb-8">
+          <div className="flex items-center gap-2 mb-3">
+            <Sparkles className="w-4 h-4 text-violet-600" />
+            <h2 className="text-sm font-semibold text-violet-900">
+              Recommended for you
+            </h2>
+            <span className="text-xs text-violet-500">
+              in {effectiveLocation || destination}
+            </span>
+          </div>
+          <div className="grid sm:grid-cols-2 gap-3">
+            {aiRecommendations.map((rec, i) => (
+              <div
+                key={`ai-rec-${i}`}
+                className="bg-gradient-to-br from-violet-50 to-indigo-50 border border-violet-100 rounded-2xl p-4 space-y-2"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <h3 className="font-semibold text-gray-900 text-sm leading-tight">
+                    {rec.name}
+                  </h3>
+                  <span className="text-xs font-semibold text-gray-700 shrink-0">
+                    {rec.priceRange}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 text-xs text-gray-600">
+                  <span>{rec.cuisine}</span>
+                  <span className="text-gray-300">|</span>
+                  <span>{BEST_FOR_LABEL[rec.bestFor] || rec.bestFor}</span>
+                  {rec.neighborhood && (
+                    <>
+                      <span className="text-gray-300">|</span>
+                      <span className="flex items-center gap-0.5">
+                        <MapPin className="w-3 h-3" />
+                        {rec.neighborhood}
+                      </span>
+                    </>
+                  )}
+                </div>
+                <p className="text-xs text-gray-600 italic">{rec.reason}</p>
+                <div className="flex gap-1.5 flex-wrap">
+                  {rec.kidsFriendly && (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium bg-green-100 text-green-700 rounded-full">
+                      <Baby className="w-3 h-3" />
+                      Kids friendly
+                    </span>
+                  )}
+                  {rec.dietaryOptions.map((opt) => (
+                    <span
+                      key={opt}
+                      className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium bg-emerald-50 text-emerald-700 rounded-full"
+                    >
+                      <Leaf className="w-3 h-3" />
+                      {opt}
+                    </span>
+                  ))}
+                </div>
+                <button
+                  onClick={async () => {
+                    // Search Google Places for this restaurant, then show in search results
+                    const query = `${rec.name} ${rec.neighborhood || ""} ${effectiveLocation || destination}`
+                    setCustomQuery(rec.name)
+                    try {
+                      const result = await searchPlaces(query, locationBias || undefined)
+                      if (result.results && result.results.length > 0) {
+                        setResults(result.results)
+                        toast.success(`Found ${result.results.length} result${result.results.length > 1 ? "s" : ""} for "${rec.name}"`)
+                      } else {
+                        toast.info(`No Google Places results for "${rec.name}". Try searching manually.`)
+                      }
+                    } catch {
+                      toast.error("Search failed")
+                    }
+                  }}
+                  className="w-full flex items-center justify-center gap-1.5 py-2 text-xs font-medium rounded-xl bg-violet-600 text-white hover:bg-violet-700 transition-colors"
+                >
+                  <Search className="w-3.5 h-3.5" />
+                  Find &amp; add from Google Places
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Auto-suggested restaurants */}
       {!suggestionsDismissed && (suggestionsLoading || suggestions.length > 0) && (
         <div className="mb-8">
@@ -375,160 +529,6 @@ export function DiningView({ tripId, destination, destinations, arrivalCities, i
           )}
         </div>
       )}
-
-      {/* AI Recommendations section */}
-      {aiLoaded && aiRecommendations.length > 0 && (
-        <div className="mb-8">
-          <div className="flex items-center gap-2 mb-3">
-            <Sparkles className="w-4 h-4 text-violet-600" />
-            <h2 className="text-sm font-semibold text-violet-900">
-              Recommended for you
-            </h2>
-            <span className="text-xs text-violet-500">
-              in {effectiveLocation || destination}
-            </span>
-          </div>
-          <div className="grid sm:grid-cols-2 gap-3">
-            {aiRecommendations.map((rec, i) => (
-              <div
-                key={`ai-rec-${i}`}
-                className="bg-gradient-to-br from-violet-50 to-indigo-50 border border-violet-100 rounded-2xl p-4 space-y-2"
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <h3 className="font-semibold text-gray-900 text-sm leading-tight">
-                    {rec.name}
-                  </h3>
-                  <span className="text-xs font-semibold text-gray-700 shrink-0">
-                    {rec.priceRange}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2 text-xs text-gray-600">
-                  <span>{rec.cuisine}</span>
-                  <span className="text-gray-300">|</span>
-                  <span>{BEST_FOR_LABEL[rec.bestFor] || rec.bestFor}</span>
-                  {rec.neighborhood && (
-                    <>
-                      <span className="text-gray-300">|</span>
-                      <span className="flex items-center gap-0.5">
-                        <MapPin className="w-3 h-3" />
-                        {rec.neighborhood}
-                      </span>
-                    </>
-                  )}
-                </div>
-                <p className="text-xs text-gray-600 italic">{rec.reason}</p>
-                <div className="flex gap-1.5 flex-wrap">
-                  {rec.kidsFriendly && (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium bg-green-100 text-green-700 rounded-full">
-                      <Baby className="w-3 h-3" />
-                      Kids friendly
-                    </span>
-                  )}
-                  {rec.dietaryOptions.map((opt) => (
-                    <span
-                      key={opt}
-                      className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium bg-emerald-50 text-emerald-700 rounded-full"
-                    >
-                      <Leaf className="w-3 h-3" />
-                      {opt}
-                    </span>
-                  ))}
-                </div>
-                <button
-                  onClick={async () => {
-                    // Search Google Places for this restaurant, then show in search results
-                    const query = `${rec.name} ${rec.neighborhood || ""} ${effectiveLocation || destination}`
-                    setCustomQuery(rec.name)
-                    try {
-                      const result = await searchPlaces(query, locationBias || undefined)
-                      if (result.results && result.results.length > 0) {
-                        setResults(result.results)
-                        toast.success(`Found ${result.results.length} result${result.results.length > 1 ? "s" : ""} for "${rec.name}"`)
-                      } else {
-                        toast.info(`No Google Places results for "${rec.name}". Try searching manually.`)
-                      }
-                    } catch {
-                      toast.error("Search failed")
-                    }
-                  }}
-                  className="w-full flex items-center justify-center gap-1.5 py-2 text-xs font-medium rounded-xl bg-violet-600 text-white hover:bg-violet-700 transition-colors"
-                >
-                  <Search className="w-3.5 h-3.5" />
-                  Find &amp; add from Google Places
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Location selector */}
-      <div className="mb-4">
-        <label className="block text-xs font-medium text-gray-500 mb-1.5">Search in</label>
-        <div className="relative inline-block w-full sm:w-72">
-          <select
-            value={selectedLocation}
-            onChange={(e) => setSelectedLocation(e.target.value)}
-            className="w-full appearance-none pl-3 pr-8 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-          >
-            {locationOptions.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-          <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-        </div>
-        {selectedLocation === "__other__" && (
-          <input
-            type="text"
-            placeholder="Enter a city or area..."
-            value={customLocation}
-            onChange={(e) => setCustomLocation(e.target.value)}
-            className="mt-2 w-full sm:w-72 pl-3 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-          />
-        )}
-      </div>
-
-      {/* Search field */}
-      <div className="flex gap-2 mb-4">
-        <div className="flex-1 relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-          <input
-            type="text"
-            placeholder={`Search "sushi", "Italian", "BBQ"...`}
-            value={customQuery}
-            onChange={(e) => setCustomQuery(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleSearchSubmit()}
-            className="w-full pl-9 pr-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-          />
-        </div>
-        <button
-          onClick={handleSearchSubmit}
-          disabled={loading}
-          className="px-5 py-3 bg-gray-900 text-white text-sm font-medium rounded-xl hover:bg-gray-800 disabled:opacity-50 transition-colors"
-        >
-          Search
-        </button>
-      </div>
-
-      {/* Quick filter pills */}
-      <div className="flex gap-2 flex-wrap mb-6">
-        {QUICK_FILTERS.map((filter) => (
-          <button
-            key={filter.query}
-            onClick={() => handleFilterSelect(filter)}
-            className={cn(
-              "px-3 py-1.5 text-xs font-medium rounded-full border transition-colors",
-              activeFilter === filter.query
-                ? "bg-orange-500 text-white border-orange-500"
-                : "bg-white text-gray-600 border-gray-200 hover:border-orange-300 hover:text-orange-600"
-            )}
-          >
-            {filter.label}
-          </button>
-        ))}
-      </div>
 
       {/* Loading */}
       {loading && (

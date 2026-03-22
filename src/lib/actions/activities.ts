@@ -68,11 +68,33 @@ export async function deleteActivity(tripId: string, activityId: string) {
   revalidatePath(`/trip/${tripId}/activities`)
 }
 
+// Categories that should NOT appear in the Activities page
+// (they belong to other sections: dining, flights, lodging, transport)
+const EXCLUDED_ACTIVITY_CATEGORIES = [
+  "restaurant",
+  "flight",
+  "flights",
+  "hotel",
+  "lodging",
+  "rental_car",
+  "car_rental",
+]
+
 export async function getActivities(tripId: string) {
   await requireTripAccess(tripId)
 
   return prisma.activity.findMany({
-    where: { tripId },
+    where: {
+      tripId,
+      OR: [
+        { category: null },
+        {
+          NOT: {
+            category: { in: EXCLUDED_ACTIVITY_CATEGORIES },
+          },
+        },
+      ],
+    },
     orderBy: [{ priority: "asc" }, { createdAt: "desc" }],
   })
 }

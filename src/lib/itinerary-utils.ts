@@ -14,7 +14,10 @@ export type GroupedDay<T extends ItineraryItemForGrouping> = {
 export function groupByDay<T extends ItineraryItemForGrouping>(items: T[]): GroupedDay<T>[] {
   const map = new Map<string, T[]>()
   for (const item of items) {
-    const key = new Date(item.date).toISOString().split("T")[0]
+    // Use UTC date parts directly to avoid timezone conversion issues
+    // Itinerary item dates are stored as midnight UTC for the intended local date
+    const d = new Date(item.date)
+    const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`
     if (!map.has(key)) map.set(key, [])
     map.get(key)!.push(item)
   }

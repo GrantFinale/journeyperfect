@@ -8,6 +8,12 @@ import { optimizeItineraryWithAI } from "@/lib/optimizer-ai"
 import { hasFeature } from "@/lib/features"
 import { getWeatherForecast } from "@/lib/weather"
 import { z } from "zod"
+import { formatDateInTimezone } from "@/lib/utils"
+
+function timeToMins(t: string): number {
+  const [h, m] = t.split(":").map(Number)
+  return h * 60 + m
+}
 
 const itemSchema = z.object({
   date: z.string(),
@@ -113,21 +119,54 @@ export async function runOptimizer(tripId: string) {
   const primaryHotel = trip.hotels[0]
 
   // Build fixed items from flights and hotels
+  // Use timezone-aware date/time to avoid UTC date mismatch
   const fixedItems = [
-    ...trip.flights.map(f => ({
-      id: f.id,
-      type: "FLIGHT" as const,
-      date: f.departureTime,
-      startTime: f.departureTime.toTimeString().slice(0, 5),
-      durationMins: Math.ceil((f.arrivalTime.getTime() - f.departureTime.getTime()) / 60000),
-      title: `${f.airline || ""} ${f.flightNumber || "Flight"}${f.departureAirport || f.arrivalAirport ? ` · ${[f.departureAirport, f.arrivalAirport].filter(Boolean).join(" → ")}` : ""}`.trim(),
-      lat: null,
-      lng: null,
-    })),
-    ...trip.hotels.flatMap(h => [
-      { id: h.id + "-in", type: "HOTEL_CHECK_IN" as const, date: h.checkIn, startTime: h.checkIn.toTimeString().slice(0, 5), durationMins: 30, title: `Check in ${h.name}`, lat: h.lat, lng: h.lng },
-      { id: h.id + "-out", type: "HOTEL_CHECK_OUT" as const, date: h.checkOut, startTime: h.checkOut.toTimeString().slice(0, 5), durationMins: 30, title: `Check out ${h.name}`, lat: h.lat, lng: h.lng },
-    ]),
+    ...trip.flights.map(f => {
+      const depTz = f.departureTimezone || "UTC"
+      const arrTz = f.arrivalTimezone || "UTC"
+      const localDepDate = formatDateInTimezone(f.departureTime, "yyyy-MM-dd", depTz)
+      const localDepTime = formatDateInTimezone(f.departureTime, "HH:mm", depTz)
+      const localArrDate = formatDateInTimezone(f.arrivalTime, "yyyy-MM-dd", arrTz)
+      const localArrTime = formatDateInTimezone(f.arrivalTime, "HH:mm", arrTz)
+      const durationMins = Math.ceil((f.arrivalTime.getTime() - f.departureTime.getTime()) / 60000)
+      const title = `${f.airline || ""} ${f.flightNumber || "Flight"}${f.departureAirport || f.arrivalAirport ? ` · ${[f.departureAirport, f.arrivalAirport].filter(Boolean).join(" → ")}` : ""}`.trim()
+
+      // Create two fixed blocks: departure and arrival (may be different days)
+      const items: { id: string; type: "FLIGHT" | "HOTEL_CHECK_IN" | "HOTEL_CHECK_OUT"; date: Date; startTime: string; durationMins: number; title: string; lat: number | null; lng: number | null }[] = [
+        {
+          id: f.id + "-dep",
+          type: "FLIGHT" as const,
+          date: new Date(localDepDate + "T00:00:00"),
+          startTime: localDepTime,
+          durationMins: localDepDate === localArrDate ? durationMins : (24 * 60 - timeToMins(localDepTime)),
+          title: `Depart ${title}`,
+          lat: null,
+          lng: null,
+        },
+      ]
+      if (localDepDate !== localArrDate) {
+        items.push({
+          id: f.id + "-arr",
+          type: "FLIGHT" as const,
+          date: new Date(localArrDate + "T00:00:00"),
+          startTime: "00:00",
+          durationMins: timeToMins(localArrTime),
+          title: `Arrive ${title}`,
+          lat: null,
+          lng: null,
+        })
+      }
+      return items
+    }).flat(),
+    ...trip.hotels.flatMap(h => {
+      // Hotels: check-in typically at 3 PM, check-out at 11 AM
+      const checkInDate = h.checkIn.toISOString().split("T")[0]
+      const checkOutDate = h.checkOut.toISOString().split("T")[0]
+      return [
+        { id: h.id + "-in", type: "HOTEL_CHECK_IN" as const, date: new Date(checkInDate + "T00:00:00"), startTime: "15:00", durationMins: 30, title: `Check in ${h.name}`, lat: h.lat, lng: h.lng },
+        { id: h.id + "-out", type: "HOTEL_CHECK_OUT" as const, date: new Date(checkOutDate + "T00:00:00"), startTime: "11:00", durationMins: 30, title: `Check out ${h.name}`, lat: h.lat, lng: h.lng },
+      ]
+    }),
   ]
 
   const adultCount = trip.travelers.filter(t => !t.traveler.tags.includes("child")).length || 1

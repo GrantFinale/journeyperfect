@@ -10,6 +10,33 @@ export function formatDate(date: Date | string, fmt = "MMM d, yyyy") {
   return format(new Date(date), fmt)
 }
 
+/**
+ * Format a UTC date in a specific timezone.
+ * Use this for flights, hotels, etc. that have a stored timezone.
+ */
+export function formatDateInTimezone(date: Date | string, fmt: string, timezone?: string) {
+  if (!timezone || timezone === "UTC") return format(new Date(date), fmt)
+  // Convert to local time string in the target timezone, then parse back
+  const d = new Date(date)
+  const options: Intl.DateTimeFormatOptions = {
+    timeZone: timezone,
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
+    hour12: false,
+  }
+  const parts = new Intl.DateTimeFormat("en-US", options).formatToParts(d)
+  const get = (type: string) => parts.find(p => p.type === type)?.value || "0"
+  const localDate = new Date(
+    parseInt(get("year")),
+    parseInt(get("month")) - 1,
+    parseInt(get("day")),
+    parseInt(get("hour")),
+    parseInt(get("minute")),
+    parseInt(get("second"))
+  )
+  return format(localDate, fmt)
+}
+
 export function formatTime(time: string) {
   const [h, m] = time.split(":").map(Number)
   const period = h >= 12 ? "PM" : "AM"

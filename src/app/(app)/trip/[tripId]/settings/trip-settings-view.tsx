@@ -14,7 +14,7 @@ import { inviteCollaborator, removeCollaborator, updateCollaboratorRole } from "
 import { getSingleFlightStatus } from "@/lib/actions/flight-alerts"
 import type { FlightStatus } from "@/lib/actions/flight-alerts"
 import { hasFeature } from "@/lib/features"
-import { formatDate } from "@/lib/utils"
+import { formatDate, formatDateInTimezone } from "@/lib/utils"
 import { cn } from "@/lib/utils"
 import {
   Plane,
@@ -363,8 +363,8 @@ function FlightStatusPanel({
             )}
           </div>
           <div className="text-xs text-gray-500 truncate">
-            {formatDate(flight.departureTime, "MMM d, h:mm a")} &rarr;{" "}
-            {formatDate(flight.arrivalTime, "MMM d, h:mm a")}
+            {formatDateInTimezone(flight.departureTime, "MMM d, h:mm a", flight.departureTimezone || undefined)} &rarr;{" "}
+            {formatDateInTimezone(flight.arrivalTime, "MMM d, h:mm a", flight.arrivalTimezone || undefined)}
             {flight.confirmationNumber && ` · ${flight.confirmationNumber}`}
             {flight.cabin && ` · ${flight.cabin}`}
           </div>
@@ -424,7 +424,7 @@ function FlightStatusPanel({
                     <div className="text-xs text-gray-600">Gate {status.departureGate}</div>
                   )}
                   <div className="text-xs text-gray-500">
-                    Scheduled: {formatDate(flight.departureTime, "h:mm a")}
+                    Scheduled: {formatDateInTimezone(flight.departureTime, "h:mm a", flight.departureTimezone || undefined)}
                   </div>
                   {status.actualDeparture && (
                     <div className={cn("text-xs font-medium", status.delayMinutes && status.delayMinutes > 0 ? "text-amber-600" : "text-green-600")}>

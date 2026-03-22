@@ -8,7 +8,7 @@ import { getItinerary, type ItineraryItemFull } from "@/lib/actions/itinerary"
 import { getSmartSuggestions } from "@/lib/actions/affiliates"
 import { getPlacesApiKey } from "@/lib/actions/user"
 import { getUserTimezone } from "@/lib/actions/preferences"
-import { formatDate, formatTime, tripDuration, formatCurrency } from "@/lib/utils"
+import { formatDate, formatDateInTimezone, formatTime, tripDuration, formatCurrency } from "@/lib/utils"
 import { AffiliateSmartSuggestions, BookingReturnPrompt } from "@/components/affiliate-links"
 import { ForwardingEmail } from "@/components/forwarding-email"
 import { CalendarExportButton } from "@/components/calendar-export"
@@ -257,7 +257,7 @@ export default async function TripOverviewPage({ params }: { params: Promise<{ t
                     ? `${flight.departureAirport}\u2192${flight.arrivalAirport}`
                     : ""}{" "}
                   <span className="text-gray-400">
-                    {formatDate(flight.departureTime, "MMM d")}
+                    {formatDateInTimezone(flight.departureTime, "MMM d", flight.departureTimezone || undefined)}
                   </span>
                 </div>
               ))}

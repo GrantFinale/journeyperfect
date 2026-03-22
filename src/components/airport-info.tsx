@@ -71,7 +71,7 @@ interface AirportInfoProps {
   className?: string
 }
 
-export function AirportMapLink({ airportCode, className }: { airportCode: string; className?: string }) {
+export function AirportMapLink({ airportCode, label, className }: { airportCode: string; label?: string; className?: string }) {
   const code = airportCode?.toUpperCase().trim()
   const airport = AIRPORT_MAPS[code]
   if (!airport) return null
@@ -84,7 +84,7 @@ export function AirportMapLink({ airportCode, className }: { airportCode: string
       className={className || "inline-flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-700 font-medium"}
     >
       <MapPin className="w-3 h-3" />
-      Airport map
+      {label || `${code} map`}
       <ExternalLink className="w-2.5 h-2.5" />
     </a>
   )

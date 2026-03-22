@@ -409,10 +409,10 @@ function SortableItineraryItem({
               {item.type === "FLIGHT" && item.flight && (
                 <div className="flex items-center gap-3 mt-1">
                   {item.flight.departureAirport && (
-                    <AirportMapLink airportCode={item.flight.departureAirport} className="inline-flex items-center gap-1 text-[11px] text-indigo-600 hover:text-indigo-700 font-medium" />
+                    <AirportMapLink airportCode={item.flight.departureAirport} label={`${item.flight.departureAirport} map`} className="inline-flex items-center gap-1 text-[11px] text-indigo-600 hover:text-indigo-700 font-medium" />
                   )}
                   {item.flight.arrivalAirport && (
-                    <AirportMapLink airportCode={item.flight.arrivalAirport} className="inline-flex items-center gap-1 text-[11px] text-indigo-600 hover:text-indigo-700 font-medium" />
+                    <AirportMapLink airportCode={item.flight.arrivalAirport} label={`${item.flight.arrivalAirport} map`} className="inline-flex items-center gap-1 text-[11px] text-indigo-600 hover:text-indigo-700 font-medium" />
                   )}
                 </div>
               )}

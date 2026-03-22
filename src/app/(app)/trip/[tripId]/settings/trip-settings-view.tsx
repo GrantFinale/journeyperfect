@@ -74,11 +74,14 @@ type Trip = {
     departureAirport: string | null
     departureCity: string | null
     departureTime: Date
+    departureTimezone: string | null
     arrivalAirport: string | null
     arrivalCity: string | null
     arrivalTime: Date
+    arrivalTimezone: string | null
     confirmationNumber: string | null
     cabin: string | null
+    price: number | null
   }[]
   hotels: {
     id: string

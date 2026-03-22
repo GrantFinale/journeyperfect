@@ -19,56 +19,7 @@ interface PlacesAutocompleteProps {
   apiKey?: string
 }
 
-let googleMapsLoadPromise: Promise<void> | null = null
-let googleMapsLoaded = false
-let googleMapsLoadFailed = false
-
-function loadGoogleMaps(apiKey: string): Promise<void> {
-  if (googleMapsLoaded && window.google?.maps?.places) return Promise.resolve()
-  if (googleMapsLoadFailed) return Promise.reject(new Error("Previously failed"))
-  if (googleMapsLoadPromise) return googleMapsLoadPromise
-
-  if (!apiKey || apiKey === "build-placeholder") {
-    googleMapsLoadFailed = true
-    return Promise.reject(new Error("No API key"))
-  }
-
-  googleMapsLoadPromise = new Promise((resolve, reject) => {
-    // Check if script already exists (maybe loaded by another component)
-    if (document.querySelector('script[src*="maps.googleapis.com"]')) {
-      let elapsed = 0
-      const check = setInterval(() => {
-        elapsed += 100
-        if (window.google?.maps?.places) {
-          clearInterval(check)
-          googleMapsLoaded = true
-          resolve()
-        } else if (elapsed > 10000) {
-          clearInterval(check)
-          googleMapsLoadFailed = true
-          reject(new Error("Timeout"))
-        }
-      }, 100)
-      return
-    }
-
-    window.__googleMapsCallback = () => {
-      googleMapsLoaded = true
-      resolve()
-    }
-    const script = document.createElement("script")
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&callback=__googleMapsCallback`
-    script.async = true
-    script.onerror = () => {
-      googleMapsLoadFailed = true
-      googleMapsLoadPromise = null
-      reject(new Error("Script load failed"))
-    }
-    document.head.appendChild(script)
-  })
-
-  return googleMapsLoadPromise
-}
+import { loadGoogleMaps } from "@/lib/google-maps-loader"
 
 export default function PlacesAutocomplete({
   value,
@@ -96,10 +47,8 @@ export default function PlacesAutocomplete({
     if (!resolvedApiKey || resolvedApiKey === "build-placeholder") return
 
     // If already failed globally, don't retry
-    if (googleMapsLoadFailed) {
-      setFailed(true)
-      return
-    }
+    // Check if previous load attempt failed
+    if (failed) return
 
     loadGoogleMaps(resolvedApiKey)
       .then(() => {

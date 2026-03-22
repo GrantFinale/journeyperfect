@@ -102,7 +102,7 @@ export function TripMap({
   const [routeLoading, setRouteLoading] = useState(false)
   const routesCacheRef = useRef<Map<string, { routes: DayRoute[]; directions: Map<string, google.maps.DirectionsResult> }>>(new Map())
 
-  // Load Google Maps script
+  // Load Google Maps script via shared loader
   useEffect(() => {
     if (!apiKey) {
       setError("Google Maps API key not configured")
@@ -115,27 +115,11 @@ export function TripMap({
       )
     }
 
-    if (window.google?.maps?.Map) {
-      setLoaded(true)
-      return
-    }
-
-    const existing = document.querySelector('script[src*="maps.googleapis.com"]')
-    if (existing) {
-      existing.addEventListener("load", () => setLoaded(true))
-      return
-    }
-
-    const script = document.createElement("script")
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=marker&loading=async`
-    script.async = true
-    script.defer = true
-    script.onload = () => setLoaded(true)
-    script.onerror = () =>
-      setError(
-        "Failed to load Google Maps. The Maps JavaScript API may not be enabled or billing may not be set up on the Google Cloud project."
-      )
-    document.head.appendChild(script)
+    import("@/lib/google-maps-loader").then(({ loadGoogleMaps }) => {
+      loadGoogleMaps(apiKey)
+        .then(() => setLoaded(true))
+        .catch((err) => setError(err.message || "Failed to load Google Maps"))
+    })
   }, [apiKey])
 
   // Find the hotel for a given day index

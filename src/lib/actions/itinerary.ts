@@ -169,6 +169,69 @@ export async function runOptimizer(tripId: string) {
     }),
   ]
 
+  // Determine arrival date/time at destination — block all time before this
+  // The first inbound flight's arrival is when you're at the destination
+  const sortedFlights = [...trip.flights].sort((a, b) => a.departureTime.getTime() - b.departureTime.getTime())
+  let arrivalAtDestination: { date: string; time: string } | null = null
+  let departureFromDestination: { date: string; time: string } | null = null
+
+  if (sortedFlights.length > 0) {
+    // First flight = outbound, last flight = return
+    const firstFlight = sortedFlights[0]
+    const lastFlight = sortedFlights[sortedFlights.length - 1]
+    const arrTz = firstFlight.arrivalTimezone || "UTC"
+    arrivalAtDestination = {
+      date: formatDateInTimezone(firstFlight.arrivalTime, "yyyy-MM-dd", arrTz),
+      time: formatDateInTimezone(firstFlight.arrivalTime, "HH:mm", arrTz),
+    }
+    // If there's a connecting flight on the same day, use the last arrival
+    for (const f of sortedFlights) {
+      const depDate = formatDateInTimezone(f.departureTime, "yyyy-MM-dd", f.departureTimezone || "UTC")
+      if (depDate === formatDateInTimezone(firstFlight.departureTime, "yyyy-MM-dd", firstFlight.departureTimezone || "UTC")) {
+        // Same day as first departure = still outbound
+        const aTz = f.arrivalTimezone || "UTC"
+        arrivalAtDestination = {
+          date: formatDateInTimezone(f.arrivalTime, "yyyy-MM-dd", aTz),
+          time: formatDateInTimezone(f.arrivalTime, "HH:mm", aTz),
+        }
+      }
+    }
+    // Return flight blocks the departure day
+    const depTz = lastFlight.departureTimezone || "UTC"
+    departureFromDestination = {
+      date: formatDateInTimezone(lastFlight.departureTime, "yyyy-MM-dd", depTz),
+      time: formatDateInTimezone(lastFlight.departureTime, "HH:mm", depTz),
+    }
+  }
+
+  // Add virtual "travel" blocks to prevent scheduling activities before arrival or after departure
+  if (arrivalAtDestination) {
+    // Block from midnight to arrival time on arrival day
+    fixedItems.push({
+      id: "arrival-block",
+      type: "FLIGHT" as const,
+      date: new Date(arrivalAtDestination.date + "T00:00:00"),
+      startTime: "00:00",
+      durationMins: timeToMins(arrivalAtDestination.time) + 60, // +1hr for getting out of airport
+      title: "Arriving at destination",
+      lat: null, lng: null,
+    })
+  }
+  if (departureFromDestination) {
+    // Block from 2hrs before departure to midnight on departure day
+    const depMins = timeToMins(departureFromDestination.time)
+    const blockStart = Math.max(0, depMins - 120) // 2hrs before flight
+    fixedItems.push({
+      id: "departure-block",
+      type: "FLIGHT" as const,
+      date: new Date(departureFromDestination.date + "T00:00:00"),
+      startTime: `${String(Math.floor(blockStart / 60)).padStart(2, "0")}:${String(blockStart % 60).padStart(2, "0")}`,
+      durationMins: 24 * 60 - blockStart,
+      title: "Departing from destination",
+      lat: null, lng: null,
+    })
+  }
+
   const adultCount = trip.travelers.filter(t => !t.traveler.tags.includes("child")).length || 1
   const childCount = trip.travelers.filter(t => t.traveler.tags.includes("child")).length
 

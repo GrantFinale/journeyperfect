@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef, useMemo } from "react"
+import { useState, useEffect, useRef, useMemo } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { runOptimizer, runAIOptimizer, deleteItineraryItem, createItineraryItem, reorderItineraryItems, updateItineraryItemNotes } from "@/lib/actions/itinerary"
@@ -470,6 +470,8 @@ interface Props {
 export function ItineraryView({ tripId, initialItems, tripStartDate, tripEndDate, weather, isPaid }: Props) {
   const router = useRouter()
   const [items, setItems] = useState<ItineraryItem[]>(initialItems)
+  // Sync items when server data changes (e.g., after optimize + router.refresh)
+  useEffect(() => { setItems(initialItems) }, [initialItems])
   const [optimizing, setOptimizing] = useState(false)
   const [collapsedDays, setCollapsedDays] = useState<Set<string>>(new Set())
   const [addingToDay, setAddingToDay] = useState<string | null>(null)

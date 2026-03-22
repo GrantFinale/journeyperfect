@@ -91,6 +91,8 @@ model TravelerProfile {
   userId      String
   name        String
   birthDate   DateTime?
+  sex         String?  // "male", "female", "other"
+  photoUrl    String?  @db.Text
   tags        String[] // ["child", "adult", "senior", "stroller-needed", "thrill-seeker"]
   isDefault   Boolean  @default(false)
   preferences Json?    // TravelerPreferences object stored as JSON

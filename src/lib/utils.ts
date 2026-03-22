@@ -96,6 +96,41 @@ export function getAgeGroupLabel(birthDate: Date | string): string {
   return label
 }
 
+export function getDefaultAvatar(birthDate?: Date | string | null, sex?: string | null): string {
+  let ageGroup = "adult"
+  if (birthDate) {
+    const age = differenceInYears(new Date(), new Date(birthDate))
+    if (age < 3) ageGroup = "infant"
+    else if (age <= 12) ageGroup = "child"
+    else if (age <= 17) ageGroup = "teen"
+    else if (age <= 64) ageGroup = "adult"
+    else ageGroup = "senior"
+  }
+
+  const s = sex?.toLowerCase()
+
+  if (ageGroup === "infant") return "\u{1F476}" // baby
+  if (ageGroup === "child") {
+    if (s === "male") return "\u{1F466}" // boy
+    if (s === "female") return "\u{1F467}" // girl
+    return "\u{1F9D2}" // child neutral
+  }
+  if (ageGroup === "teen") {
+    if (s === "male") return "\u{1F9D2}" // child (teen boy)
+    if (s === "female") return "\u{1F467}" // girl
+    return "\u{1F9D2}" // child neutral
+  }
+  if (ageGroup === "senior") {
+    if (s === "male") return "\u{1F474}" // old man
+    if (s === "female") return "\u{1F475}" // old woman
+    return "\u{1F9D3}" // older person neutral
+  }
+  // adult
+  if (s === "male") return "\u{1F468}" // man
+  if (s === "female") return "\u{1F469}" // woman
+  return "\u{1F9D1}" // person neutral
+}
+
 const AGE_GROUP_TAGS = ["adult", "child", "infant", "senior", "teen", "toddler"]
 
 export function isAgeGroupTag(tag: string): boolean {

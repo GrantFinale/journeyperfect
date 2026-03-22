@@ -14,7 +14,16 @@ export default async function SettingsPage() {
   return (
     <GlobalSettingsView
       user={session?.user ? { ...session.user, id: session.user.id } : null}
-      initialProfiles={profiles}
+      initialProfiles={profiles.map((p) => ({
+        id: p.id,
+        name: p.name,
+        birthDate: p.birthDate,
+        sex: p.sex,
+        photoUrl: p.photoUrl,
+        tags: p.tags,
+        isDefault: p.isDefault,
+        preferences: (p.preferences as Record<string, unknown>) ?? null,
+      }))}
       initialPrefs={prefs}
       initialTimezone={timezone}
     />

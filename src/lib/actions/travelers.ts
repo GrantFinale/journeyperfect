@@ -10,6 +10,8 @@ import type { Prisma } from "@prisma/client"
 const travelerSchema = z.object({
   name: z.string().min(1).max(100),
   birthDate: z.string().optional(),
+  sex: z.enum(["male", "female", "other"]).optional(),
+  photoUrl: z.string().optional(),
   tags: z.array(z.string()).default([]),
   isDefault: z.boolean().default(false),
 })
@@ -40,7 +42,11 @@ export async function createTravelerProfile(data: z.infer<typeof travelerSchema>
   const profile = await prisma.travelerProfile.create({
     data: {
       userId: session.user.id,
-      ...parsed,
+      name: parsed.name,
+      tags: parsed.tags,
+      isDefault: parsed.isDefault,
+      sex: parsed.sex ?? null,
+      photoUrl: parsed.photoUrl ?? null,
       ...(parsed.birthDate && { birthDate: new Date(parsed.birthDate) }),
     },
   })
@@ -64,12 +70,17 @@ export async function updateTravelerProfile(profileId: string, data: Partial<z.i
     })
   }
 
+  const updateData: Record<string, unknown> = {}
+  if (data.name !== undefined) updateData.name = data.name
+  if (data.tags !== undefined) updateData.tags = data.tags
+  if (data.isDefault !== undefined) updateData.isDefault = data.isDefault
+  if (data.birthDate !== undefined) updateData.birthDate = data.birthDate ? new Date(data.birthDate) : null
+  if (data.sex !== undefined) updateData.sex = data.sex ?? null
+  if (data.photoUrl !== undefined) updateData.photoUrl = data.photoUrl ?? null
+
   const updated = await prisma.travelerProfile.update({
     where: { id: profileId },
-    data: {
-      ...data,
-      ...(data.birthDate && { birthDate: new Date(data.birthDate) }),
-    },
+    data: updateData,
   })
 
   revalidatePath("/settings")

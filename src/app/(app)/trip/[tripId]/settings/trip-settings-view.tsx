@@ -7,8 +7,8 @@ import { createFlight, createFlightsBatch, deleteFlight, parseAndPreviewFlight }
 import { createHotel, createHotelsBatch, deleteHotel, parseAndPreviewHotel } from "@/lib/actions/hotels"
 import { createRentalCar, deleteRentalCar, parseAndPreviewRentalCar } from "@/lib/actions/rental-cars"
 import { getCompanyInfo, RENTAL_CAR_COMPANIES } from "@/lib/rental-car-logos"
-import { addTravelerToTrip, removeTravelerFromTrip, updateTravelerProfile, deleteTravelerProfile } from "@/lib/actions/travelers"
-import { getAgeGroupLabel, getCustomTags } from "@/lib/utils"
+import { addTravelerToTrip, removeTravelerFromTrip } from "@/lib/actions/travelers"
+import { getAgeGroupLabel, getCustomTags, getDefaultAvatar } from "@/lib/utils"
 import { updateTrip, deleteTrip, shareTrip, unshareTrip, addDestination, removeDestination } from "@/lib/actions/trips"
 import { inviteCollaborator, removeCollaborator, updateCollaboratorRole } from "@/lib/actions/collaborators"
 import { getSingleFlightStatus } from "@/lib/actions/flight-alerts"
@@ -103,11 +103,13 @@ type Trip = {
   }[]
   travelers: {
     id: string
-    traveler: { id: string; name: string; tags: string[] }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    traveler: { id: string; name: string; tags: string[]; sex?: string | null; photoUrl?: string | null; birthDate?: Date | string | null; preferences?: any }
   }[]
 }
 
-type TravelerProfile = { id: string; name: string; tags: string[]; isDefault: boolean; birthDate?: Date | string | null }
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type TravelerProfile = { id: string; name: string; tags: string[]; isDefault: boolean; birthDate?: Date | string | null; sex?: string | null; photoUrl?: string | null; preferences?: any }
 
 type Collaborator = {
   id: string
@@ -141,142 +143,39 @@ function tabFromParam(param?: string): Tab {
   return match || "Flights"
 }
 
-function TravelerCard({ profile, added, tripId, onToggle }: { profile: TravelerProfile; added: boolean; tripId: string; onToggle: () => void }) {
-  const [editing, setEditing] = useState(false)
-  const [name, setName] = useState(profile.name)
-  const [birthDate, setBirthDate] = useState(profile.birthDate ? new Date(profile.birthDate).toISOString().split("T")[0] : "")
-  const [tags, setTags] = useState(profile.tags.join(", "))
-  const [saving, setSaving] = useState(false)
-
-  const CUSTOM_TAG_OPTIONS = ["stroller-needed", "thrill-seeker", "picky-eater", "motion-sickness", "accessibility-needs"]
-
-  async function handleSave() {
-    setSaving(true)
-    try {
-      await updateTravelerProfile(profile.id, {
-        name: name.trim(),
-        birthDate: birthDate || undefined,
-        tags: tags.split(",").map(t => t.trim()).filter(Boolean),
-      })
-      setEditing(false)
-      toast.success("Traveler updated")
-    } catch {
-      toast.error("Failed to update traveler")
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  async function handleDelete() {
-    if (!confirm(`Delete traveler profile "${profile.name}"? This cannot be undone.`)) return
-    try {
-      await deleteTravelerProfile(profile.id)
-      toast.success("Traveler deleted")
-    } catch {
-      toast.error("Failed to delete traveler")
-    }
-  }
-
-  if (editing) {
+function TripTravelerAvatar({ profile, size = "sm" }: { profile: { name: string; photoUrl?: string | null; birthDate?: Date | string | null; sex?: string | null }; size?: "sm" | "md" }) {
+  const sizeClasses = size === "sm" ? "w-9 h-9 text-lg" : "w-10 h-10 text-xl"
+  if (profile.photoUrl) {
     return (
-      <div className="bg-white border border-indigo-200 rounded-2xl p-4 space-y-3">
-        <input
-          type="text"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="Name"
-          className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-        />
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">Birth date</label>
-            <input
-              type="date"
-              value={birthDate}
-              onChange={(e) => setBirthDate(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-          </div>
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">Custom tags</label>
-            <div className="flex flex-wrap gap-1">
-              {CUSTOM_TAG_OPTIONS.map(tag => (
-                <button
-                  key={tag}
-                  type="button"
-                  onClick={() => {
-                    const current = tags.split(",").map(t => t.trim()).filter(Boolean)
-                    if (current.includes(tag)) {
-                      setTags(current.filter(t => t !== tag).join(", "))
-                    } else {
-                      setTags([...current, tag].join(", "))
-                    }
-                  }}
-                  className={cn(
-                    "px-2 py-1 text-xs rounded-lg border transition-colors",
-                    tags.split(",").map(t => t.trim()).includes(tag)
-                      ? "bg-indigo-50 border-indigo-200 text-indigo-700"
-                      : "bg-white border-gray-200 text-gray-500"
-                  )}
-                >
-                  {tag}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-        <div className="flex items-center justify-between pt-1">
-          <button onClick={handleDelete} className="text-xs text-red-500 hover:text-red-700">Delete profile</button>
-          <div className="flex gap-2">
-            <button onClick={() => setEditing(false)} className="px-3 py-1.5 text-xs text-gray-600 hover:text-gray-800">Cancel</button>
-            <button onClick={handleSave} disabled={saving || !name.trim()} className="px-3 py-1.5 text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg disabled:opacity-50">
-              {saving ? "Saving..." : "Save"}
-            </button>
-          </div>
-        </div>
-      </div>
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={profile.photoUrl}
+        alt={profile.name}
+        className={cn(sizeClasses, "rounded-full object-cover")}
+      />
     )
   }
-
+  const emoji = getDefaultAvatar(profile.birthDate, profile.sex)
   return (
-    <div className="bg-white border border-gray-100 rounded-2xl p-4 flex items-center gap-3 group">
-      <div className="w-9 h-9 bg-gray-100 rounded-full flex items-center justify-center text-sm font-semibold text-gray-600 shrink-0">
-        {profile.name.charAt(0).toUpperCase()}
-      </div>
-      <div className="flex-1 min-w-0">
-        <div className="font-medium text-sm text-gray-900">
-          {profile.name}
-          {profile.birthDate && (
-            <span className="text-gray-400 font-normal">
-              {" "}&middot; {getAgeGroupLabel(profile.birthDate)}
-            </span>
-          )}
-        </div>
-        {getCustomTags(profile.tags).length > 0 && (
-          <div className="flex gap-1 mt-0.5 flex-wrap">
-            {getCustomTags(profile.tags).map((tag) => (
-              <span key={tag} className="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded">{tag}</span>
-            ))}
-          </div>
-        )}
-      </div>
-      <button
-        onClick={() => setEditing(true)}
-        className="px-2 py-1.5 text-xs text-gray-400 hover:text-gray-600 transition-colors"
-      >
-        Edit
-      </button>
-      <button
-        onClick={onToggle}
-        className={cn(
-          "px-3 py-2 text-xs font-medium rounded-lg transition-colors",
-          added ? "bg-gray-100 text-gray-600 hover:bg-red-50 hover:text-red-600" : "bg-indigo-600 text-white hover:bg-indigo-700"
-        )}
-      >
-        {added ? "Remove" : "Add"}
-      </button>
+    <div className={cn(sizeClasses, "bg-indigo-50 rounded-full flex items-center justify-center")}>
+      {emoji}
     </div>
   )
+}
+
+function getPreferenceSummaryBrief(prefs: Record<string, unknown> | null | undefined): string[] {
+  if (!prefs) return []
+  const summary: string[] = []
+  const cuisine = prefs.cuisine as Record<string, number> | undefined
+  if (cuisine) {
+    const loved = Object.entries(cuisine).filter(([, v]) => v >= 4).map(([k]) => k.replace(/-/g, " "))
+    if (loved.length > 0) summary.push(`Loves ${loved.slice(0, 2).join(", ")}`)
+  }
+  const dietary = prefs.dietary as string[] | undefined
+  if (dietary && dietary.length > 0) summary.push(dietary.slice(0, 2).join(", "))
+  const pace = prefs.pace as string | undefined
+  if (pace) summary.push(`${pace} pace`)
+  return summary
 }
 
 // Flight status color coding
@@ -1806,32 +1705,123 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles, initi
 
       {/* TRAVELERS TAB */}
       {activeTab === "Travelers" && (
-        <div>
-          {allProfiles.length === 0 ? (
-            <div className="text-center py-12">
-              <Users className="w-10 h-10 text-gray-200 mx-auto mb-3" />
-              <p className="text-gray-500 text-sm">No traveler profiles yet</p>
-              <p className="text-gray-400 text-xs mt-1">
-                Create traveler profiles in{" "}
-                <a href="/settings" className="text-indigo-600 hover:underline">Settings</a>
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {allProfiles.map((profile) => {
-                const added = trip.travelers.some((t) => t.traveler.id === profile.id)
-                return (
-                  <TravelerCard
-                    key={profile.id}
-                    profile={profile}
-                    added={added}
-                    tripId={tripId}
-                    onToggle={() => handleToggleTraveler(profile.id, added)}
-                  />
-                )
-              })}
-            </div>
-          )}
+        <div className="space-y-6">
+          {/* Travelers on this trip */}
+          <div>
+            <h3 className="font-semibold text-gray-900 mb-3">
+              On this trip {trip.travelers.length > 0 && `(${trip.travelers.length})`}
+            </h3>
+            {trip.travelers.length === 0 ? (
+              <div className="text-center py-8 bg-white border border-gray-100 rounded-2xl">
+                <Users className="w-8 h-8 text-gray-200 mx-auto mb-2" />
+                <p className="text-gray-500 text-sm">No travelers added yet</p>
+                <p className="text-gray-400 text-xs mt-1">Add travelers from your profiles below</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {trip.travelers.map((tt) => {
+                  const prefsSummary = getPreferenceSummaryBrief(tt.traveler.preferences)
+                  return (
+                    <div key={tt.id} className="bg-white border border-gray-100 rounded-2xl p-4 flex items-center gap-3 group">
+                      <TripTravelerAvatar profile={tt.traveler} />
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium text-sm text-gray-900">
+                          {tt.traveler.name}
+                          {tt.traveler.birthDate && (
+                            <span className="text-gray-400 font-normal">
+                              {" "}&middot; {getAgeGroupLabel(tt.traveler.birthDate)}
+                            </span>
+                          )}
+                        </div>
+                        {prefsSummary.length > 0 && (
+                          <div className="flex gap-1 mt-0.5 flex-wrap">
+                            {prefsSummary.slice(0, 3).map((s, i) => (
+                              <span key={i} className="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded">{s}</span>
+                            ))}
+                          </div>
+                        )}
+                        {prefsSummary.length === 0 && getCustomTags(tt.traveler.tags).length > 0 && (
+                          <div className="flex gap-1 mt-0.5 flex-wrap">
+                            {getCustomTags(tt.traveler.tags).map((tag) => (
+                              <span key={tag} className="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded">{tag}</span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => handleToggleTraveler(tt.traveler.id, true)}
+                        className="px-3 py-2 text-xs font-medium rounded-lg bg-gray-100 text-gray-600 hover:bg-red-50 hover:text-red-600 transition-colors"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Available profiles to add */}
+          {(() => {
+            const addedIds = new Set(trip.travelers.map((t) => t.traveler.id))
+            const available = allProfiles.filter((p) => !addedIds.has(p.id))
+            return (
+              <div>
+                <h3 className="font-semibold text-gray-900 mb-3">Add traveler to trip</h3>
+                {available.length === 0 && allProfiles.length > 0 ? (
+                  <div className="text-center py-6 bg-white border border-gray-100 rounded-2xl">
+                    <p className="text-gray-500 text-sm">All your travelers are already on this trip</p>
+                  </div>
+                ) : available.length === 0 ? (
+                  <div className="text-center py-6 bg-white border border-gray-100 rounded-2xl">
+                    <Users className="w-8 h-8 text-gray-200 mx-auto mb-2" />
+                    <p className="text-gray-500 text-sm">No traveler profiles yet</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {available.map((profile) => (
+                      <div key={profile.id} className="bg-white border border-gray-100 rounded-2xl p-4 flex items-center gap-3">
+                        <TripTravelerAvatar profile={profile} />
+                        <div className="flex-1 min-w-0">
+                          <div className="font-medium text-sm text-gray-900">
+                            {profile.name}
+                            {profile.birthDate && (
+                              <span className="text-gray-400 font-normal">
+                                {" "}&middot; {getAgeGroupLabel(profile.birthDate)}
+                              </span>
+                            )}
+                          </div>
+                          {getCustomTags(profile.tags).length > 0 && (
+                            <div className="flex gap-1 mt-0.5 flex-wrap">
+                              {getCustomTags(profile.tags).map((tag) => (
+                                <span key={tag} className="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded">{tag}</span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        <button
+                          onClick={() => handleToggleTraveler(profile.id, false)}
+                          className="px-3 py-2 text-xs font-medium rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition-colors"
+                        >
+                          <Plus className="w-3.5 h-3.5 inline mr-1" />
+                          Add
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="mt-3 text-center">
+                  <a
+                    href="/settings"
+                    className="inline-flex items-center gap-1.5 text-sm text-indigo-600 hover:text-indigo-800 font-medium"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    Create new traveler in Settings
+                  </a>
+                </div>
+              </div>
+            )
+          })()}
         </div>
       )}
 

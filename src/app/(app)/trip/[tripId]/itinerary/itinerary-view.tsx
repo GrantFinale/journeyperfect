@@ -10,6 +10,8 @@ import {
   DndContext,
   DragEndEvent,
   PointerSensor,
+  TouchSensor,
+  KeyboardSensor,
   useSensor,
   useSensors,
   closestCenter,
@@ -306,7 +308,7 @@ function SortableItineraryItem({
       <div className="flex items-start gap-3 group">
         {/* Drag handle */}
         <button
-          className="mt-2 p-0.5 text-gray-300 hover:text-gray-500 cursor-grab active:cursor-grabbing touch-none"
+          className="mt-2 p-1.5 -m-1 text-gray-300 hover:text-gray-500 cursor-grab active:cursor-grabbing"
           {...attributes}
           {...listeners}
         >
@@ -487,9 +489,16 @@ export function ItineraryView({ tripId, initialItems, tripStartDate, tripEndDate
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
-        distance: 8,
+        distance: 5,
       },
-    })
+    }),
+    useSensor(TouchSensor, {
+      activationConstraint: {
+        delay: 200,
+        tolerance: 5,
+      },
+    }),
+    useSensor(KeyboardSensor)
   )
 
   // Build a date -> forecast lookup for per-day weather display

@@ -1,6 +1,8 @@
 import { notFound } from "next/navigation"
+import { auth } from "@/lib/auth"
+import { prisma } from "@/lib/db"
 import { getTrip } from "@/lib/actions/trips"
-import { getAllActivitiesForTrip } from "@/lib/actions/activities"
+import { getAllActivitiesForTrip, getDismissedPlaceIds } from "@/lib/actions/activities"
 import { getItinerary } from "@/lib/actions/itinerary"
 import { filterLayoverCities } from "@/lib/flight-utils"
 import { ExploreView } from "./explore-view"
@@ -9,10 +11,17 @@ export default async function ExplorePage({ params }: { params: Promise<{ tripId
   const { tripId } = await params
 
   try {
-    const [trip, activities, itineraryItems] = await Promise.all([
+    const session = await auth()
+    const userId = session?.user?.id
+
+    const [trip, activities, itineraryItems, dismissedIds, user] = await Promise.all([
       getTrip(tripId),
       getAllActivitiesForTrip(tripId),
       getItinerary(tripId),
+      getDismissedPlaceIds(tripId),
+      userId
+        ? prisma.user.findUnique({ where: { id: userId }, select: { plan: true } })
+        : null,
     ])
 
     const destinations = (trip.destinations || []).map((d) => ({
@@ -46,7 +55,10 @@ export default async function ExplorePage({ params }: { params: Promise<{ tripId
           startDate: trip.startDate.toISOString().split("T")[0],
           endDate: trip.endDate.toISOString().split("T")[0],
         }}
-        savedActivities={activities}
+        savedActivities={activities.map((a) => ({
+          ...a,
+          indoorOutdoor: a.indoorOutdoor || "BOTH",
+        }))}
         itineraryItems={itineraryItems.map((item) => ({
           id: item.id,
           date: item.date.toISOString().split("T")[0],
@@ -60,6 +72,8 @@ export default async function ExplorePage({ params }: { params: Promise<{ tripId
         destinations={destinations}
         arrivalCities={arrivalCities}
         travelerTags={[...new Set(travelerTags)]}
+        dismissedPlaceIds={dismissedIds}
+        userPlan={user?.plan || "FREE"}
       />
     )
   } catch {

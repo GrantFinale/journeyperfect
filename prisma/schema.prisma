@@ -165,6 +165,7 @@ model Trip {
   packingItems   PackingItem[]
   collaborators  TripCollaborator[]
   activityNotes  ActivityNote[]
+  dismissedPlaces DismissedPlace[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -658,6 +659,19 @@ model AIUsage {
   @@index([userId])
   @@index([feature])
   @@index([createdAt])
+}
+
+// ─── Dismissed Places ──────────────────────────────────────────────────────
+
+model DismissedPlace {
+  id            String   @id @default(cuid())
+  tripId        String
+  googlePlaceId String
+  trip          Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  createdAt     DateTime @default(now())
+
+  @@unique([tripId, googlePlaceId])
+  @@index([tripId])
 }
 
 enum BudgetCategory {

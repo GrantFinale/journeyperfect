@@ -8,10 +8,12 @@ import { getItinerary, type ItineraryItemFull } from "@/lib/actions/itinerary"
 import { getSmartSuggestions } from "@/lib/actions/affiliates"
 import { getPlacesApiKey } from "@/lib/actions/user"
 import { getUserTimezone } from "@/lib/actions/preferences"
+import { checkWeatherConflicts } from "@/lib/actions/weather-prompts"
 import { formatDate, formatDateInTimezone, formatTime, tripDuration, formatCurrency } from "@/lib/utils"
 import { AffiliateSmartSuggestions, BookingReturnPrompt } from "@/components/affiliate-links"
 import { ForwardingEmail } from "@/components/forwarding-email"
 import { CalendarExportButton } from "@/components/calendar-export"
+import { WeatherReschedulePrompt } from "@/components/weather-reschedule-prompt"
 import { TripOverviewMap } from "./overview-map"
 import {
   Plane,
@@ -39,13 +41,14 @@ export default async function TripOverviewPage({ params }: { params: Promise<{ t
   let costSummary: Awaited<ReturnType<typeof getTripCostSummary>>
   let allItems: ItineraryItemFull[] = []
   let smartSuggestions: Awaited<ReturnType<typeof getSmartSuggestions>> = []
+  let weatherConflicts: Awaited<ReturnType<typeof checkWeatherConflicts>> = []
 
   let apiKey = ""
   let userTimezone = "America/New_York"
   const session = await auth()
 
   try {
-    ;[trip, budget, costSummary, allItems, smartSuggestions, apiKey, userTimezone] = await Promise.all([
+    ;[trip, budget, costSummary, allItems, smartSuggestions, apiKey, userTimezone, weatherConflicts] = await Promise.all([
       getTrip(tripId),
       getBudgetSummary(tripId),
       getTripCostSummary(tripId),
@@ -53,6 +56,7 @@ export default async function TripOverviewPage({ params }: { params: Promise<{ t
       getSmartSuggestions(tripId),
       getPlacesApiKey(),
       getUserTimezone(),
+      checkWeatherConflicts(tripId),
     ])
   } catch {
     notFound()
@@ -186,6 +190,11 @@ export default async function TripOverviewPage({ params }: { params: Promise<{ t
             {trip.destination} · Day {Math.abs(daysUntil) + 1} of {duration}
           </div>
         </div>
+      )}
+
+      {/* Weather rescheduling prompts */}
+      {weatherConflicts.length > 0 && (
+        <WeatherReschedulePrompt tripId={tripId} suggestions={weatherConflicts} />
       )}
 
       {/* Forwarding email */}

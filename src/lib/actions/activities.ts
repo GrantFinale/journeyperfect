@@ -264,6 +264,105 @@ export async function updateActivityPriority(tripId: string, activityId: string,
   return activity
 }
 
+// ─── Indoor/Outdoor classifier ──────────────────────────────────────────────
+
+function classifyIndoorOutdoor(category?: string): "INDOOR" | "OUTDOOR" | "BOTH" {
+  if (!category) return "BOTH"
+  const outdoor = ["park", "garden", "beach", "trail", "zoo", "amusement_park", "campground", "golf", "playground", "stadium", "water_park"]
+  const indoor = ["museum", "restaurant", "cafe", "bar", "movie_theater", "bowling", "library", "spa", "shopping_mall", "aquarium", "art_gallery"]
+  const cat = category.toLowerCase()
+  if (outdoor.some(k => cat.includes(k))) return "OUTDOOR"
+  if (indoor.some(k => cat.includes(k))) return "INDOOR"
+  return "BOTH"
+}
+
+// ─── Dismiss / Triage Actions ───────────────────────────────────────────────
+
+export async function dismissPlace(tripId: string, googlePlaceId: string) {
+  await requireTripAccess(tripId, "EDITOR")
+  await prisma.dismissedPlace.upsert({
+    where: { tripId_googlePlaceId: { tripId, googlePlaceId } },
+    create: { tripId, googlePlaceId },
+    update: {},
+  })
+  revalidatePath(`/trip/${tripId}/explore`)
+}
+
+export async function getDismissedPlaceIds(tripId: string): Promise<string[]> {
+  await requireTripAccess(tripId)
+  const dismissed = await prisma.dismissedPlace.findMany({
+    where: { tripId },
+    select: { googlePlaceId: true },
+  })
+  return dismissed.map(d => d.googlePlaceId)
+}
+
+export async function undoDismiss(tripId: string, googlePlaceId: string) {
+  await requireTripAccess(tripId, "EDITOR")
+  await prisma.dismissedPlace.deleteMany({
+    where: { tripId, googlePlaceId },
+  })
+  revalidatePath(`/trip/${tripId}/explore`)
+}
+
+export async function addToWishlistMaybe(tripId: string, data: {
+  googlePlaceId: string; name: string; address?: string;
+  lat?: number; lng?: number; rating?: number; imageUrl?: string;
+  category?: string; durationMins?: number;
+}) {
+  await requireTripAccess(tripId, "EDITOR")
+  const existing = await prisma.activity.findFirst({
+    where: { tripId, googlePlaceId: data.googlePlaceId },
+  })
+  if (existing) {
+    const updated = await prisma.activity.update({
+      where: { id: existing.id },
+      data: { priority: "LOW", status: "WISHLIST" },
+    })
+    revalidatePath(`/trip/${tripId}/explore`)
+    return updated
+  }
+  const indoorOutdoor = classifyIndoorOutdoor(data.category)
+  const activity = await prisma.activity.create({
+    data: {
+      tripId, ...data, priority: "LOW", status: "WISHLIST",
+      indoorOutdoor, durationMins: data.durationMins || 90,
+      costPerAdult: 0, costPerChild: 0,
+    },
+  })
+  revalidatePath(`/trip/${tripId}/explore`)
+  return activity
+}
+
+export async function addToWishlistMustDo(tripId: string, data: {
+  googlePlaceId: string; name: string; address?: string;
+  lat?: number; lng?: number; rating?: number; imageUrl?: string;
+  category?: string; durationMins?: number;
+}) {
+  await requireTripAccess(tripId, "EDITOR")
+  const existing = await prisma.activity.findFirst({
+    where: { tripId, googlePlaceId: data.googlePlaceId },
+  })
+  if (existing) {
+    const updated = await prisma.activity.update({
+      where: { id: existing.id },
+      data: { priority: "MUST_DO", status: "WISHLIST" },
+    })
+    revalidatePath(`/trip/${tripId}/explore`)
+    return updated
+  }
+  const indoorOutdoor = classifyIndoorOutdoor(data.category)
+  const activity = await prisma.activity.create({
+    data: {
+      tripId, ...data, priority: "MUST_DO", status: "WISHLIST",
+      indoorOutdoor, durationMins: data.durationMins || 90,
+      costPerAdult: 0, costPerChild: 0,
+    },
+  })
+  revalidatePath(`/trip/${tripId}/explore`)
+  return activity
+}
+
 export async function searchPlaces(query: string, locationBias?: string) {
   const session = await auth()
   if (!session?.user?.id) throw new Error("Unauthorized")

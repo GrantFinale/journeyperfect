@@ -65,6 +65,26 @@ export async function createHotel(tripId: string, data: z.infer<typeof hotelSche
     },
   })
 
+  // Geocode the hotel address if we don't have coordinates
+  if (!parsed.lat && !parsed.lng && (parsed.address || parsed.name)) {
+    try {
+      const gKey = process.env.GOOGLE_PLACES_KEY || process.env.NEXT_PUBLIC_GOOGLE_PLACES_KEY || ""
+      if (gKey && gKey !== "build-placeholder") {
+        const query = encodeURIComponent(parsed.address || parsed.name)
+        const res = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?address=${query}&key=${gKey}`)
+        const data = await res.json()
+        if (data.results?.[0]?.geometry?.location) {
+          const { lat, lng } = data.results[0].geometry.location
+          await prisma.hotel.update({ where: { id: hotel.id }, data: { lat, lng } })
+          hotel.lat = lat
+          hotel.lng = lng
+        }
+      }
+    } catch {
+      // Geocoding is best-effort — don't fail hotel creation
+    }
+  }
+
   // Determine check-in time based on arriving flights
   const checkInDate = new Date(parsed.checkIn)
   const checkInTime = await getCheckInTimeForDate(tripId, checkInDate)

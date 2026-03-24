@@ -44,6 +44,7 @@ type ItineraryItem = {
 }
 
 type Destination = { name: string; lat?: number | null; lng?: number | null }
+export type HotelInfo = { name: string; lat: number | null; lng: number | null }
 
 interface Props {
   tripId: string
@@ -55,6 +56,7 @@ interface Props {
   travelerTags?: string[]
   dismissedPlaceIds: string[]
   userPlan: string
+  hotels?: HotelInfo[]
 }
 
 /* ─── Helpers ──────────────────────────────────────────────────────────────── */
@@ -123,6 +125,7 @@ export function DiscoverView({
   travelerTags = [],
   dismissedPlaceIds: initialDismissed,
   userPlan,
+  hotels = [],
 }: Props) {
   const router = useRouter()
   const locationOptions = buildLocationOptions(destinations, arrivalCities, trip.destination)
@@ -614,6 +617,7 @@ export function DiscoverView({
                     onMaybe={handleMaybe}
                     onMustDo={handleMustDo}
                     isDismissing={dismissingIds.has(place.googlePlaceId)}
+                    hotels={hotels}
                   />
                 ))}
               </div>
@@ -650,6 +654,7 @@ export function DiscoverView({
                       onMaybe={handleMaybe}
                       onMustDo={handleMustDo}
                       isDismissing={dismissingIds.has(place.googlePlaceId)}
+                      hotels={hotels}
                     />
                   ))}
                 </div>
@@ -691,6 +696,7 @@ export function DiscoverView({
                     onMaybe={handleMaybe}
                     onMustDo={handleMustDo}
                     isDismissing={dismissingIds.has(place.googlePlaceId)}
+                    hotels={hotels}
                   />
                 ))}
               </div>

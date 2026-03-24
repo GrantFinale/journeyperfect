@@ -288,6 +288,8 @@ function SortableItineraryItem({
   const [saving, setSaving] = useState(false)
   const noteRef = useRef<HTMLTextAreaElement>(null)
 
+  const isFixed = item.type === "FLIGHT" || item.type === "HOTEL_CHECK_IN" || item.type === "HOTEL_CHECK_OUT"
+
   const {
     attributes,
     listeners,
@@ -295,7 +297,7 @@ function SortableItineraryItem({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: item.id })
+  } = useSortable({ id: item.id, disabled: isFixed })
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -322,13 +324,17 @@ function SortableItineraryItem({
     <div ref={setNodeRef} style={style}>
       <div className="flex items-start gap-3 group">
         {/* Drag handle */}
-        <button
-          className="mt-2 p-1.5 -m-1 text-gray-300 hover:text-gray-500 cursor-grab active:cursor-grabbing"
-          {...attributes}
-          {...listeners}
-        >
-          <GripVertical className="w-4 h-4" />
-        </button>
+        {isFixed ? (
+          <div className="mt-2 p-1.5 -m-1 w-7" />
+        ) : (
+          <button
+            className="mt-2 p-1.5 -m-1 text-gray-300 hover:text-gray-500 cursor-grab active:cursor-grabbing"
+            {...attributes}
+            {...listeners}
+          >
+            <GripVertical className="w-4 h-4" />
+          </button>
+        )}
         {/* Timeline dot */}
         <div className="flex flex-col items-center mt-1">
           <div

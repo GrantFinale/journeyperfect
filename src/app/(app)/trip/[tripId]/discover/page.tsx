@@ -30,6 +30,15 @@ export default async function DiscoverPage({ params }: { params: Promise<{ tripI
       lng: d.lng,
     }))
 
+    // Extract hotels with coordinates for distance calculation
+    const hotels = (trip.hotels || [])
+      .filter((h) => h.name)
+      .map((h) => ({
+        name: h.name,
+        lat: h.lat ?? null,
+        lng: h.lng ?? null,
+      }))
+
     const allArrivalCities = Array.from(
       new Set(
         (trip.flights || [])
@@ -74,6 +83,7 @@ export default async function DiscoverPage({ params }: { params: Promise<{ tripI
         travelerTags={[...new Set(travelerTags)]}
         dismissedPlaceIds={dismissedIds}
         userPlan={user?.plan || "FREE"}
+        hotels={hotels}
       />
     )
   } catch {

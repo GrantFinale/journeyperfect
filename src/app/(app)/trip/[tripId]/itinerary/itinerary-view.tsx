@@ -517,8 +517,15 @@ interface Props {
 export function ItineraryView({ tripId, initialItems, tripStartDate, tripEndDate, weather, isPaid }: Props) {
   const router = useRouter()
   const [items, setItems] = useState<ItineraryItem[]>(initialItems)
+  // Track if we're in the middle of a drag reorder to prevent sync overwrite
+  const reorderingRef = useRef(false)
   // Sync items when server data changes (e.g., after optimize + router.refresh)
-  useEffect(() => { setItems(initialItems) }, [initialItems])
+  // but NOT during a drag reorder (which updates optimistically)
+  useEffect(() => {
+    if (!reorderingRef.current) {
+      setItems(initialItems)
+    }
+  }, [initialItems])
   const [optimizing, setOptimizing] = useState(false)
   const [collapsedDays, setCollapsedDays] = useState<Set<string>>(new Set())
   const [addingToDay, setAddingToDay] = useState<string | null>(null)
@@ -658,7 +665,11 @@ export function ItineraryView({ tripId, initialItems, tripStartDate, tripEndDate
 
     // Find the day whose items we're reordering
     const dayItems = items.filter(
-      (i) => new Date(i.date).toISOString().split("T")[0] === dayDateStr
+      (i) => {
+        const d = new Date(i.date)
+        const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`
+        return key === dayDateStr
+      }
     )
     const oldIndex = dayItems.findIndex((i) => i.id === active.id)
     const newIndex = dayItems.findIndex((i) => i.id === over.id)
@@ -666,11 +677,16 @@ export function ItineraryView({ tripId, initialItems, tripStartDate, tripEndDate
 
     const reordered = arrayMove(dayItems, oldIndex, newIndex)
 
+    // Prevent useEffect from overwriting our optimistic update
+    reorderingRef.current = true
+
     // Optimistically update local state
     setItems((prev) => {
-      const otherItems = prev.filter(
-        (i) => new Date(i.date).toISOString().split("T")[0] !== dayDateStr
-      )
+      const otherItems = prev.filter((i) => {
+        const d = new Date(i.date)
+        const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`
+        return key !== dayDateStr
+      })
       const updated = reordered.map((item, idx) => ({ ...item, position: idx }))
       return [...otherItems, ...updated]
     })
@@ -681,11 +697,17 @@ export function ItineraryView({ tripId, initialItems, tripStartDate, tripEndDate
       position: idx,
       date: dayDateStr,
     }))
-    reorderItineraryItems(tripId, updates).catch(() => {
-      toast.error("Failed to save new order")
-      // Revert on failure
-      setItems(items)
-    })
+    reorderItineraryItems(tripId, updates)
+      .then(() => {
+        // Allow sync again after server confirms
+        setTimeout(() => { reorderingRef.current = false }, 1000)
+      })
+      .catch(() => {
+        toast.error("Failed to save new order")
+        reorderingRef.current = false
+        // Revert by re-fetching from server
+        router.refresh()
+      })
   }
 
   function handleUpdateNotes(itemId: string, userNotes: string) {

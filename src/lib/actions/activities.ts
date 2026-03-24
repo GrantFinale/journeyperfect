@@ -433,6 +433,10 @@ export async function searchPlaces(query: string, locationBias?: string) {
       imageUrl: place.photos?.[0]?.name
         ? `/api/places/photo/${encodeURIComponent(place.photos[0].name)}`
         : null,
+      photoUrls: (place.photos || [])
+        .slice(0, 5)
+        .map((p: any) => p.name ? `/api/places/photo/${encodeURIComponent(p.name)}` : null)
+        .filter(Boolean),
       // Dining-specific attributes
       goodForChildren: place.goodForChildren,
       dineIn: place.dineIn,

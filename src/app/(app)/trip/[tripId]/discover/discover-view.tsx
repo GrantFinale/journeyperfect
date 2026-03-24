@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef, useCallback } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import {
@@ -68,19 +68,35 @@ function buildLocationOptions(
   arrivalCities: string[],
   fallback: string
 ): LocationOption[] {
-  const seen = new Set<string>()
-  const opts: LocationOption[] = []
+  // Collect all raw entries with their metadata
+  const rawEntries: { name: string; lat?: number | null; lng?: number | null }[] = []
   for (const d of destinations) {
-    const key = d.name.toLowerCase()
-    if (seen.has(key)) continue
-    seen.add(key)
-    opts.push({ label: d.name, value: d.name, lat: d.lat, lng: d.lng })
+    rawEntries.push({ name: d.name, lat: d.lat, lng: d.lng })
   }
   for (const c of arrivalCities) {
-    const key = c.toLowerCase()
-    if (seen.has(key)) continue
-    seen.add(key)
-    opts.push({ label: c, value: c })
+    rawEntries.push({ name: c })
+  }
+
+  // Deduplicate: normalize by city part (before first comma), keep shorter/cleaner name
+  // e.g. "San Antonio, TX, USA" and "San Antonio" -> keep "San Antonio"
+  const cityMap = new Map<string, { name: string; lat?: number | null; lng?: number | null }>()
+  for (const entry of rawEntries) {
+    const cityPart = entry.name.split(",")[0].trim().toLowerCase()
+    const existing = cityMap.get(cityPart)
+    if (!existing) {
+      cityMap.set(cityPart, entry)
+    } else {
+      // Keep the shorter name (cleaner), but preserve lat/lng if the other has it
+      const keepName = entry.name.length < existing.name.length ? entry.name : existing.name
+      const lat = existing.lat ?? entry.lat
+      const lng = existing.lng ?? entry.lng
+      cityMap.set(cityPart, { name: keepName, lat, lng })
+    }
+  }
+
+  const opts: LocationOption[] = []
+  for (const entry of cityMap.values()) {
+    opts.push({ label: entry.name, value: entry.name, lat: entry.lat, lng: entry.lng })
   }
   if (opts.length === 0 && fallback) opts.push({ label: fallback, value: fallback })
   opts.push({ label: "Other location...", value: "__other__" })
@@ -150,10 +166,8 @@ export function DiscoverView({
   const [aiPicksLoading, setAiPicksLoading] = useState(false)
   const [isAIFilling, setIsAIFilling] = useState(false)
 
-  // Auto-suggest
-  const [suggestions, setSuggestions] = useState<Place[]>([])
-  const [suggestionsLoading, setSuggestionsLoading] = useState(false)
-  const suggestionsLoaded = useRef(false)
+  // Initial results loaded on mount
+  const initialLoaded = useRef(false)
 
   // Mobile
   const [isMobile, setIsMobile] = useState(false)
@@ -181,10 +195,6 @@ export function DiscoverView({
     searchResults.filter((p) => !dismissedIds.has(p.googlePlaceId)),
     activeFilters
   )
-  const filteredSuggestions = applyFilters(
-    suggestions.filter((p) => !dismissedIds.has(p.googlePlaceId)),
-    activeFilters
-  )
   const filteredAiPicks = aiPicks.filter((p) => !dismissedIds.has(p.googlePlaceId))
 
   // Detect mobile
@@ -195,30 +205,27 @@ export function DiscoverView({
     return () => window.removeEventListener("resize", check)
   }, [])
 
-  // Auto-suggest on mount
+  // Load top-rated places on mount
   useEffect(() => {
-    if (suggestionsLoaded.current) return
-    suggestionsLoaded.current = true
+    if (initialLoaded.current) return
+    initialLoaded.current = true
 
     const city = locationOptions[0]?.value || trip.destination
     if (!city) return
 
-    const hasKids = travelerTags.some((t) => t === "child" || t === "toddler")
-    const prefix = hasKids ? "family friendly things to do" : "top things to do"
-    const query = `${prefix} in ${city}`
-
-    setSuggestionsLoading(true)
+    const query = `things to do in ${city}`
     const bias =
       locationOptions[0]?.lat != null && locationOptions[0]?.lng != null
         ? `${locationOptions[0].lat},${locationOptions[0].lng}`
         : undefined
 
+    setLoading(true)
     searchPlaces(query, bias)
       .then((r) => {
-        if (r.results.length > 0) setSuggestions(r.results)
+        if (r.results.length > 0) setSearchResults(r.results)
       })
       .catch(() => {})
-      .finally(() => setSuggestionsLoading(false))
+      .finally(() => setLoading(false))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -525,9 +532,6 @@ export function DiscoverView({
   // ─── Render ───────────────────────────────────────────────────────────────
 
   const showAIPicks = activeTab === "ai_picks"
-  const displayResults = showAIPicks ? filteredAiPicks : filteredResults
-  const showSuggestions =
-    !loading && !showAIPicks && filteredResults.length === 0 && activeTab === "all" && (suggestionsLoading || filteredSuggestions.length > 0)
 
   return (
     <div className="flex h-[calc(100vh-57px)] md:h-screen overflow-hidden">
@@ -607,7 +611,7 @@ export function DiscoverView({
                 <Sparkles className="w-4 h-4 text-purple-600" />
                 <h2 className="text-sm font-semibold text-purple-900">AI Picks for {effectiveLocation || trip.destination}</h2>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 items-start">
                 {filteredAiPicks.map((place) => (
                   <BrowseCard
                     key={place.googlePlaceId}
@@ -618,6 +622,7 @@ export function DiscoverView({
                     onMustDo={handleMustDo}
                     isDismissing={dismissingIds.has(place.googlePlaceId)}
                     hotels={hotels}
+                    destination={effectiveLocation || trip.destination}
                   />
                 ))}
               </div>
@@ -632,35 +637,6 @@ export function DiscoverView({
             </div>
           )}
 
-          {/* Auto-suggested */}
-          {!showAIPicks && showSuggestions && (
-            <div className="mb-6">
-              <div className="flex items-center gap-2 mb-3">
-                <Sparkles className="w-4 h-4 text-indigo-600" />
-                <h2 className="text-sm font-semibold text-indigo-900">Suggested for your trip</h2>
-              </div>
-              {suggestionsLoading ? (
-                <div className="flex items-center justify-center py-8">
-                  <Loader2 className="w-6 h-6 text-indigo-400 animate-spin" />
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {filteredSuggestions.map((place) => (
-                    <BrowseCard
-                      key={place.googlePlaceId}
-                      place={place}
-                      wishlistState={interestMap.get(place.googlePlaceId) || null}
-                      onNope={handleNope}
-                      onMaybe={handleMaybe}
-                      onMustDo={handleMustDo}
-                      isDismissing={dismissingIds.has(place.googlePlaceId)}
-                      hotels={hotels}
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
 
           {/* Loading */}
           {!showAIPicks && loading && (
@@ -686,7 +662,7 @@ export function DiscoverView({
                   Clear
                 </button>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 items-start">
                 {filteredResults.map((place) => (
                   <BrowseCard
                     key={place.googlePlaceId}
@@ -697,6 +673,7 @@ export function DiscoverView({
                     onMustDo={handleMustDo}
                     isDismissing={dismissingIds.has(place.googlePlaceId)}
                     hotels={hotels}
+                    destination={effectiveLocation || trip.destination}
                   />
                 ))}
               </div>
@@ -706,9 +683,7 @@ export function DiscoverView({
           {/* Empty state */}
           {!showAIPicks &&
             !loading &&
-            filteredResults.length === 0 &&
-            filteredSuggestions.length === 0 &&
-            !suggestionsLoading && (
+            filteredResults.length === 0 && (
               <div className="text-center py-20">
                 <Search className="w-12 h-12 text-gray-200 mx-auto mb-3" />
                 <p className="text-gray-500 text-sm">

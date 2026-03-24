@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useMemo } from "react"
-import { Star, MapPin, X, Bookmark, CloudSun, ChevronDown, ChevronUp, Phone, Clock, ExternalLink, Loader2, Hotel } from "lucide-react"
+import { Star, MapPin, X, Bookmark, CloudSun, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Phone, Clock, ExternalLink, Loader2, Hotel, Ticket } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { getPlaceDetails } from "@/lib/actions/places-detail"
 import { haversineDistance } from "@/lib/haversine"
@@ -15,6 +15,7 @@ export type Place = {
   rating?: number
   ratingCount?: number
   imageUrl?: string | null
+  photoUrls?: string[]
   types: string[]
   primaryType?: string
   priceLevel?: string
@@ -55,6 +56,7 @@ interface BrowseCardProps {
   onMustDo: (place: Place) => void
   isDismissing?: boolean
   hotels?: HotelInfo[]
+  destination?: string
 }
 
 type PlaceDetails = {
@@ -68,6 +70,19 @@ type PlaceDetails = {
   openNow?: boolean
 } | null
 
+// Types that should show booking links (not restaurants/cafes)
+const BOOKABLE_TYPES = [
+  "tourist_attraction", "museum", "art_gallery", "amusement_park", "aquarium",
+  "zoo", "park", "travel_agency", "stadium", "bowling_alley", "movie_theater",
+  "spa", "water_park", "hiking_area", "campground", "natural_feature",
+]
+
+function isBookablePlace(types: string[]): boolean {
+  const nonBookable = ["restaurant", "cafe", "bar", "bakery", "food", "meal_delivery", "meal_takeaway"]
+  if (types.some((t) => nonBookable.includes(t))) return false
+  return true
+}
+
 export function BrowseCard({
   place,
   wishlistState,
@@ -76,10 +91,18 @@ export function BrowseCard({
   onMustDo,
   isDismissing,
   hotels = [],
+  destination = "",
 }: BrowseCardProps) {
   const [expanded, setExpanded] = useState(false)
   const [details, setDetails] = useState<PlaceDetails>(undefined as unknown as PlaceDetails)
   const [detailsLoading, setDetailsLoading] = useState(false)
+  const [photoIndex, setPhotoIndex] = useState(0)
+
+  const photos = place.photoUrls && place.photoUrls.length > 0
+    ? place.photoUrls
+    : place.imageUrl
+      ? [place.imageUrl]
+      : []
 
   const indoorOutdoor = classifyIndoorOutdoorFromTypes(place.types)
 
@@ -135,12 +158,12 @@ export function BrowseCard({
     >
       {/* Clickable area for expanding */}
       <div className="cursor-pointer" onClick={handleExpand}>
-        {/* Hero image */}
+        {/* Hero image with carousel */}
         <div className="relative aspect-video overflow-hidden">
-          {place.imageUrl ? (
+          {photos.length > 0 ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              src={place.imageUrl}
+              src={photos[photoIndex]}
               alt=""
               className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
             />
@@ -148,6 +171,37 @@ export function BrowseCard({
             <div className="w-full h-full bg-gradient-to-br from-indigo-50 to-purple-50 flex items-center justify-center">
               <Star className="w-8 h-8 text-indigo-200" />
             </div>
+          )}
+          {/* Carousel arrows */}
+          {photos.length > 1 && (
+            <>
+              <button
+                onClick={(e) => { e.stopPropagation(); setPhotoIndex((i) => (i - 1 + photos.length) % photos.length) }}
+                className="absolute left-1.5 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-black/40 hover:bg-black/60 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                aria-label="Previous photo"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); setPhotoIndex((i) => (i + 1) % photos.length) }}
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-black/40 hover:bg-black/60 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                aria-label="Next photo"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+              {/* Dots indicator */}
+              <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1">
+                {photos.map((_, i) => (
+                  <span
+                    key={i}
+                    className={cn(
+                      "w-1.5 h-1.5 rounded-full transition-colors",
+                      i === photoIndex ? "bg-white" : "bg-white/50"
+                    )}
+                  />
+                ))}
+              </div>
+            </>
           )}
           {/* Indoor/Outdoor badge */}
           {indoorOutdoor && (
@@ -181,7 +235,15 @@ export function BrowseCard({
         <div className="p-3.5 space-y-1.5">
           <div className="flex items-center justify-between">
             <h3 className="font-semibold text-gray-900 text-sm leading-tight truncate flex-1">
-              {place.name}
+              <a
+                href={details?.website || mapsUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="hover:text-indigo-600 transition-colors hover:underline"
+              >
+                {place.name}
+              </a>
             </h3>
             {expanded ? (
               <ChevronUp className="w-4 h-4 text-gray-400 shrink-0 ml-1" />
@@ -309,6 +371,32 @@ export function BrowseCard({
                 <ExternalLink className="w-3.5 h-3.5" />
                 View on Google Maps
               </a>
+
+              {/* Booking links for activities/tours/attractions */}
+              {isBookablePlace(place.types) && (
+                <div className="flex flex-wrap gap-2 mt-1">
+                  <a
+                    href={`https://www.viator.com/searchResults/all?text=${encodeURIComponent(place.name + " " + destination)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    className="inline-flex items-center gap-1 text-orange-600 hover:text-orange-700 font-medium"
+                  >
+                    <Ticket className="w-3.5 h-3.5" />
+                    Book on Viator
+                  </a>
+                  <a
+                    href={`https://www.getyourguide.com/s/?q=${encodeURIComponent(place.name + " " + destination)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    className="inline-flex items-center gap-1 text-teal-600 hover:text-teal-700 font-medium"
+                  >
+                    <Ticket className="w-3.5 h-3.5" />
+                    Book on GetYourGuide
+                  </a>
+                </div>
+              )}
             </div>
           )}
 

@@ -1,87 +1,60 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import { useState, useEffect, useRef, useCallback } from "react"
+import { useRouter } from "next/navigation"
 import { toast } from "sonner"
-import { searchPlaces, createActivity } from "@/lib/actions/activities"
-import { getPlaceDetails } from "@/lib/actions/places-detail"
+import {
+  searchPlaces,
+  dismissPlace,
+  undoDismiss,
+  addToWishlistMaybe,
+  addToWishlistMustDo,
+  removeFromShortlist,
+  updateActivityPriority,
+} from "@/lib/actions/activities"
+import { runOptimizer, runAIOptimizer } from "@/lib/actions/itinerary"
+import { getAIPicks, type AIPick } from "@/lib/actions/ai-picks"
 import { cn } from "@/lib/utils"
 import {
-  Compass,
   Search,
-  Star,
-  MapPin,
-  Plus,
   Loader2,
-  ChevronDown,
-  ChevronUp,
-  Check,
-  Phone,
-  Clock,
-  Globe,
-  ExternalLink,
-  DollarSign,
+  Bookmark,
+  Sparkles,
+  Star,
+  Lock,
 } from "lucide-react"
-import { ViatorDestinationBanner } from "@/components/affiliate-links"
 
-/* ─── Quick-filter categories ──────────────────────────────────────────────── */
-const QUICK_FILTERS = [
-  { label: "Top Attractions", query: "top attractions must see popular" },
-  { label: "Hidden Gems", query: "hidden gem off the beaten path local favorite" },
-  { label: "Day Trips", query: "day trip excursion nearby" },
-  { label: "Tours", query: "guided tour walking tour sightseeing" },
-  { label: "Cultural", query: "cultural heritage museum theater gallery" },
-  { label: "Nature", query: "nature park garden hiking trail scenic" },
-]
-
-const PRICE_LABEL: Record<string, string> = {
-  PRICE_LEVEL_FREE: "Free",
-  PRICE_LEVEL_INEXPENSIVE: "$",
-  PRICE_LEVEL_MODERATE: "$$",
-  PRICE_LEVEL_EXPENSIVE: "$$$",
-  PRICE_LEVEL_VERY_EXPENSIVE: "$$$$",
-}
+import { BrowseCard, type Place } from "./browse-card"
+import { WishlistSidebar, type Activity } from "./wishlist-sidebar"
+import { DiscoverHeader } from "./discover-header"
+import { DiscoverTabs, CATEGORY_TABS, type CategoryTab } from "./discover-tabs"
+import { DiscoverFilters, type FilterChip } from "./discover-filters"
 
 /* ─── Types ────────────────────────────────────────────────────────────────── */
-type Place = {
-  googlePlaceId: string
-  name: string
-  address: string
-  lat?: number
-  lng?: number
-  rating?: number
-  ratingCount?: number
-  imageUrl?: string | null
-  types: string[]
-  primaryType?: string
-  priceLevel?: string
-  goodForChildren?: boolean
-  openNow?: boolean
-  weekdayHours?: string[]
-}
 
-type PlaceDetails = {
-  name?: string
-  address?: string
-  lat?: number
-  lng?: number
-  rating?: number
-  ratingCount?: number
-  types?: string[]
-  priceLevel?: string
-  website?: string
-  phone?: string
-  goodForChildren?: boolean
-  hours?: string[]
-  openNow?: boolean
+type ItineraryItem = {
+  id: string
+  date: string
+  startTime?: string
+  endTime?: string
+  title: string
+  type: string
+  activityId?: string
+  durationMins: number
 }
 
 type Destination = { name: string; lat?: number | null; lng?: number | null }
 
 interface Props {
   tripId: string
-  destination: string
+  trip: { destination: string; startDate: string; endDate: string }
+  savedActivities: Activity[]
+  itineraryItems: ItineraryItem[]
   destinations: Destination[]
   arrivalCities: string[]
+  travelerTags?: string[]
+  dismissedPlaceIds: string[]
+  userPlan: string
 }
 
 /* ─── Helpers ──────────────────────────────────────────────────────────────── */
@@ -91,342 +64,172 @@ type LocationOption = { label: string; value: string; lat?: number | null; lng?:
 function buildLocationOptions(
   destinations: Destination[],
   arrivalCities: string[],
-  fallbackDestination: string
+  fallback: string
 ): LocationOption[] {
   const seen = new Set<string>()
-  const options: LocationOption[] = []
-
+  const opts: LocationOption[] = []
   for (const d of destinations) {
     const key = d.name.toLowerCase()
     if (seen.has(key)) continue
     seen.add(key)
-    options.push({ label: d.name, value: d.name, lat: d.lat, lng: d.lng })
+    opts.push({ label: d.name, value: d.name, lat: d.lat, lng: d.lng })
   }
-
-  for (const city of arrivalCities) {
-    const key = city.toLowerCase()
+  for (const c of arrivalCities) {
+    const key = c.toLowerCase()
     if (seen.has(key)) continue
     seen.add(key)
-    options.push({ label: city, value: city })
+    opts.push({ label: c, value: c })
   }
-
-  if (options.length === 0 && fallbackDestination) {
-    options.push({ label: fallbackDestination, value: fallbackDestination })
-  }
-
-  options.push({ label: "Other location...", value: "__other__" })
-  return options
+  if (opts.length === 0 && fallback) opts.push({ label: fallback, value: fallback })
+  opts.push({ label: "Other location...", value: "__other__" })
+  return opts
 }
 
-function getLocationBias(
-  selectedLocation: string,
-  options: LocationOption[]
-): string | undefined {
-  const opt = options.find((o) => o.value === selectedLocation)
-  if (opt?.lat != null && opt?.lng != null) {
-    return `${opt.lat},${opt.lng}`
-  }
+function getLocationBias(selected: string, opts: LocationOption[]): string | undefined {
+  const o = opts.find((x) => x.value === selected)
+  if (o?.lat != null && o?.lng != null) return `${o.lat},${o.lng}`
   return undefined
 }
 
-function googleMapsUrl(place: Place): string {
-  if (place.lat && place.lng) {
-    return `https://www.google.com/maps/search/?api=1&query=${place.lat},${place.lng}&query_place_id=${place.googlePlaceId}`
-  }
-  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place.name + " " + place.address)}`
+/** Apply client-side filters to places */
+function applyFilters(places: Place[], filters: Set<string>): Place[] {
+  if (filters.size === 0) return places
+  return places.filter((p) => {
+    if (filters.has("kid_friendly") && !p.goodForChildren) return false
+    if (filters.has("open_now") && !p.openNow) return false
+    if (filters.has("top_rated") && (p.rating == null || p.rating < 4.5)) return false
+    if (filters.has("free") && p.priceLevel !== "PRICE_LEVEL_FREE") return false
+    if (filters.has("indoor")) {
+      const indoorTypes = ["museum", "restaurant", "cafe", "bar", "movie_theater", "bowling_alley", "library", "spa", "shopping_mall", "aquarium", "art_gallery"]
+      if (!p.types?.some((t) => indoorTypes.includes(t))) return false
+    }
+    if (filters.has("outdoor")) {
+      const outdoorTypes = ["park", "garden", "beach", "trail", "zoo", "amusement_park", "campground", "golf_course", "playground", "stadium", "hiking_area", "natural_feature"]
+      if (!p.types?.some((t) => outdoorTypes.includes(t))) return false
+    }
+    return true
+  })
 }
 
-/* ─── PlaceCard with expandable details ───────────────────────────────────── */
-function PlaceCard({
-  place,
-  isSaved,
-  onSave,
-}: {
-  place: Place
-  isSaved: boolean
-  onSave: () => void
-}) {
-  const [expanded, setExpanded] = useState(false)
-  const [details, setDetails] = useState<PlaceDetails | null>(null)
-  const [detailsLoading, setDetailsLoading] = useState(false)
+/* ─── Main Component ───────────────────────────────────────────────────────── */
 
-  const handleExpand = useCallback(async () => {
-    if (expanded) {
-      setExpanded(false)
-      return
-    }
-    setExpanded(true)
-    if (!details) {
-      setDetailsLoading(true)
-      try {
-        const result = await getPlaceDetails(place.googlePlaceId)
-        setDetails(result)
-      } catch {
-        // Silently fail — we'll show what we have from the search result
-      } finally {
-        setDetailsLoading(false)
-      }
-    }
-  }, [expanded, details, place.googlePlaceId])
+export function DiscoverView({
+  tripId,
+  trip,
+  savedActivities: initialActivities,
+  itineraryItems: initialItinerary,
+  destinations,
+  arrivalCities,
+  travelerTags = [],
+  dismissedPlaceIds: initialDismissed,
+  userPlan,
+}: Props) {
+  const router = useRouter()
+  const locationOptions = buildLocationOptions(destinations, arrivalCities, trip.destination)
 
-  const effectivePrice = details?.priceLevel || place.priceLevel
-  const effectiveRating = details?.rating ?? place.rating
-  const effectiveRatingCount = details?.ratingCount ?? place.ratingCount
-
-  return (
-    <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden hover:border-gray-200 hover:shadow-sm transition-all">
-      {/* Image — clickable to expand */}
-      <button
-        type="button"
-        onClick={handleExpand}
-        className="w-full text-left cursor-pointer"
-      >
-        {place.imageUrl ? (
-          /* eslint-disable-next-line @next/next/no-img-element */
-          <img src={place.imageUrl} alt="" className="w-full h-40 object-cover" />
-        ) : (
-          <div className="w-full h-40 bg-gradient-to-br from-emerald-50 to-teal-50 flex items-center justify-center">
-            <Compass className="w-8 h-8 text-emerald-200" />
-          </div>
-        )}
-      </button>
-
-      <div className="p-4 space-y-2.5">
-        {/* Name + rating — clickable to expand */}
-        <button
-          type="button"
-          onClick={handleExpand}
-          className="w-full text-left flex items-start justify-between gap-2 cursor-pointer"
-        >
-          <h3 className="font-semibold text-gray-900 text-sm leading-tight">
-            {place.name}
-          </h3>
-          <div className="flex items-center gap-1.5 shrink-0">
-            {effectiveRating != null && (
-              <span className="flex items-center gap-0.5 text-yellow-600 text-xs font-medium">
-                <Star className="w-3.5 h-3.5 fill-current" />
-                {effectiveRating.toFixed(1)}
-                {effectiveRatingCount != null && (
-                  <span className="text-gray-400 font-normal ml-0.5">
-                    ({effectiveRatingCount.toLocaleString()})
-                  </span>
-                )}
-              </span>
-            )}
-            {expanded ? (
-              <ChevronUp className="w-4 h-4 text-gray-400" />
-            ) : (
-              <ChevronDown className="w-4 h-4 text-gray-400" />
-            )}
-          </div>
-        </button>
-
-        {/* Address */}
-        <div className="flex items-start gap-1 text-xs text-gray-500">
-          <MapPin className="w-3 h-3 shrink-0 mt-0.5" />
-          <span className={expanded ? "" : "line-clamp-2"}>{details?.address || place.address}</span>
-        </div>
-
-        {/* Price + open status */}
-        <div className="flex items-center gap-2 text-xs">
-          {effectivePrice && PRICE_LABEL[effectivePrice] && (
-            <span className="font-semibold text-gray-700">
-              {PRICE_LABEL[effectivePrice]}
-            </span>
-          )}
-          {(details?.openNow ?? place.openNow) != null && (
-            <span
-              className={cn(
-                "font-medium",
-                (details?.openNow ?? place.openNow) ? "text-green-600" : "text-red-500"
-              )}
-            >
-              {(details?.openNow ?? place.openNow) ? "Open now" : "Closed"}
-            </span>
-          )}
-        </div>
-
-        {/* Kids-friendly badge */}
-        {(details?.goodForChildren ?? place.goodForChildren) && (
-          <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-green-50 border border-green-100 rounded-lg text-xs font-medium text-green-700">
-            Kids friendly
-          </div>
-        )}
-
-        {/* Type tags */}
-        {place.types.length > 0 && (
-          <div className="flex gap-1 flex-wrap">
-            {place.types
-              .filter(
-                (t) =>
-                  !["point_of_interest", "establishment", "food", "store"].includes(t)
-              )
-              .slice(0, 4)
-              .map((type) => (
-                <span
-                  key={type}
-                  className="px-1.5 py-0.5 text-[10px] bg-emerald-50 text-emerald-600 rounded capitalize"
-                >
-                  {type.replace(/_/g, " ")}
-                </span>
-              ))}
-          </div>
-        )}
-
-        {/* ─── Expanded detail panel ─────────────────────────────────────── */}
-        {expanded && (
-          <div className="border-t border-gray-100 pt-3 mt-1 space-y-3">
-            {detailsLoading && (
-              <div className="flex items-center justify-center py-4">
-                <Loader2 className="w-5 h-5 text-emerald-500 animate-spin" />
-              </div>
-            )}
-
-            {!detailsLoading && (
-              <>
-                {/* Phone */}
-                {details?.phone && (
-                  <div className="flex items-center gap-2 text-xs text-gray-600">
-                    <Phone className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-                    <a href={`tel:${details.phone}`} className="hover:text-indigo-600 transition-colors">
-                      {details.phone}
-                    </a>
-                  </div>
-                )}
-
-                {/* Website */}
-                {details?.website && (
-                  <div className="flex items-center gap-2 text-xs text-gray-600">
-                    <Globe className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-                    <a
-                      href={details.website}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="hover:text-indigo-600 transition-colors truncate"
-                    >
-                      {details.website.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "")}
-                    </a>
-                  </div>
-                )}
-
-                {/* Price level detail */}
-                {effectivePrice && PRICE_LABEL[effectivePrice] && (
-                  <div className="flex items-center gap-2 text-xs text-gray-600">
-                    <DollarSign className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-                    <span>Price level: <span className="font-semibold">{PRICE_LABEL[effectivePrice]}</span></span>
-                  </div>
-                )}
-
-                {/* Opening hours */}
-                {details?.hours && details.hours.length > 0 && (
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2 text-xs font-medium text-gray-700">
-                      <Clock className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-                      Opening Hours
-                    </div>
-                    <div className="ml-5.5 space-y-0.5">
-                      {details.hours.map((line, i) => (
-                        <div key={i} className="text-[11px] text-gray-500 ml-[22px]">
-                          {line}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Action buttons */}
-                <div className="flex gap-2 pt-1">
-                  <a
-                    href={googleMapsUrl(place)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium rounded-xl border border-gray-200 text-gray-700 hover:bg-gray-50 transition-colors"
-                  >
-                    <ExternalLink className="w-3.5 h-3.5" />
-                    View on Google Maps
-                  </a>
-                  <button
-                    onClick={onSave}
-                    disabled={isSaved}
-                    className={cn(
-                      "flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-medium rounded-xl transition-colors",
-                      isSaved
-                        ? "bg-green-50 text-green-700 cursor-default"
-                        : "bg-emerald-600 text-white hover:bg-emerald-700"
-                    )}
-                  >
-                    {isSaved ? (
-                      <>
-                        <Check className="w-3.5 h-3.5" />
-                        Added
-                      </>
-                    ) : (
-                      <>
-                        <Plus className="w-3.5 h-3.5" />
-                        Add to Trip
-                      </>
-                    )}
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-        )}
-
-        {/* Collapsed: simple add button */}
-        {!expanded && (
-          <button
-            onClick={onSave}
-            disabled={isSaved}
-            className={cn(
-              "w-full flex items-center justify-center gap-1.5 py-2 text-xs font-medium rounded-xl transition-colors",
-              isSaved
-                ? "bg-green-50 text-green-700 cursor-default"
-                : "bg-emerald-600 text-white hover:bg-emerald-700"
-            )}
-          >
-            {isSaved ? (
-              <>
-                <Check className="w-3.5 h-3.5" />
-                Added
-              </>
-            ) : (
-              <>
-                <Plus className="w-3.5 h-3.5" />
-                Add to activities
-              </>
-            )}
-          </button>
-        )}
-      </div>
-    </div>
-  )
-}
-
-/* ─── Component ────────────────────────────────────────────────────────────── */
-export function DiscoverView({ tripId, destination, destinations, arrivalCities }: Props) {
-  const locationOptions = buildLocationOptions(destinations, arrivalCities, destination)
-
-  const [selectedLocation, setSelectedLocation] = useState(locationOptions[0]?.value ?? destination)
+  // Core state
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState("")
+  const [activeTab, setActiveTab] = useState("all")
+  const [activeFilters, setActiveFilters] = useState<Set<string>>(new Set())
+  const [selectedLocation, setSelectedLocation] = useState(locationOptions[0]?.value ?? trip.destination)
   const [customLocation, setCustomLocation] = useState("")
-  const [activeFilter, setActiveFilter] = useState<string | null>(null)
-  const [customQuery, setCustomQuery] = useState("")
-  const [results, setResults] = useState<Place[]>([])
+  const [searchResults, setSearchResults] = useState<Place[]>([])
   const [loading, setLoading] = useState(false)
-  const [savedIds, setSavedIds] = useState<Set<string>>(new Set())
+
+  // Activities and dismissed
+  const [activities, setActivities] = useState<Activity[]>(initialActivities)
+  const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set(initialDismissed))
+  const [dismissingIds, setDismissingIds] = useState<Set<string>>(new Set())
+
+  // AI state
+  const [aiPicks, setAiPicks] = useState<Place[]>([])
+  const [aiPicksLoading, setAiPicksLoading] = useState(false)
+  const [isAIFilling, setIsAIFilling] = useState(false)
+
+  // Auto-suggest
+  const [suggestions, setSuggestions] = useState<Place[]>([])
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false)
+  const suggestionsLoaded = useRef(false)
+
+  // Mobile
+  const [isMobile, setIsMobile] = useState(false)
 
   const effectiveLocation = selectedLocation === "__other__" ? customLocation : selectedLocation
   const locationBias = getLocationBias(selectedLocation, locationOptions)
 
+  // Build interest map: googlePlaceId -> priority (only WISHLIST items)
+  const interestMap = new Map<string, "MUST_DO" | "LOW">()
+  for (const a of activities) {
+    if (a.googlePlaceId && a.status === "WISHLIST") {
+      if (a.priority === "MUST_DO") interestMap.set(a.googlePlaceId, "MUST_DO")
+      else interestMap.set(a.googlePlaceId, "LOW")
+    }
+  }
+
+  // Wishlist groups
+  const wishlist = activities.filter((a) => a.status === "WISHLIST")
+  const mustDoItems = wishlist.filter((a) => a.priority === "MUST_DO")
+  const maybeItems = wishlist.filter((a) => a.priority !== "MUST_DO")
+  const wishlistCount = wishlist.length
+
+  // Filter out dismissed places from results, then apply user filters
+  const filteredResults = applyFilters(
+    searchResults.filter((p) => !dismissedIds.has(p.googlePlaceId)),
+    activeFilters
+  )
+  const filteredSuggestions = applyFilters(
+    suggestions.filter((p) => !dismissedIds.has(p.googlePlaceId)),
+    activeFilters
+  )
+  const filteredAiPicks = aiPicks.filter((p) => !dismissedIds.has(p.googlePlaceId))
+
+  // Detect mobile
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 768)
+    check()
+    window.addEventListener("resize", check)
+    return () => window.removeEventListener("resize", check)
+  }, [])
+
+  // Auto-suggest on mount
+  useEffect(() => {
+    if (suggestionsLoaded.current) return
+    suggestionsLoaded.current = true
+
+    const city = locationOptions[0]?.value || trip.destination
+    if (!city) return
+
+    const hasKids = travelerTags.some((t) => t === "child" || t === "toddler")
+    const prefix = hasKids ? "family friendly things to do" : "top things to do"
+    const query = `${prefix} in ${city}`
+
+    setSuggestionsLoading(true)
+    const bias =
+      locationOptions[0]?.lat != null && locationOptions[0]?.lng != null
+        ? `${locationOptions[0].lat},${locationOptions[0].lng}`
+        : undefined
+
+    searchPlaces(query, bias)
+      .then((r) => {
+        if (r.results.length > 0) setSuggestions(r.results)
+      })
+      .catch(() => {})
+      .finally(() => setSuggestionsLoading(false))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // ─── Handlers ─────────────────────────────────────────────────────────────
+
   async function handleSearch(filterQuery?: string, keyword?: string) {
-    const city = effectiveLocation || destination
+    const city = effectiveLocation || trip.destination
     const parts = [filterQuery, keyword, city].filter(Boolean)
     if (parts.length === 0) return
 
     setLoading(true)
     try {
       const result = await searchPlaces(parts.join(" "), locationBias || undefined)
-      setResults(result.results)
+      setSearchResults(result.results)
       if (result.error && result.results.length === 0) {
         toast.error(result.error || "No results found")
       }
@@ -437,160 +240,549 @@ export function DiscoverView({ tripId, destination, destinations, arrivalCities 
     }
   }
 
-  function handleFilterSelect(filter: (typeof QUICK_FILTERS)[number]) {
-    const next = activeFilter === filter.query ? null : filter.query
-    setActiveFilter(next)
-    handleSearch(next || undefined, customQuery || undefined)
+  function handleTabChange(tab: CategoryTab) {
+    const newTabId = activeTab === tab.id ? "all" : tab.id
+    setActiveTab(newTabId)
+
+    if (tab.isAI) {
+      if (newTabId === "ai_picks") {
+        loadAIPicks()
+      } else {
+        setAiPicks([])
+      }
+      return
+    }
+
+    // For non-AI tabs, trigger a search with the tab's query
+    if (newTabId === "all") {
+      // Show suggestions or clear search
+      setSearchResults([])
+    } else {
+      const selectedTab = CATEGORY_TABS.find((t) => t.id === newTabId)
+      if (selectedTab) {
+        handleSearch(selectedTab.query, searchQuery || undefined)
+      }
+    }
+  }
+
+  function handleToggleFilter(filterId: string) {
+    setActiveFilters((prev) => {
+      const next = new Set(prev)
+      if (next.has(filterId)) {
+        next.delete(filterId)
+      } else {
+        next.add(filterId)
+      }
+      return next
+    })
+  }
+
+  async function loadAIPicks() {
+    if (userPlan === "FREE") {
+      toast.error("For Your Group requires a paid plan. Upgrade to unlock!")
+      setActiveTab("all")
+      return
+    }
+    setAiPicksLoading(true)
+    try {
+      const picks = await getAIPicks(tripId, effectiveLocation || trip.destination)
+      const asPlaces: Place[] = picks.map((pick, i) => ({
+        googlePlaceId: `ai-pick-${i}-${pick.name.replace(/\s+/g, "-").toLowerCase()}`,
+        name: pick.name,
+        address: pick.description,
+        types: [pick.category],
+        primaryType: pick.category,
+        rating: undefined,
+      }))
+      setAiPicks(asPlaces)
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : ""
+      if (msg === "UPGRADE_REQUIRED") {
+        toast.error("AI Picks requires a paid plan. Upgrade to unlock!")
+      } else {
+        toast.error("Failed to load AI picks")
+      }
+    } finally {
+      setAiPicksLoading(false)
+    }
   }
 
   function handleSearchSubmit() {
-    handleSearch(activeFilter || undefined, customQuery || undefined)
+    if (activeTab === "ai_picks") {
+      setActiveTab("all")
+      setAiPicks([])
+    }
+    const selectedTab = CATEGORY_TABS.find((t) => t.id === activeTab)
+    const tabQuery = activeTab !== "all" && selectedTab ? selectedTab.query : undefined
+    handleSearch(tabQuery, searchQuery || undefined)
   }
 
-  async function handleSave(place: Place) {
-    const key = place.googlePlaceId
-    if (savedIds.has(key)) return
-    try {
-      await createActivity(tripId, {
-        name: place.name,
-        address: place.address,
-        lat: place.lat,
-        lng: place.lng,
-        googlePlaceId: place.googlePlaceId,
-        rating: place.rating,
-        imageUrl: place.imageUrl || undefined,
-        priority: "MEDIUM",
-        durationMins: 120,
-        costPerAdult: 0,
-        costPerChild: 0,
-        category: place.types[0] || "attraction",
-        indoorOutdoor: "BOTH",
-        reservationNeeded: false,
-        isFixed: false,
+  function getPlaceData(place: Place) {
+    return {
+      googlePlaceId: place.googlePlaceId,
+      name: place.name,
+      address: place.address,
+      lat: place.lat,
+      lng: place.lng,
+      rating: place.rating,
+      imageUrl: place.imageUrl || undefined,
+      category: place.types?.[0],
+      durationMins: 90,
+    }
+  }
+
+  async function handleNope(place: Place) {
+    setDismissingIds((prev) => new Set([...prev, place.googlePlaceId]))
+
+    setTimeout(async () => {
+      setDismissedIds((prev) => new Set([...prev, place.googlePlaceId]))
+      setDismissingIds((prev) => {
+        const n = new Set(prev)
+        n.delete(place.googlePlaceId)
+        return n
       })
-      setSavedIds((prev) => new Set([...prev, key]))
-      toast.success(`${place.name} added to activities!`)
+
+      const existing = activities.find((a) => a.googlePlaceId === place.googlePlaceId)
+      if (existing) {
+        setActivities((prev) => prev.filter((a) => a.googlePlaceId !== place.googlePlaceId))
+        removeFromShortlist(tripId, existing.id).catch(() => {})
+      }
+
+      dismissPlace(tripId, place.googlePlaceId).catch(() => {})
+
+      toast("Dismissed", {
+        description: place.name,
+        action: {
+          label: "Undo",
+          onClick: () => {
+            setDismissedIds((prev) => {
+              const n = new Set(prev)
+              n.delete(place.googlePlaceId)
+              return n
+            })
+            undoDismiss(tripId, place.googlePlaceId).catch(() => {})
+          },
+        },
+        duration: 3000,
+      })
+    }, 300)
+  }
+
+  async function handleMaybe(place: Place) {
+    const data = getPlaceData(place)
+    try {
+      const result = await addToWishlistMaybe(tripId, data)
+      const existing = activities.find((a) => a.googlePlaceId === place.googlePlaceId)
+      if (existing) {
+        setActivities((prev) =>
+          prev.map((a) =>
+            a.googlePlaceId === place.googlePlaceId
+              ? { ...a, priority: "LOW", status: "WISHLIST" }
+              : a
+          )
+        )
+      } else {
+        setActivities((prev) => [
+          {
+            id: result.id,
+            name: data.name,
+            description: null,
+            address: data.address || null,
+            lat: data.lat || null,
+            lng: data.lng || null,
+            googlePlaceId: data.googlePlaceId,
+            category: data.category || null,
+            durationMins: data.durationMins || 90,
+            costPerAdult: 0,
+            priority: "LOW",
+            status: "WISHLIST",
+            rating: data.rating || null,
+            imageUrl: data.imageUrl || null,
+            notes: null,
+            indoorOutdoor: "BOTH",
+          },
+          ...prev,
+        ])
+      }
+      toast.success(`${place.name} added as Maybe`)
     } catch {
       toast.error("Failed to save")
     }
   }
 
+  async function handleMustDo(place: Place) {
+    const data = getPlaceData(place)
+    try {
+      const result = await addToWishlistMustDo(tripId, data)
+      const existing = activities.find((a) => a.googlePlaceId === place.googlePlaceId)
+      if (existing) {
+        setActivities((prev) =>
+          prev.map((a) =>
+            a.googlePlaceId === place.googlePlaceId
+              ? { ...a, priority: "MUST_DO", status: "WISHLIST" }
+              : a
+          )
+        )
+      } else {
+        setActivities((prev) => [
+          {
+            id: result.id,
+            name: data.name,
+            description: null,
+            address: data.address || null,
+            lat: data.lat || null,
+            lng: data.lng || null,
+            googlePlaceId: data.googlePlaceId,
+            category: data.category || null,
+            durationMins: data.durationMins || 90,
+            costPerAdult: 0,
+            priority: "MUST_DO",
+            status: "WISHLIST",
+            rating: data.rating || null,
+            imageUrl: data.imageUrl || null,
+            notes: null,
+            indoorOutdoor: "BOTH",
+          },
+          ...prev,
+        ])
+      }
+      toast.success(`${place.name} added as Must Do!`)
+    } catch {
+      toast.error("Failed to save")
+    }
+  }
+
+  async function handleRemoveFromWishlist(activityId: string) {
+    try {
+      await removeFromShortlist(tripId, activityId)
+      setActivities((prev) => prev.filter((a) => a.id !== activityId))
+      toast.success("Removed from wishlist")
+    } catch {
+      toast.error("Failed to remove")
+    }
+  }
+
+  async function handleUpgradeToMustDo(activityId: string) {
+    try {
+      await updateActivityPriority(tripId, activityId, "MUST_DO")
+      setActivities((prev) =>
+        prev.map((a) => (a.id === activityId ? { ...a, priority: "MUST_DO" } : a))
+      )
+    } catch {
+      toast.error("Failed to update")
+    }
+  }
+
+  async function handleDowngradeToMaybe(activityId: string) {
+    try {
+      await updateActivityPriority(tripId, activityId, "LOW")
+      setActivities((prev) =>
+        prev.map((a) => (a.id === activityId ? { ...a, priority: "LOW" } : a))
+      )
+    } catch {
+      toast.error("Failed to update")
+    }
+  }
+
+  async function handleAIFill() {
+    setIsAIFilling(true)
+    try {
+      const isPaid = userPlan !== "FREE"
+      if (isPaid) {
+        await runAIOptimizer(tripId)
+      } else {
+        await runOptimizer(tripId)
+      }
+      const scheduledCount = wishlist.length
+      toast.success(
+        `AI scheduled ${scheduledCount} activities! Redirecting to itinerary...`
+      )
+      setTimeout(() => {
+        router.push(`/trip/${tripId}/itinerary`)
+      }, 1000)
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : ""
+      if (msg === "UPGRADE_REQUIRED") {
+        toast.error("AI optimizer requires a paid plan. Using basic optimizer...")
+        try {
+          await runOptimizer(tripId)
+          toast.success("Itinerary built! Redirecting...")
+          setTimeout(() => router.push(`/trip/${tripId}/itinerary`), 1000)
+        } catch {
+          toast.error("Failed to build itinerary")
+        }
+      } else {
+        toast.error("Failed to build itinerary")
+      }
+    } finally {
+      setIsAIFilling(false)
+    }
+  }
+
+  // ─── Render ───────────────────────────────────────────────────────────────
+
+  const showAIPicks = activeTab === "ai_picks"
+  const displayResults = showAIPicks ? filteredAiPicks : filteredResults
+  const showSuggestions =
+    !loading && !showAIPicks && filteredResults.length === 0 && activeTab === "all" && (suggestionsLoading || filteredSuggestions.length > 0)
+
   return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8">
-      {/* Header */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Discover</h1>
-        <p className="text-gray-500 text-sm mt-0.5">
-          Find attractions, tours &amp; hidden gems for your trip
-        </p>
-      </div>
-
-      {/* Location selector */}
-      <div className="mb-4">
-        <label className="block text-xs font-medium text-gray-500 mb-1.5">Search in</label>
-        <div className="relative inline-block w-full sm:w-72">
-          <select
-            value={selectedLocation}
-            onChange={(e) => setSelectedLocation(e.target.value)}
-            className="w-full appearance-none pl-3 pr-8 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-          >
-            {locationOptions.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-          <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-        </div>
-        {selectedLocation === "__other__" && (
-          <input
-            type="text"
-            placeholder="Enter a city or area..."
-            value={customLocation}
-            onChange={(e) => setCustomLocation(e.target.value)}
-            className="mt-2 w-full sm:w-72 pl-3 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+    <div className="flex h-[calc(100vh-57px)] md:h-screen overflow-hidden">
+      {/* Browse Area */}
+      <div className={cn("flex-1 overflow-y-auto transition-all", sidebarOpen && !isMobile && "w-[calc(100%-320px)]")}>
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 py-6">
+          {/* Header with location dropdown */}
+          <DiscoverHeader
+            locationOptions={locationOptions}
+            selectedLocation={selectedLocation}
+            onLocationChange={setSelectedLocation}
+            customLocation={customLocation}
+            onCustomLocationChange={setCustomLocation}
           />
-        )}
-      </div>
 
-      {/* Search field */}
-      <div className="flex gap-2 mb-4">
-        <div className="flex-1 relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-          <input
-            type="text"
-            placeholder={`Search "landmarks", "parks", "tours"...`}
-            value={customQuery}
-            onChange={(e) => setCustomQuery(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleSearchSubmit()}
-            className="w-full pl-9 pr-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-          />
-        </div>
-        <button
-          onClick={handleSearchSubmit}
-          disabled={loading}
-          className="px-5 py-3 bg-gray-900 text-white text-sm font-medium rounded-xl hover:bg-gray-800 disabled:opacity-50 transition-colors"
-        >
-          Search
-        </button>
-      </div>
+          {/* Search bar */}
+          <div className="flex gap-2 mb-3">
+            <div className="flex-1 relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search restaurants, museums, tours, parks..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleSearchSubmit()}
+                className="w-full pl-9 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+            <button
+              onClick={handleSearchSubmit}
+              disabled={loading}
+              className="px-4 py-2.5 bg-gray-900 text-white text-sm font-medium rounded-xl hover:bg-gray-800 disabled:opacity-50 transition-colors"
+            >
+              Search
+            </button>
+          </div>
 
-      {/* Quick filter pills */}
-      <div className="flex gap-2 flex-wrap mb-6">
-        {QUICK_FILTERS.map((filter) => (
-          <button
-            key={filter.query}
-            onClick={() => handleFilterSelect(filter)}
-            className={cn(
-              "px-3 py-1.5 text-xs font-medium rounded-full border transition-colors",
-              activeFilter === filter.query
-                ? "bg-emerald-600 text-white border-emerald-600"
-                : "bg-white text-gray-600 border-gray-200 hover:border-emerald-300 hover:text-emerald-600"
+          {/* Category tabs */}
+          <DiscoverTabs activeTab={activeTab} onTabChange={handleTabChange} />
+
+          {/* Filter chips */}
+          <DiscoverFilters activeFilters={activeFilters} onToggleFilter={handleToggleFilter} />
+
+          {/* AI Picks: locked state for free users */}
+          {showAIPicks && userPlan === "FREE" && (
+            <div className="text-center py-16">
+              <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-purple-50 mb-4">
+                <Lock className="w-8 h-8 text-purple-300" />
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-1">AI Picks for Your Group</h3>
+              <p className="text-gray-500 text-sm mb-4 max-w-sm mx-auto">
+                Get personalized recommendations based on your travelers, preferences, and trip details.
+              </p>
+              <button
+                onClick={() => router.push("/settings/billing")}
+                className="px-6 py-2.5 bg-purple-600 text-white text-sm font-medium rounded-xl hover:bg-purple-700 transition-colors"
+              >
+                Upgrade to unlock
+              </button>
+            </div>
+          )}
+
+          {/* AI Picks loading */}
+          {showAIPicks && userPlan !== "FREE" && aiPicksLoading && (
+            <div className="flex items-center justify-center py-16">
+              <div className="text-center">
+                <Loader2 className="w-8 h-8 text-purple-500 animate-spin mx-auto mb-2" />
+                <p className="text-sm text-gray-500">AI is finding the best picks for your group...</p>
+              </div>
+            </div>
+          )}
+
+          {/* AI Picks results */}
+          {showAIPicks && !aiPicksLoading && filteredAiPicks.length > 0 && (
+            <div className="mb-6">
+              <div className="flex items-center gap-2 mb-3">
+                <Sparkles className="w-4 h-4 text-purple-600" />
+                <h2 className="text-sm font-semibold text-purple-900">AI Picks for {effectiveLocation || trip.destination}</h2>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {filteredAiPicks.map((place) => (
+                  <BrowseCard
+                    key={place.googlePlaceId}
+                    place={place}
+                    wishlistState={interestMap.get(place.googlePlaceId) || null}
+                    onNope={handleNope}
+                    onMaybe={handleMaybe}
+                    onMustDo={handleMustDo}
+                    isDismissing={dismissingIds.has(place.googlePlaceId)}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* AI Picks empty (paid users only) */}
+          {showAIPicks && userPlan !== "FREE" && !aiPicksLoading && filteredAiPicks.length === 0 && (
+            <div className="text-center py-16">
+              <Sparkles className="w-12 h-12 text-gray-200 mx-auto mb-3" />
+              <p className="text-gray-500 text-sm">No AI picks available right now. Try again later.</p>
+            </div>
+          )}
+
+          {/* Auto-suggested */}
+          {!showAIPicks && showSuggestions && (
+            <div className="mb-6">
+              <div className="flex items-center gap-2 mb-3">
+                <Sparkles className="w-4 h-4 text-indigo-600" />
+                <h2 className="text-sm font-semibold text-indigo-900">Suggested for your trip</h2>
+              </div>
+              {suggestionsLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="w-6 h-6 text-indigo-400 animate-spin" />
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {filteredSuggestions.map((place) => (
+                    <BrowseCard
+                      key={place.googlePlaceId}
+                      place={place}
+                      wishlistState={interestMap.get(place.googlePlaceId) || null}
+                      onNope={handleNope}
+                      onMaybe={handleMaybe}
+                      onMustDo={handleMustDo}
+                      isDismissing={dismissingIds.has(place.googlePlaceId)}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Loading */}
+          {!showAIPicks && loading && (
+            <div className="flex items-center justify-center py-16">
+              <Loader2 className="w-8 h-8 text-indigo-500 animate-spin" />
+            </div>
+          )}
+
+          {/* Search results */}
+          {!showAIPicks && !loading && filteredResults.length > 0 && (
+            <div className="mb-6">
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-sm font-semibold text-gray-900">
+                  {filteredResults.length} results
+                </h2>
+                <button
+                  onClick={() => {
+                    setSearchResults([])
+                    setActiveTab("all")
+                  }}
+                  className="text-xs text-gray-400 hover:text-gray-600"
+                >
+                  Clear
+                </button>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {filteredResults.map((place) => (
+                  <BrowseCard
+                    key={place.googlePlaceId}
+                    place={place}
+                    wishlistState={interestMap.get(place.googlePlaceId) || null}
+                    onNope={handleNope}
+                    onMaybe={handleMaybe}
+                    onMustDo={handleMustDo}
+                    isDismissing={dismissingIds.has(place.googlePlaceId)}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Empty state */}
+          {!showAIPicks &&
+            !loading &&
+            filteredResults.length === 0 &&
+            filteredSuggestions.length === 0 &&
+            !suggestionsLoading && (
+              <div className="text-center py-20">
+                <Search className="w-12 h-12 text-gray-200 mx-auto mb-3" />
+                <p className="text-gray-500 text-sm">
+                  Search for places or pick a category to get started
+                </p>
+              </div>
             )}
-          >
-            {filter.label}
-          </button>
-        ))}
+        </div>
       </div>
 
-      {/* Loading */}
-      {loading && (
-        <div className="flex items-center justify-center py-16">
-          <Loader2 className="w-8 h-8 text-emerald-500 animate-spin" />
+      {/* Wishlist Sidebar (desktop) */}
+      {!isMobile && sidebarOpen && (
+        <WishlistSidebar
+          mustDoItems={mustDoItems}
+          maybeItems={maybeItems}
+          onRemove={handleRemoveFromWishlist}
+          onUpgradeToMustDo={handleUpgradeToMustDo}
+          onDowngradeToMaybe={handleDowngradeToMaybe}
+          onClose={() => setSidebarOpen(false)}
+          onAIFill={handleAIFill}
+          isAIFilling={isAIFilling}
+        />
+      )}
+
+      {/* Mobile wishlist bottom sheet */}
+      {isMobile && sidebarOpen && (
+        <WishlistSidebar
+          mustDoItems={mustDoItems}
+          maybeItems={maybeItems}
+          onRemove={handleRemoveFromWishlist}
+          onUpgradeToMustDo={handleUpgradeToMustDo}
+          onDowngradeToMaybe={handleDowngradeToMaybe}
+          onClose={() => setSidebarOpen(false)}
+          onAIFill={handleAIFill}
+          isAIFilling={isAIFilling}
+          isMobile
+        />
+      )}
+
+      {/* Floating wishlist pill (sidebar closed) */}
+      {!sidebarOpen && wishlistCount > 0 && !isMobile && (
+        <button
+          onClick={() => setSidebarOpen(true)}
+          className="fixed bottom-6 right-6 z-30 flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-full shadow-lg hover:bg-indigo-700 transition-colors"
+        >
+          <Bookmark className="w-4 h-4 fill-white" />
+          {wishlistCount} saved
+        </button>
+      )}
+
+      {/* Mobile floating buttons */}
+      {isMobile && (
+        <div className="fixed bottom-20 right-4 z-30 flex flex-col gap-2">
+          {wishlistCount > 0 && !sidebarOpen && (
+            <button
+              onClick={() => setSidebarOpen(true)}
+              className="flex items-center gap-2 px-3.5 py-2 bg-indigo-600 text-white text-xs font-medium rounded-full shadow-lg"
+            >
+              <Bookmark className="w-3.5 h-3.5 fill-white" />
+              {wishlistCount} saved
+            </button>
+          )}
+          {wishlistCount > 0 && !sidebarOpen && (
+            <button
+              onClick={handleAIFill}
+              disabled={isAIFilling}
+              className="flex items-center gap-2 px-3.5 py-2 bg-green-600 text-white text-xs font-medium rounded-full shadow-lg disabled:opacity-50"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              {isAIFilling ? "Building..." : "AI Fill"}
+            </button>
+          )}
         </div>
       )}
 
-      {/* Empty state */}
-      {!loading && results.length === 0 && (
-        <div className="text-center py-20">
-          <Compass className="w-12 h-12 text-gray-200 mx-auto mb-3" />
-          <p className="text-gray-500 text-sm">
-            Pick a category or type a keyword to discover places
-          </p>
-          <p className="text-gray-400 text-xs mt-1">
-            Results powered by Google Places
-          </p>
-        </div>
-      )}
-
-      {/* Viator destination banner */}
-      {!loading && results.length > 0 && effectiveLocation && (
-        <ViatorDestinationBanner destination={effectiveLocation} />
-      )}
-
-      {/* Results grid */}
-      {!loading && results.length > 0 && (
-        <div className="grid sm:grid-cols-2 gap-4">
-          {results.map((place) => (
-            <PlaceCard
-              key={place.googlePlaceId}
-              place={place}
-              isSaved={savedIds.has(place.googlePlaceId)}
-              onSave={() => handleSave(place)}
-            />
-          ))}
-        </div>
-      )}
+      {/* CSS animations */}
+      <style jsx global>{`
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+      `}</style>
     </div>
   )
 }

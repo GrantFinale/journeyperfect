@@ -6,12 +6,10 @@ import { useState } from "react"
 import {
   LayoutDashboard,
   CalendarDays,
-  Star,
   DollarSign,
   FileText,
   Settings,
   Compass,
-  Utensils,
   Menu,
   X,
   Map,
@@ -47,18 +45,23 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/settings/referrals", label: "Refer a Friend", icon: Gift },
 ]
 
-const TRIP_NAV_ITEMS = (tripId: string): NavItem[] => [
+const TRIP_NAV_PRIMARY = (tripId: string): NavItem[] => [
   { href: `/trip/${tripId}`, label: "Overview", icon: Map, exact: true },
   { href: `/trip/${tripId}/itinerary`, label: "Itinerary", icon: CalendarDays },
   { href: `/trip/${tripId}/map`, label: "Map", icon: Navigation },
-  { href: `/trip/${tripId}/explore`, label: "Explore", icon: Compass },
-  { href: `/trip/${tripId}/activities`, label: "Activities", icon: Star },
   { href: `/trip/${tripId}/discover`, label: "Discover", icon: Compass },
-  { href: `/trip/${tripId}/dining`, label: "Dining", icon: Utensils },
+]
+
+const TRIP_NAV_SECONDARY = (tripId: string): NavItem[] => [
   { href: `/trip/${tripId}/packing`, label: "Packing", icon: Package },
   { href: `/trip/${tripId}/budget`, label: "Budget", icon: DollarSign },
   { href: `/trip/${tripId}/documents`, label: "Documents", icon: FileText },
-  { href: `/trip/${tripId}/settings`, label: "Trip Settings", icon: Settings },
+  { href: `/trip/${tripId}/settings`, label: "Settings", icon: Settings },
+]
+
+const TRIP_NAV_ITEMS = (tripId: string): NavItem[] => [
+  ...TRIP_NAV_PRIMARY(tripId),
+  ...TRIP_NAV_SECONDARY(tripId),
 ]
 
 export function AppShell({ children, user }: AppShellProps) {
@@ -75,9 +78,9 @@ export function AppShell({ children, user }: AppShellProps) {
     ? [
         { href: `/trip/${currentTripId}`, label: "Overview", icon: Map },
         { href: `/trip/${currentTripId}/itinerary`, label: "Itinerary", icon: CalendarDays },
-        { href: `/trip/${currentTripId}/explore`, label: "Explore", icon: Compass },
-        { href: `/trip/${currentTripId}/activities`, label: "Activities", icon: Star },
+        { href: `/trip/${currentTripId}/discover`, label: "Discover", icon: Compass },
         { href: `/trip/${currentTripId}/budget`, label: "Budget", icon: DollarSign },
+        { href: `/trip/${currentTripId}/packing`, label: "Packing", icon: Package },
       ]
     : [
         { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -105,33 +108,77 @@ export function AppShell({ children, user }: AppShellProps) {
               className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors py-1"
             >
               <ChevronLeft className="w-3 h-3" />
-              All trips
+              Back to Trips
             </Link>
           </div>
         )}
 
         {/* Nav items */}
         <nav className="flex-1 overflow-y-auto py-3 px-2">
-          {navItems.map((item) => {
-            const isActive = item.exact
-              ? pathname === item.href
-              : pathname.startsWith(item.href) && (item.href !== "/dashboard" || pathname === "/dashboard")
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={cn(
-                  "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors mb-0.5",
-                  isActive
-                    ? "bg-primary/10 text-primary"
-                    : "text-muted-foreground hover:bg-accent hover:text-foreground"
-                )}
-              >
-                <item.icon className="w-4 h-4 shrink-0" />
-                {item.label}
-              </Link>
-            )
-          })}
+          {currentTripId ? (
+            <>
+              {TRIP_NAV_PRIMARY(currentTripId).map((item) => {
+                const isActive = item.exact
+                  ? pathname === item.href
+                  : pathname.startsWith(item.href)
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={cn(
+                      "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors mb-0.5",
+                      isActive
+                        ? "bg-primary/10 text-primary"
+                        : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                    )}
+                  >
+                    <item.icon className="w-4 h-4 shrink-0" />
+                    {item.label}
+                  </Link>
+                )
+              })}
+              <div className="my-2 mx-3 border-t border-border/50" />
+              {TRIP_NAV_SECONDARY(currentTripId).map((item) => {
+                const isActive = pathname.startsWith(item.href)
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={cn(
+                      "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors mb-0.5",
+                      isActive
+                        ? "bg-primary/10 text-primary"
+                        : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                    )}
+                  >
+                    <item.icon className="w-4 h-4 shrink-0" />
+                    {item.label}
+                  </Link>
+                )
+              })}
+            </>
+          ) : (
+            navItems.map((item) => {
+              const isActive = item.exact
+                ? pathname === item.href
+                : pathname.startsWith(item.href) && (item.href !== "/dashboard" || pathname === "/dashboard")
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={cn(
+                    "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors mb-0.5",
+                    isActive
+                      ? "bg-primary/10 text-primary"
+                      : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                  )}
+                >
+                  <item.icon className="w-4 h-4 shrink-0" />
+                  {item.label}
+                </Link>
+              )
+            })
+          )}
         </nav>
 
         {/* User */}

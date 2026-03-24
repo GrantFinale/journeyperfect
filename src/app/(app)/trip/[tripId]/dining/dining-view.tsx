@@ -274,12 +274,12 @@ export function DiningView({ tripId, destination, destinations, arrivalCities, i
 
       {/* Explore banner */}
       <Link
-        href={`/trip/${tripId}/explore`}
+        href={`/trip/${tripId}/discover`}
         className="flex items-center gap-3 px-4 py-3 mb-6 bg-gradient-to-r from-orange-50 to-amber-50 border border-orange-100 rounded-xl hover:border-orange-200 hover:shadow-sm transition-all group"
       >
         <Sparkles className="w-5 h-5 text-orange-500 shrink-0" />
         <div className="flex-1 min-w-0">
-          <span className="text-sm font-medium text-orange-900">Try the new Explore page</span>
+          <span className="text-sm font-medium text-orange-900">Go to Discover</span>
           <span className="text-xs text-orange-500 ml-2">Browse, wishlist, and plan your itinerary in one place</span>
         </div>
         <span className="text-orange-400 group-hover:text-orange-600 transition-colors text-xs font-medium shrink-0">Go &rarr;</span>

@@ -160,7 +160,7 @@ function getLocationBias(
 /* ─── Component ────────────────────────────────────────────────────────────── */
 
 export function ActivitiesView({ tripId, initialActivities, destination, destinations, arrivalCities, travelerTags = [], dietaryRestrictions = [] }: Props) {
-  const explorePath = `/trip/${tripId}/explore`
+  const explorePath = `/trip/${tripId}/discover`
   const locationOptions = buildLocationOptions(destinations, arrivalCities, destination)
 
   const [activities, setActivities] = useState<Activity[]>(initialActivities)
@@ -534,7 +534,7 @@ export function ActivitiesView({ tripId, initialActivities, destination, destina
       >
         <Sparkles className="w-5 h-5 text-indigo-500 shrink-0" />
         <div className="flex-1 min-w-0">
-          <span className="text-sm font-medium text-indigo-900">Try the new Explore page</span>
+          <span className="text-sm font-medium text-indigo-900">Go to Discover</span>
           <span className="text-xs text-indigo-500 ml-2">Browse, wishlist, and plan your itinerary in one place</span>
         </div>
         <span className="text-indigo-400 group-hover:text-indigo-600 transition-colors text-xs font-medium shrink-0">Go &rarr;</span>

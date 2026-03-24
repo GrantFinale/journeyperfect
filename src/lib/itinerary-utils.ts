@@ -27,8 +27,11 @@ export function groupByDay<T extends ItineraryItemForGrouping>(items: T[]): Grou
       date: new Date(dateStr + "T12:00:00"),
       dateStr,
       items: items.sort((a, b) => {
+        // Sort by position first (user-defined order via drag-and-drop)
+        // Fall back to startTime only when positions are equal
+        if (a.position !== b.position) return a.position - b.position
         if (a.startTime && b.startTime) return a.startTime.localeCompare(b.startTime)
-        return a.position - b.position
+        return 0
       }),
     }))
 }

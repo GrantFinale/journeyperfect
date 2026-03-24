@@ -215,7 +215,7 @@ export function AppShell({ children, user }: AppShellProps) {
         </main>
 
         {/* Mobile bottom tab bar */}
-        <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-card border-t border-border z-30">
+        <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-30">
           <div className="flex">
             {BOTTOM_NAV.map((item) => {
               const isActive = pathname === item.href || (item.href !== "/dashboard" && pathname.startsWith(item.href))

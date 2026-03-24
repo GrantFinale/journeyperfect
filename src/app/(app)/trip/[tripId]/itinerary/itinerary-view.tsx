@@ -42,6 +42,7 @@ import {
   X,
   ToggleLeft,
   ToggleRight,
+  ExternalLink,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { CalendarExportButton } from "@/components/calendar-export"
@@ -69,6 +70,18 @@ type ItineraryItem = {
     flightNumber: string | null
     departureAirport: string | null
     arrivalAirport: string | null
+  } | null
+  activity?: {
+    lat: number | null
+    lng: number | null
+    address: string | null
+    name: string
+  } | null
+  hotel?: {
+    lat: number | null
+    lng: number | null
+    address: string | null
+    name: string
   } | null
 }
 
@@ -257,12 +270,14 @@ function typeColor(type: string) {
 
 function SortableItineraryItem({
   item,
+  nextItem,
   isLast,
   onDelete,
   tripId,
   onUpdateNotes,
 }: {
   item: ItineraryItem
+  nextItem?: ItineraryItem | null
   isLast: boolean
   onDelete: (id: string) => void
   tripId: string
@@ -447,15 +462,45 @@ function SortableItineraryItem({
           </div>
         </div>
       </div>
-      {/* Travel time indicator */}
-      {item.travelTimeToNextMins > 0 && !isLast && (
-        <div className="flex items-center gap-2 ml-14 my-0.5">
-          <Bus className="w-3 h-3 text-gray-300" />
-          <span className="text-[11px] text-gray-400">
-            {formatDuration(item.travelTimeToNextMins)} travel
-          </span>
-        </div>
-      )}
+      {/* Travel time indicator — clickable for directions */}
+      {item.travelTimeToNextMins > 0 && !isLast && (() => {
+        // Build Google Maps directions URL from this item to next
+        const fromLat = item.activity?.lat || item.hotel?.lat
+        const fromLng = item.activity?.lng || item.hotel?.lng
+        const toLat = nextItem?.activity?.lat || nextItem?.hotel?.lat
+        const toLng = nextItem?.activity?.lng || nextItem?.hotel?.lng
+        const fromName = item.activity?.name || item.hotel?.name || item.title
+        const toName = nextItem?.activity?.name || nextItem?.hotel?.name || nextItem?.title || ""
+
+        const hasCoords = fromLat && fromLng && toLat && toLng
+        const mapsUrl = hasCoords
+          ? `https://www.google.com/maps/dir/?api=1&origin=${fromLat},${fromLng}&destination=${toLat},${toLng}&travelmode=driving`
+          : fromName && toName
+            ? `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(fromName)}&destination=${encodeURIComponent(toName)}&travelmode=driving`
+            : null
+
+        return mapsUrl ? (
+          <a
+            href={mapsUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-2 ml-14 my-0.5 group/travel hover:bg-indigo-50 rounded-lg px-2 py-1 -mx-2 transition-colors"
+          >
+            <Bus className="w-3 h-3 text-gray-300 group-hover/travel:text-indigo-500" />
+            <span className="text-[11px] text-gray-400 group-hover/travel:text-indigo-600">
+              {formatDuration(item.travelTimeToNextMins)} travel
+            </span>
+            <ExternalLink className="w-2.5 h-2.5 text-gray-300 group-hover/travel:text-indigo-400" />
+          </a>
+        ) : (
+          <div className="flex items-center gap-2 ml-14 my-0.5">
+            <Bus className="w-3 h-3 text-gray-300" />
+            <span className="text-[11px] text-gray-400">
+              {formatDuration(item.travelTimeToNextMins)} travel
+            </span>
+          </div>
+        )
+      })()}
     </div>
   )
 }
@@ -786,51 +831,18 @@ export function ItineraryView({ tripId, initialItems, tripStartDate, tripEndDate
                       strategy={verticalListSortingStrategy}
                     >
                       <div className="space-y-2 mb-3">
-                        {(() => {
-                          const freeBlocks = showFreeTime
-                            ? computeFreeTimeBlocks(day.items, minGapHours * 60)
-                            : []
-
-                          // Render free time block before first item (afterItemIndex === -1)
-                          const beforeFirst = freeBlocks.filter((b) => b.afterItemIndex === -1)
-
-                          const handleFreeTimeAdd = (startTime: string) => {
-                            setAddingToDay(day.dateStr)
-                            setNewItemForm((f) => ({ ...f, startTime, title: "", type: "ACTIVITY", durationMins: 60 }))
-                          }
-
-                          return (
-                            <>
-                              {beforeFirst.map((block, bi) => (
-                                <FreeTimeBlockCard
-                                  key={`free-before-${bi}`}
-                                  block={block}
-                                  onAddActivity={handleFreeTimeAdd}
-                                />
-                              ))}
-                              {day.items.map((item, i) => (
-                                <div key={item.id}>
-                                  <SortableItineraryItem
-                                    item={item}
-                                    isLast={i === day.items.length - 1 && freeBlocks.filter((b) => b.afterItemIndex === i).length === 0}
-                                    onDelete={handleDelete}
-                                    tripId={tripId}
-                                    onUpdateNotes={handleUpdateNotes}
-                                  />
-                                  {freeBlocks
-                                    .filter((b) => b.afterItemIndex === i)
-                                    .map((block, bi) => (
-                                      <FreeTimeBlockCard
-                                        key={`free-${i}-${bi}`}
-                                        block={block}
-                                        onAddActivity={handleFreeTimeAdd}
-                                      />
-                                    ))}
-                                </div>
-                              ))}
-                            </>
-                          )
-                        })()}
+                        {/* Sortable items — no wrapper divs, direct children */}
+                        {day.items.map((item, i) => (
+                          <SortableItineraryItem
+                            key={item.id}
+                            item={item}
+                            nextItem={i < day.items.length - 1 ? day.items[i + 1] : null}
+                            isLast={i === day.items.length - 1}
+                            onDelete={handleDelete}
+                            tripId={tripId}
+                            onUpdateNotes={handleUpdateNotes}
+                          />
+                        ))}
                       </div>
                     </SortableContext>
                   </DndContext>

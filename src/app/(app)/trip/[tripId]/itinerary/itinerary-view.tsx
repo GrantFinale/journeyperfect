@@ -567,16 +567,22 @@ export function ItineraryView({ tripId, initialItems, tripStartDate, tripEndDate
   const days = groupByDay(items)
 
   // Always show all trip days, merging in items where they exist
+  // Use UTC methods throughout to avoid timezone-related duplicate/skipped days
   const allDays: GroupedDay<ItineraryItem>[] = (() => {
     const dayMap = new Map(days.map((d) => [d.dateStr, d]))
     const result: GroupedDay<ItineraryItem>[] = []
     const start = new Date(tripStartDate)
     const end = new Date(tripEndDate)
-    const cur = new Date(start)
-    while (cur <= end) {
-      const dateStr = cur.toISOString().split("T")[0]
+    // Iterate using UTC date parts to avoid local timezone issues
+    const curYear = start.getUTCFullYear()
+    const curMonth = start.getUTCMonth()
+    const curDay = start.getUTCDate()
+    const cur = new Date(Date.UTC(curYear, curMonth, curDay, 12, 0, 0))
+    const endTime = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate(), 12, 0, 0)).getTime()
+    while (cur.getTime() <= endTime) {
+      const dateStr = `${cur.getUTCFullYear()}-${String(cur.getUTCMonth() + 1).padStart(2, "0")}-${String(cur.getUTCDate()).padStart(2, "0")}`
       result.push(dayMap.get(dateStr) || { date: new Date(cur), dateStr, items: [] })
-      cur.setDate(cur.getDate() + 1)
+      cur.setUTCDate(cur.getUTCDate() + 1)
     }
     // Also include any days with items that fall outside the trip date range
     for (const day of days) {

@@ -245,7 +245,7 @@ export function AppShell({ children, user }: AppShellProps) {
       {/* Main content area */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Mobile top bar */}
-        <header className="md:hidden flex items-center gap-3 px-4 py-3 border-b border-border bg-card">
+        <header className="md:hidden flex items-center gap-3 px-4 py-3 border-b border-gray-200 bg-white">
           <button onClick={() => setSidebarOpen(true)} className="text-muted-foreground">
             <Menu className="w-5 h-5" />
           </button>
@@ -262,7 +262,7 @@ export function AppShell({ children, user }: AppShellProps) {
         </main>
 
         {/* Mobile bottom tab bar */}
-        <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-30">
+        <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-50 shadow-[0_-2px_10px_rgba(0,0,0,0.05)]">
           <div className="flex">
             {BOTTOM_NAV.map((item) => {
               const isActive = pathname === item.href || (item.href !== "/dashboard" && pathname.startsWith(item.href))

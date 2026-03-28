@@ -20,6 +20,7 @@ import {
   Package,
   BarChart3,
   Navigation,
+  ClipboardList,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { signOut } from "next-auth/react"
@@ -47,7 +48,7 @@ const NAV_ITEMS: NavItem[] = [
 
 const TRIP_NAV_PRIMARY = (tripId: string): NavItem[] => [
   { href: `/trip/${tripId}`, label: "Overview", icon: Map, exact: true },
-  { href: `/trip/${tripId}/itinerary`, label: "Itinerary", icon: CalendarDays },
+  { href: `/trip/${tripId}/itinerary`, label: "Plan", icon: ClipboardList },
   { href: `/trip/${tripId}/map`, label: "Map", icon: Navigation },
   { href: `/trip/${tripId}/discover`, label: "Discover", icon: Compass },
 ]
@@ -77,7 +78,7 @@ export function AppShell({ children, user }: AppShellProps) {
   const BOTTOM_NAV = currentTripId
     ? [
         { href: `/trip/${currentTripId}`, label: "Overview", icon: Map },
-        { href: `/trip/${currentTripId}/itinerary`, label: "Itinerary", icon: CalendarDays },
+        { href: `/trip/${currentTripId}/itinerary`, label: "Plan", icon: ClipboardList },
         { href: `/trip/${currentTripId}/discover`, label: "Discover", icon: Compass },
         { href: `/trip/${currentTripId}/budget`, label: "Budget", icon: DollarSign },
         { href: `/trip/${currentTripId}/packing`, label: "Packing", icon: Package },

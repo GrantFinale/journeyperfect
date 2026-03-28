@@ -6,6 +6,7 @@ import { ItineraryView } from "./itinerary-view"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/db"
 import { hasFeature } from "@/lib/features"
+import { requireTripAccess } from "@/lib/auth-trip"
 
 export default async function ItineraryPage({ params }: { params: Promise<{ tripId: string }> }) {
   const { tripId } = await params
@@ -33,6 +34,39 @@ export default async function ItineraryPage({ params }: { params: Promise<{ trip
   // Fetch weather data (non-blocking — null if unavailable)
   const weather = await getTripWeather(tripId)
 
+  // Fetch wishlist activities for the sidebar
+  await requireTripAccess(tripId)
+  const wishlistActivities = await prisma.activity.findMany({
+    where: { tripId, status: "WISHLIST" },
+    select: {
+      id: true,
+      name: true,
+      durationMins: true,
+      priority: true,
+      indoorOutdoor: true,
+      imageUrl: true,
+      category: true,
+      lat: true,
+      lng: true,
+      address: true,
+    },
+    orderBy: [{ priority: "asc" }, { createdAt: "desc" }],
+  })
+
+  // Fetch hotels for travel time calculations
+  const hotels = await prisma.hotel.findMany({
+    where: { tripId },
+    select: {
+      id: true,
+      name: true,
+      lat: true,
+      lng: true,
+      checkIn: true,
+      checkOut: true,
+    },
+    orderBy: { checkIn: "asc" },
+  })
+
   return (
     <ItineraryView
       tripId={tripId}
@@ -41,6 +75,8 @@ export default async function ItineraryPage({ params }: { params: Promise<{ trip
       tripEndDate={trip.endDate}
       weather={weather}
       isPaid={isPaid}
+      wishlistActivities={wishlistActivities}
+      hotels={hotels}
     />
   )
 }

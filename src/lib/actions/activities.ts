@@ -261,7 +261,26 @@ export async function updateActivityPriority(tripId: string, activityId: string,
     data: { priority },
   })
   revalidatePath(`/trip/${tripId}/explore`)
+  revalidatePath(`/trip/${tripId}/itinerary`)
   return activity
+}
+
+export async function updateActivityStatus(tripId: string, activityId: string, status: "WISHLIST" | "SCHEDULED" | "DONE" | "SKIPPED") {
+  await requireTripAccess(tripId, "EDITOR")
+  const activity = await prisma.activity.update({
+    where: { id: activityId, tripId },
+    data: { status },
+  })
+  revalidatePath(`/trip/${tripId}/explore`)
+  revalidatePath(`/trip/${tripId}/itinerary`)
+  return activity
+}
+
+export async function removeActivityFromWishlist(tripId: string, activityId: string) {
+  await requireTripAccess(tripId, "EDITOR")
+  await prisma.activity.delete({ where: { id: activityId, tripId } })
+  revalidatePath(`/trip/${tripId}/explore`)
+  revalidatePath(`/trip/${tripId}/itinerary`)
 }
 
 // ─── Indoor/Outdoor classifier ──────────────────────────────────────────────

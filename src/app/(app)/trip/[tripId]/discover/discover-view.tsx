@@ -155,6 +155,10 @@ export function DiscoverView({
   const [customLocation, setCustomLocation] = useState("")
   const [searchResults, setSearchResults] = useState<Place[]>([])
   const [loading, setLoading] = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [nextPageToken, setNextPageToken] = useState<string | null>(null)
+  const [lastSearchQuery, setLastSearchQuery] = useState<string>("")
+  const [lastSearchBias, setLastSearchBias] = useState<string | undefined>(undefined)
 
   // Activities and dismissed
   const [activities, setActivities] = useState<Activity[]>(initialActivities)
@@ -165,6 +169,9 @@ export function DiscoverView({
   const [aiPicks, setAiPicks] = useState<Place[]>([])
   const [aiPicksLoading, setAiPicksLoading] = useState(false)
   const [isAIFilling, setIsAIFilling] = useState(false)
+
+  // Track custom durations per place
+  const [placeDurations, setPlaceDurations] = useState<Map<string, number>>(new Map())
 
   // Initial results loaded on mount
   const initialLoaded = useRef(false)
@@ -220,9 +227,12 @@ export function DiscoverView({
         : undefined
 
     setLoading(true)
-    searchPlaces(query, bias)
+    setLastSearchQuery(query)
+    setLastSearchBias(bias)
+    searchPlaces(query, bias, { limit: 12 })
       .then((r) => {
         if (r.results.length > 0) setSearchResults(r.results)
+        setNextPageToken(r.nextPageToken)
       })
       .catch(() => {})
       .finally(() => setLoading(false))
@@ -236,10 +246,15 @@ export function DiscoverView({
     const parts = [filterQuery, keyword, city].filter(Boolean)
     if (parts.length === 0) return
 
+    const fullQuery = parts.join(" ")
+    const bias = locationBias || undefined
     setLoading(true)
+    setLastSearchQuery(fullQuery)
+    setLastSearchBias(bias)
     try {
-      const result = await searchPlaces(parts.join(" "), locationBias || undefined)
+      const result = await searchPlaces(fullQuery, bias, { limit: 12 })
       setSearchResults(result.results)
+      setNextPageToken(result.nextPageToken)
       if (result.error && result.results.length === 0) {
         toast.error(result.error || "No results found")
       }
@@ -247,6 +262,20 @@ export function DiscoverView({
       toast.error("Search failed")
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function handleGetMore() {
+    if (!nextPageToken || loadingMore) return
+    setLoadingMore(true)
+    try {
+      const result = await searchPlaces(lastSearchQuery, lastSearchBias, { limit: 12, pageToken: nextPageToken })
+      setSearchResults((prev) => [...prev, ...result.results])
+      setNextPageToken(result.nextPageToken)
+    } catch {
+      toast.error("Failed to load more results")
+    } finally {
+      setLoadingMore(false)
     }
   }
 
@@ -337,8 +366,16 @@ export function DiscoverView({
       rating: place.rating,
       imageUrl: place.imageUrl || undefined,
       category: place.types?.[0],
-      durationMins: 90,
+      durationMins: placeDurations.get(place.googlePlaceId) || 90,
     }
+  }
+
+  function handleDurationChange(place: Place, durationMins: number) {
+    setPlaceDurations((prev) => {
+      const next = new Map(prev)
+      next.set(place.googlePlaceId, durationMins)
+      return next
+    })
   }
 
   async function handleNope(place: Place) {
@@ -620,6 +657,7 @@ export function DiscoverView({
                     onNope={handleNope}
                     onMaybe={handleMaybe}
                     onMustDo={handleMustDo}
+                    onDurationChange={handleDurationChange}
                     isDismissing={dismissingIds.has(place.googlePlaceId)}
                     hotels={hotels}
                     destination={effectiveLocation || trip.destination}
@@ -656,6 +694,7 @@ export function DiscoverView({
                   onClick={() => {
                     setSearchResults([])
                     setActiveTab("all")
+                    setNextPageToken(null)
                   }}
                   className="text-xs text-gray-400 hover:text-gray-600"
                 >
@@ -671,12 +710,31 @@ export function DiscoverView({
                     onNope={handleNope}
                     onMaybe={handleMaybe}
                     onMustDo={handleMustDo}
+                    onDurationChange={handleDurationChange}
                     isDismissing={dismissingIds.has(place.googlePlaceId)}
                     hotels={hotels}
                     destination={effectiveLocation || trip.destination}
                   />
                 ))}
               </div>
+
+              {/* Get More button */}
+              {nextPageToken && (
+                <button
+                  onClick={handleGetMore}
+                  disabled={loadingMore}
+                  className="w-full mt-6 py-3 text-sm font-medium text-gray-500 hover:text-gray-700 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-xl transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {loadingMore ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Loading more...
+                    </>
+                  ) : (
+                    "Show more results \u2192"
+                  )}
+                </button>
+              )}
             </div>
           )}
 

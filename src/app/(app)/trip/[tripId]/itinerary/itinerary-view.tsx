@@ -10,6 +10,7 @@ import {
   createItineraryItem,
   reorderItineraryItems,
   updateItineraryItemNotes,
+  updateItineraryItem,
 } from "@/lib/actions/itinerary"
 import {
   updateActivityPriority,
@@ -51,7 +52,6 @@ import {
   ChevronDown,
   ChevronUp,
   Coffee,
-  GripVertical,
   PenLine,
   Check,
   X,
@@ -262,10 +262,32 @@ function typeColor(type: string) {
 function FreeTimeBlockCard({
   block,
   onAddActivity,
+  wishlistItems,
+  onQuickAddFromWishlist,
 }: {
   block: FreeTimeBlock
   onAddActivity: (startTime: string) => void
+  wishlistItems?: WishlistActivity[]
+  onQuickAddFromWishlist?: (activityId: string, startTime: string) => void
 }) {
+  const [showSuggestions, setShowSuggestions] = useState(false)
+
+  // Filter wishlist items that fit in this gap, sorted by priority
+  const fittingItems = (wishlistItems || [])
+    .filter((a) => a.durationMins <= block.durationMins)
+    .sort((a, b) => {
+      const priorityOrder: Record<string, number> = { MUST_DO: 0, HIGH: 1, MEDIUM: 2, LOW: 3 }
+      return (priorityOrder[a.priority] ?? 3) - (priorityOrder[b.priority] ?? 3)
+    })
+
+  function handleAddClick() {
+    if (fittingItems.length > 0 && onQuickAddFromWishlist) {
+      setShowSuggestions(!showSuggestions)
+    } else {
+      onAddActivity(block.startTime)
+    }
+  }
+
   return (
     <div className="flex items-start gap-3">
       <div className="w-5" />
@@ -275,22 +297,70 @@ function FreeTimeBlockCard({
         </div>
       </div>
       <div className="flex-1 min-w-0 pb-2">
-        <div className="flex items-center justify-between gap-2 px-3 py-2.5 bg-gray-50 border border-dashed border-gray-200 rounded-xl">
-          <div className="flex items-center gap-2 text-sm text-gray-500">
-            <span className="font-medium">Free Time</span>
-            <span className="text-gray-300">·</span>
-            <span>{formatFreeTimeDuration(block.durationMins)}</span>
-            <span className="text-[11px] text-gray-400">
-              {formatTime(block.startTime)} – {formatTime(block.endTime)}
-            </span>
+        <div className="px-3 py-2.5 bg-gray-50 border border-dashed border-gray-200 rounded-xl">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 text-sm text-gray-500">
+              <span className="font-medium">Free Time</span>
+              <span className="text-gray-300">·</span>
+              <span>{formatFreeTimeDuration(block.durationMins)}</span>
+              <span className="text-[11px] text-gray-400">
+                {formatTime(block.startTime)} – {formatTime(block.endTime)}
+              </span>
+            </div>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={handleAddClick}
+                className="flex items-center gap-1 px-2 py-1 text-xs text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors font-medium"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Add
+                {fittingItems.length > 0 && (
+                  <span className="text-[10px] text-gray-400 ml-0.5">({fittingItems.length})</span>
+                )}
+              </button>
+              {fittingItems.length > 0 && (
+                <button
+                  onClick={() => onAddActivity(block.startTime)}
+                  className="px-2 py-1 text-[10px] text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                  title="Manual add"
+                >
+                  Custom
+                </button>
+              )}
+            </div>
           </div>
-          <button
-            onClick={() => onAddActivity(block.startTime)}
-            className="flex items-center gap-1 px-2 py-1 text-xs text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors font-medium"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            Add
-          </button>
+
+          {/* Wishlist suggestions dropdown */}
+          {showSuggestions && fittingItems.length > 0 && (
+            <div className="mt-2 border-t border-gray-200 pt-2 space-y-1 max-h-48 overflow-y-auto">
+              <p className="text-[10px] text-gray-400 uppercase font-semibold tracking-wide mb-1">
+                From your wishlist
+              </p>
+              {fittingItems.map((activity) => (
+                <button
+                  key={activity.id}
+                  onClick={() => {
+                    onQuickAddFromWishlist?.(activity.id, block.startTime)
+                    setShowSuggestions(false)
+                  }}
+                  className="w-full flex items-center justify-between gap-2 px-2 py-1.5 text-left hover:bg-white rounded-lg transition-colors group"
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span
+                      className={cn(
+                        "w-1.5 h-1.5 rounded-full shrink-0",
+                        activity.priority === "MUST_DO" ? "bg-green-500" : "bg-amber-400"
+                      )}
+                    />
+                    <span className="text-xs text-gray-700 truncate">{activity.name}</span>
+                  </div>
+                  <span className="text-[10px] text-gray-400 shrink-0">
+                    {formatDuration(activity.durationMins)}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -376,19 +446,13 @@ function SortableItineraryItem({
           toName={toName}
         />
       )}
-      <div className="flex items-start gap-3 group">
-        {/* Drag handle */}
-        {isFixed ? (
-          <div className="mt-2 p-1.5 -m-1 w-7" />
-        ) : (
-          <button
-            className="mt-2 p-1.5 -m-1 text-gray-300 hover:text-gray-500 cursor-grab active:cursor-grabbing"
-            {...attributes}
-            {...listeners}
-          >
-            <GripVertical className="w-4 h-4" />
-          </button>
+      <div
+        className={cn(
+          "flex items-start gap-3 group rounded-xl transition-shadow",
+          !isFixed && "cursor-grab active:cursor-grabbing hover:shadow-md"
         )}
+        {...(!isFixed ? { ...attributes, ...listeners } : {})}
+      >
         {/* Timeline dot */}
         <div className="flex flex-col items-center mt-1">
           <div
@@ -940,6 +1004,118 @@ export function ItineraryView({
     })
   }
 
+  async function handleTimelineResize(itemId: string, newDurationMins: number) {
+    // Calculate new endTime
+    const item = items.find((i) => i.id === itemId)
+    if (!item || !item.startTime) return
+
+    const startMins = timeToMinutes(item.startTime)
+    const endMins = startMins + newDurationMins
+    const newEndTime = minutesToTime(endMins)
+
+    // Optimistic update
+    setItems((prev) =>
+      prev.map((i) =>
+        i.id === itemId ? { ...i, durationMins: newDurationMins, endTime: newEndTime } : i
+      )
+    )
+
+    try {
+      await updateItineraryItem(tripId, itemId, {
+        durationMins: newDurationMins,
+      })
+    } catch {
+      toast.error("Failed to update duration")
+      router.refresh()
+    }
+  }
+
+  async function handleTimelineMove(itemId: string, newStartTime: string, newDurationMins: number) {
+    const item = items.find((i) => i.id === itemId)
+    if (!item) return
+
+    const startMins = timeToMinutes(newStartTime)
+    const endMins = startMins + newDurationMins
+    const newEndTime = minutesToTime(endMins)
+
+    // Optimistic update
+    setItems((prev) =>
+      prev.map((i) =>
+        i.id === itemId ? { ...i, startTime: newStartTime, endTime: newEndTime, durationMins: newDurationMins } : i
+      )
+    )
+
+    try {
+      await updateItineraryItem(tripId, itemId, {
+        startTime: newStartTime,
+        durationMins: newDurationMins,
+      })
+    } catch {
+      toast.error("Failed to move item")
+      router.refresh()
+    }
+  }
+
+  async function handleQuickAddFromWishlist(activityId: string, startTime: string, dateStr: string) {
+    const activity = wishlist.find((a) => a.id === activityId)
+    if (!activity) return
+
+    const startMins = timeToMinutes(startTime)
+    const endMins = startMins + activity.durationMins
+    const endTime = minutesToTime(endMins)
+
+    // Optimistically remove from wishlist
+    setWishlist((prev) => prev.filter((a) => a.id !== activityId))
+
+    try {
+      const dayItems = items.filter((i) => {
+        const d = new Date(i.date)
+        const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`
+        return key === dateStr
+      })
+
+      const item = await createItineraryItem(tripId, {
+        date: dateStr,
+        title: activity.name,
+        type: "ACTIVITY",
+        startTime,
+        durationMins: activity.durationMins,
+        costEstimate: 0,
+        position: dayItems.length,
+        activityId: activity.id,
+      })
+
+      setItems((prev) => [...prev, {
+        id: item.id,
+        date: item.date,
+        startTime: item.startTime,
+        endTime: item.endTime || endTime,
+        type: item.type,
+        title: item.title,
+        notes: item.notes,
+        userNotes: null,
+        durationMins: item.durationMins,
+        travelTimeToNextMins: item.travelTimeToNextMins,
+        costEstimate: item.costEstimate,
+        position: item.position,
+        isConfirmed: item.isConfirmed,
+        activityId: activity.id,
+        activity: {
+          lat: activity.lat,
+          lng: activity.lng,
+          address: activity.address,
+          name: activity.name,
+        },
+      }])
+
+      await updateActivityStatus(tripId, activity.id, "SCHEDULED")
+      toast.success(`${activity.name} added!`)
+    } catch {
+      setWishlist((prev) => [...prev, activity])
+      toast.error("Failed to add to itinerary")
+    }
+  }
+
   async function handleRemoveFromWishlist(activityId: string) {
     setWishlist((prev) => prev.filter((a) => a.id !== activityId))
     try {
@@ -1077,7 +1253,11 @@ export function ItineraryView({
             {/* Timeline view */}
             {viewMode === "timeline" ? (
               <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden p-4">
-                <TimelineView days={allDays} />
+                <TimelineView
+                  days={allDays}
+                  onResizeItem={handleTimelineResize}
+                  onMoveItem={handleTimelineMove}
+                />
               </div>
             ) : (
               /* Events view (day list) */
@@ -1161,6 +1341,10 @@ export function ItineraryView({
                                           setAddingToDay(day.dateStr)
                                           setNewItemForm((f) => ({ ...f, startTime }))
                                         }}
+                                        wishlistItems={wishlist}
+                                        onQuickAddFromWishlist={(activityId, startTime) =>
+                                          handleQuickAddFromWishlist(activityId, startTime, day.dateStr)
+                                        }
                                       />
                                     ))}
 
@@ -1189,6 +1373,10 @@ export function ItineraryView({
                                               setAddingToDay(day.dateStr)
                                               setNewItemForm((f) => ({ ...f, startTime }))
                                             }}
+                                            wishlistItems={wishlist}
+                                            onQuickAddFromWishlist={(activityId, startTime) =>
+                                              handleQuickAddFromWishlist(activityId, startTime, day.dateStr)
+                                            }
                                           />
                                         ))}
                                     </div>

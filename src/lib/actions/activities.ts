@@ -100,7 +100,7 @@ export async function getActivities(tripId: string) {
 }
 
 // Places search cache — 15 min TTL, keyed by query+location
-const placesSearchCache = new Map<string, { results: any[]; expiry: number }>()
+const placesSearchCache = new Map<string, { results: any[]; expiry: number; nextPageToken?: string | null }>()
 const PLACES_CACHE_TTL = 15 * 60 * 1000 // 15 minutes
 const MAX_CACHE_SIZE = 500
 
@@ -382,27 +382,37 @@ export async function addToWishlistMustDo(tripId: string, data: {
   return activity
 }
 
-export async function searchPlaces(query: string, locationBias?: string) {
+export async function searchPlaces(query: string, locationBias?: string, options?: { limit?: number; pageToken?: string }) {
   const session = await auth()
   if (!session?.user?.id) throw new Error("Unauthorized")
 
   const apiKey = process.env.GOOGLE_PLACES_KEY || process.env.NEXT_PUBLIC_GOOGLE_PLACES_KEY
   if (!apiKey || apiKey === "build-placeholder") {
-    return { results: [], error: "Places API not configured" }
+    return { results: [], error: "Places API not configured", nextPageToken: null }
   }
 
-  // Check cache
-  const cacheKey = `${query}|${locationBias || ""}`
-  const cached = placesSearchCache.get(cacheKey)
-  if (cached && Date.now() < cached.expiry) {
-    return { results: cached.results, error: null }
+  const limit = options?.limit ?? 12
+  const pageToken = options?.pageToken
+
+  // Check cache (skip if using pageToken — it's a continuation)
+  const cacheKey = `${query}|${locationBias || ""}|${pageToken || ""}`
+  if (!pageToken) {
+    const cached = placesSearchCache.get(cacheKey)
+    if (cached && Date.now() < cached.expiry) {
+      return { results: cached.results, error: null, nextPageToken: cached.nextPageToken || null }
+    }
   }
 
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const body: any = {
       textQuery: query,
-      maxResultCount: 10,
+      maxResultCount: Math.min(limit, 20),
+    }
+
+    // Add page token for pagination
+    if (pageToken) {
+      body.pageToken = pageToken
     }
 
     // Add location bias if provided (lat,lng string)
@@ -420,7 +430,7 @@ export async function searchPlaces(query: string, locationBias?: string) {
       headers: {
         "Content-Type": "application/json",
         "X-Goog-Api-Key": apiKey,
-        "X-Goog-FieldMask": "places.id,places.displayName,places.formattedAddress,places.location,places.rating,places.userRatingCount,places.types,places.photos,places.priceLevel,places.currentOpeningHours,places.servesVegetarianFood,places.goodForChildren,places.servesBeer,places.servesWine,places.dineIn,places.delivery,places.takeout,places.primaryType",
+        "X-Goog-FieldMask": "nextPageToken,places.id,places.displayName,places.formattedAddress,places.location,places.rating,places.userRatingCount,places.types,places.photos,places.priceLevel,places.currentOpeningHours,places.servesVegetarianFood,places.goodForChildren,places.servesBeer,places.servesWine,places.dineIn,places.delivery,places.takeout,places.primaryType",
       },
       body: JSON.stringify(body),
       // Prevent sending Referer header — server-side calls with HTTP referrer
@@ -432,10 +442,11 @@ export async function searchPlaces(query: string, locationBias?: string) {
     if (!res.ok) {
       const errText = await res.text().catch(() => "")
       console.error("[searchPlaces] API error:", res.status, errText)
-      return { results: [], error: "Places search failed" }
+      return { results: [], error: "Places search failed", nextPageToken: null }
     }
 
     const data = await res.json()
+    const nextPageToken = data.nextPageToken || null
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const results = (data.places || []).map((place: any) => ({
@@ -469,11 +480,11 @@ export async function searchPlaces(query: string, locationBias?: string) {
     }))
 
     // Cache results
-    cacheSet(placesSearchCache, cacheKey, { results, expiry: Date.now() + PLACES_CACHE_TTL })
+    cacheSet(placesSearchCache, cacheKey, { results, expiry: Date.now() + PLACES_CACHE_TTL, nextPageToken })
 
-    return { results, error: null }
+    return { results, error: null, nextPageToken }
   } catch (err) {
     console.error("[searchPlaces] Error:", err)
-    return { results: [], error: "Failed to search places" }
+    return { results: [], error: "Failed to search places", nextPageToken: null }
   }
 }

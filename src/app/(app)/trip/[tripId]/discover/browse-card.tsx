@@ -54,6 +54,7 @@ interface BrowseCardProps {
   onNope: (place: Place) => void
   onMaybe: (place: Place) => void
   onMustDo: (place: Place) => void
+  onDurationChange?: (place: Place, durationMins: number) => void
   isDismissing?: boolean
   hotels?: HotelInfo[]
   destination?: string
@@ -83,12 +84,22 @@ function isBookablePlace(types: string[]): boolean {
   return true
 }
 
+const DURATION_PRESETS = [30, 60, 90, 120, 180, 240]
+
+function formatDurationLabel(mins: number): string {
+  if (mins < 60) return `${mins} min`
+  const h = Math.floor(mins / 60)
+  const m = mins % 60
+  return m > 0 ? `${h}h ${m}m` : `${h}h`
+}
+
 export function BrowseCard({
   place,
   wishlistState,
   onNope,
   onMaybe,
   onMustDo,
+  onDurationChange,
   isDismissing,
   hotels = [],
   destination = "",
@@ -97,6 +108,9 @@ export function BrowseCard({
   const [details, setDetails] = useState<PlaceDetails>(undefined as unknown as PlaceDetails)
   const [detailsLoading, setDetailsLoading] = useState(false)
   const [photoIndex, setPhotoIndex] = useState(0)
+  const [durationMins, setDurationMins] = useState(90)
+  const [showCustomDuration, setShowCustomDuration] = useState(false)
+  const [customDurationValue, setCustomDurationValue] = useState("")
 
   const photos = place.photoUrls && place.photoUrls.length > 0
     ? place.photoUrls
@@ -415,6 +429,85 @@ export function BrowseCard({
               </a>
             </div>
           )}
+
+          {/* Duration editor */}
+          <div className="pt-2 border-t border-gray-100 mt-2">
+            <div className="flex items-center gap-1.5 mb-1.5">
+              <Clock className="w-3.5 h-3.5 text-gray-400" />
+              <span className="text-xs font-medium text-gray-600">
+                Estimated duration: ~{formatDurationLabel(durationMins)}
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {DURATION_PRESETS.map((preset) => (
+                <button
+                  key={preset}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setDurationMins(preset)
+                    setShowCustomDuration(false)
+                    onDurationChange?.(place, preset)
+                  }}
+                  className={cn(
+                    "px-2 py-1 text-[11px] font-medium rounded-md border transition-colors",
+                    durationMins === preset && !showCustomDuration
+                      ? "bg-indigo-100 border-indigo-300 text-indigo-700"
+                      : "border-gray-200 text-gray-500 hover:bg-gray-50 hover:border-gray-300"
+                  )}
+                >
+                  {formatDurationLabel(preset)}
+                </button>
+              ))}
+              {!showCustomDuration ? (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setShowCustomDuration(true)
+                    setCustomDurationValue(String(durationMins))
+                  }}
+                  className="px-2 py-1 text-[11px] font-medium rounded-md border border-gray-200 text-gray-500 hover:bg-gray-50 hover:border-gray-300 transition-colors"
+                >
+                  Custom
+                </button>
+              ) : (
+                <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                  <input
+                    type="number"
+                    min={15}
+                    max={600}
+                    value={customDurationValue}
+                    onChange={(e) => setCustomDurationValue(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        const val = parseInt(customDurationValue)
+                        if (val >= 15 && val <= 600) {
+                          setDurationMins(val)
+                          setShowCustomDuration(false)
+                          onDurationChange?.(place, val)
+                        }
+                      }
+                    }}
+                    className="w-14 px-1.5 py-1 text-[11px] border border-indigo-300 rounded-md focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                    placeholder="min"
+                    autoFocus
+                  />
+                  <button
+                    onClick={() => {
+                      const val = parseInt(customDurationValue)
+                      if (val >= 15 && val <= 600) {
+                        setDurationMins(val)
+                        setShowCustomDuration(false)
+                        onDurationChange?.(place, val)
+                      }
+                    }}
+                    className="px-1.5 py-1 text-[11px] font-medium bg-indigo-600 text-white rounded-md hover:bg-indigo-700"
+                  >
+                    Set
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
 

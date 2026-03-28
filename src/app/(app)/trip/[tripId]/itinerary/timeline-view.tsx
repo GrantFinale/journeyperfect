@@ -1,5 +1,6 @@
 "use client"
 
+import { useState, useRef, useCallback } from "react"
 import { cn } from "@/lib/utils"
 import { formatTime } from "@/lib/utils"
 import type { GroupedDay } from "@/lib/itinerary-utils"
@@ -22,10 +23,23 @@ const HOUR_START = 7
 const HOUR_END = 23
 const TOTAL_HOURS = HOUR_END - HOUR_START
 const HOUR_HEIGHT = 56 // pixels per hour
+const MIN_DURATION_MINS = 15
+const SNAP_MINS = 15
 
 function timeToMinutes(time: string): number {
   const [h, m] = time.split(":").map(Number)
   return h * 60 + (m || 0)
+}
+
+function minutesToTime(mins: number): string {
+  const clamped = Math.max(HOUR_START * 60, Math.min(HOUR_END * 60, mins))
+  const h = Math.floor(clamped / 60)
+  const m = clamped % 60
+  return `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`
+}
+
+function snapToGrid(mins: number): number {
+  return Math.round(mins / SNAP_MINS) * SNAP_MINS
 }
 
 function typeColor(type: string) {
@@ -55,7 +69,158 @@ function formatDuration(mins: number) {
   return m > 0 ? `${h}h ${m}m` : `${h}h`
 }
 
-function TimelineDay({ day, dayIdx }: { day: GroupedDay<ItineraryItem>; dayIdx: number }) {
+function TimelineItem({
+  item,
+  onResize,
+  onDragMove,
+}: {
+  item: ItineraryItem
+  onResize: (itemId: string, newDurationMins: number) => void
+  onDragMove: (itemId: string, newStartTime: string, newDurationMins: number) => void
+}) {
+  const [resizing, setResizing] = useState(false)
+  const [dragging, setDragging] = useState(false)
+  const [previewDuration, setPreviewDuration] = useState<number | null>(null)
+  const [previewStartMins, setPreviewStartMins] = useState<number | null>(null)
+  const resizeRef = useRef<{ startY: number; startDuration: number } | null>(null)
+  const dragRef = useRef<{ startY: number; startMins: number } | null>(null)
+
+  if (!item.startTime) return null
+  const startMins = previewStartMins ?? timeToMinutes(item.startTime)
+  const offsetMins = startMins - HOUR_START * 60
+  if (offsetMins < 0) return null
+
+  const currentDuration = previewDuration ?? item.durationMins
+  const top = (offsetMins / 60) * HOUR_HEIGHT
+  const height = Math.max((currentDuration / 60) * HOUR_HEIGHT, 20)
+
+  const isFixed = item.type === "FLIGHT" || item.type === "HOTEL_CHECK_IN" || item.type === "HOTEL_CHECK_OUT"
+
+  // Resize handlers
+  function handleResizePointerDown(e: React.PointerEvent) {
+    if (isFixed) return
+    e.stopPropagation()
+    e.preventDefault()
+    ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
+    setResizing(true)
+    resizeRef.current = { startY: e.clientY, startDuration: item.durationMins }
+  }
+
+  function handleResizePointerMove(e: React.PointerEvent) {
+    if (!resizing || !resizeRef.current) return
+    e.preventDefault()
+    const deltaY = e.clientY - resizeRef.current.startY
+    const deltaMins = (deltaY / HOUR_HEIGHT) * 60
+    const newDuration = snapToGrid(Math.max(MIN_DURATION_MINS, resizeRef.current.startDuration + deltaMins))
+    setPreviewDuration(newDuration)
+  }
+
+  function handleResizePointerUp(e: React.PointerEvent) {
+    if (!resizing) return
+    ;(e.target as HTMLElement).releasePointerCapture(e.pointerId)
+    setResizing(false)
+    if (previewDuration != null && previewDuration !== item.durationMins) {
+      onResize(item.id, previewDuration)
+    }
+    setPreviewDuration(null)
+    resizeRef.current = null
+  }
+
+  // Drag-move handlers
+  function handleDragPointerDown(e: React.PointerEvent) {
+    if (isFixed) return
+    // Only start drag on left click
+    if (e.button !== 0) return
+    e.preventDefault()
+    ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
+    dragRef.current = { startY: e.clientY, startMins: timeToMinutes(item.startTime!) }
+  }
+
+  function handleDragPointerMove(e: React.PointerEvent) {
+    if (!dragRef.current) return
+    const deltaY = e.clientY - dragRef.current.startY
+    // Require at least 5px movement to initiate drag (avoid accidental moves)
+    if (!dragging && Math.abs(deltaY) < 5) return
+    if (!dragging) setDragging(true)
+    e.preventDefault()
+    const deltaMins = (deltaY / HOUR_HEIGHT) * 60
+    const newStart = snapToGrid(Math.max(HOUR_START * 60, Math.min(HOUR_END * 60 - item.durationMins, dragRef.current.startMins + deltaMins)))
+    setPreviewStartMins(newStart)
+  }
+
+  function handleDragPointerUp(e: React.PointerEvent) {
+    if (!dragRef.current) return
+    ;(e.target as HTMLElement).releasePointerCapture(e.pointerId)
+    if (dragging && previewStartMins != null) {
+      const origStart = timeToMinutes(item.startTime!)
+      if (previewStartMins !== origStart) {
+        onDragMove(item.id, minutesToTime(previewStartMins), item.durationMins)
+      }
+    }
+    setDragging(false)
+    setPreviewStartMins(null)
+    dragRef.current = null
+  }
+
+  const showDurationLabel = resizing && previewDuration != null
+  const originalDuration = item.durationMins
+
+  return (
+    <div
+      className={cn(
+        "absolute left-1 right-1 rounded-lg border px-2 py-1 overflow-hidden select-none",
+        typeColor(item.type),
+        !isFixed && "cursor-grab active:cursor-grabbing",
+        (resizing || dragging) && "z-20 shadow-lg ring-2 ring-indigo-400/50"
+      )}
+      style={{ top, height: Math.min(height, (TOTAL_HOURS * HOUR_HEIGHT) - top) }}
+      title={`${item.title} (${formatTime(item.startTime!)}${item.endTime ? ` - ${formatTime(item.endTime)}` : ""}, ${formatDuration(currentDuration)})`}
+      onPointerDown={!isFixed ? handleDragPointerDown : undefined}
+      onPointerMove={!isFixed ? handleDragPointerMove : undefined}
+      onPointerUp={!isFixed ? handleDragPointerUp : undefined}
+    >
+      <p className="text-[10px] font-medium truncate leading-tight">
+        {item.title}
+      </p>
+      {height > 30 && (
+        <p className="text-[9px] opacity-70 mt-0.5">
+          {formatTime(minutesToTime(startMins))} · {formatDuration(currentDuration)}
+        </p>
+      )}
+
+      {/* Duration change indicator */}
+      {showDurationLabel && (
+        <div className="absolute bottom-5 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-[10px] font-medium px-2 py-0.5 rounded-full whitespace-nowrap z-30 shadow-md">
+          {formatDuration(originalDuration)} → {formatDuration(previewDuration)}
+        </div>
+      )}
+
+      {/* Resize handle at bottom edge */}
+      {!isFixed && (
+        <div
+          className="absolute bottom-0 left-0 right-0 h-2 cursor-row-resize group/resize flex items-center justify-center"
+          onPointerDown={handleResizePointerDown}
+          onPointerMove={handleResizePointerMove}
+          onPointerUp={handleResizePointerUp}
+        >
+          <div className="w-8 h-1 rounded-full bg-current opacity-30 group-hover/resize:opacity-60 transition-opacity" />
+        </div>
+      )}
+    </div>
+  )
+}
+
+function TimelineDay({
+  day,
+  dayIdx,
+  onResize,
+  onDragMove,
+}: {
+  day: GroupedDay<ItineraryItem>
+  dayIdx: number
+  onResize: (itemId: string, newDurationMins: number) => void
+  onDragMove: (itemId: string, newStartTime: string, newDurationMins: number) => void
+}) {
   const dayDate = new Date(day.date)
   const dayLabel = dayDate.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })
 
@@ -81,42 +246,26 @@ function TimelineDay({ day, dayIdx }: { day: GroupedDay<ItineraryItem>; dayIdx: 
         {/* Items */}
         {day.items.map((item, i) => {
           if (!item.startTime) return null
-          const startMins = timeToMinutes(item.startTime)
-          const offsetMins = startMins - HOUR_START * 60
-          if (offsetMins < 0) return null
-
-          const top = (offsetMins / 60) * HOUR_HEIGHT
-          const height = Math.max((item.durationMins / 60) * HOUR_HEIGHT, 20)
 
           // Travel connector to next item
           const nextItem = i < day.items.length - 1 ? day.items[i + 1] : null
           const showTravel = item.travelTimeToNextMins > 0 && nextItem?.startTime
 
+          const startMins = timeToMinutes(item.startTime)
+          const itemEnd = item.endTime
+            ? timeToMinutes(item.endTime)
+            : startMins + item.durationMins
+
           return (
             <div key={item.id}>
-              <div
-                className={cn(
-                  "absolute left-1 right-1 rounded-lg border px-2 py-1 overflow-hidden",
-                  typeColor(item.type)
-                )}
-                style={{ top, height: Math.min(height, (TOTAL_HOURS * HOUR_HEIGHT) - top) }}
-                title={`${item.title} (${formatTime(item.startTime)}${item.endTime ? ` - ${formatTime(item.endTime)}` : ""}, ${formatDuration(item.durationMins)})`}
-              >
-                <p className="text-[10px] font-medium truncate leading-tight">
-                  {item.title}
-                </p>
-                {height > 30 && (
-                  <p className="text-[9px] opacity-70 mt-0.5">
-                    {formatTime(item.startTime)} · {formatDuration(item.durationMins)}
-                  </p>
-                )}
-              </div>
+              <TimelineItem
+                item={item}
+                onResize={onResize}
+                onDragMove={onDragMove}
+              />
 
               {/* Travel connector */}
               {showTravel && (() => {
-                const itemEnd = item.endTime
-                  ? timeToMinutes(item.endTime)
-                  : startMins + item.durationMins
                 const travelTop = ((itemEnd - HOUR_START * 60) / 60) * HOUR_HEIGHT
                 const travelHeight = (item.travelTimeToNextMins / 60) * HOUR_HEIGHT
 
@@ -141,9 +290,19 @@ function TimelineDay({ day, dayIdx }: { day: GroupedDay<ItineraryItem>; dayIdx: 
 
 interface TimelineViewProps {
   days: GroupedDay<ItineraryItem>[]
+  onResizeItem?: (itemId: string, newDurationMins: number) => void
+  onMoveItem?: (itemId: string, newStartTime: string, newDurationMins: number) => void
 }
 
-export function TimelineView({ days }: TimelineViewProps) {
+export function TimelineView({ days, onResizeItem, onMoveItem }: TimelineViewProps) {
+  const handleResize = useCallback((itemId: string, newDurationMins: number) => {
+    onResizeItem?.(itemId, newDurationMins)
+  }, [onResizeItem])
+
+  const handleDragMove = useCallback((itemId: string, newStartTime: string, newDurationMins: number) => {
+    onMoveItem?.(itemId, newStartTime, newDurationMins)
+  }, [onMoveItem])
+
   return (
     <div className="overflow-x-auto">
       <div className="flex gap-0">
@@ -171,7 +330,12 @@ export function TimelineView({ days }: TimelineViewProps) {
         {/* Day columns */}
         {days.map((day, i) => (
           <div key={day.dateStr} className="border-l border-gray-200">
-            <TimelineDay day={day} dayIdx={i} />
+            <TimelineDay
+              day={day}
+              dayIdx={i}
+              onResize={handleResize}
+              onDragMove={handleDragMove}
+            />
           </div>
         ))}
       </div>

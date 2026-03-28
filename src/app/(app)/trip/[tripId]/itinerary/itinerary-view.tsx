@@ -723,6 +723,7 @@ export function ItineraryView({
 
   async function handleAutoPlan() {
     setOptimizing(true)
+    reorderingRef.current = false // Allow state sync after refresh
     try {
       if (isPaid) {
         const result = await runAIOptimizer(tripId)
@@ -731,6 +732,14 @@ export function ItineraryView({
         const result = await runOptimizer(tripId)
         toast.success(`Auto-plan scheduled ${result.scheduledItems.length} activities!`)
       }
+      // Re-fetch itinerary items with full relations (including activity lat/lng)
+      const { getItinerary } = await import("@/lib/actions/itinerary")
+      const freshItems = await getItinerary(tripId)
+      setItems(freshItems as ItineraryItem[])
+      // Also refresh wishlist since items moved to SCHEDULED
+      const { getAllActivitiesForTrip } = await import("@/lib/actions/activities")
+      const allActivities = await getAllActivitiesForTrip(tripId)
+      setWishlist(allActivities.filter((a: any) => a.status === "WISHLIST") as WishlistActivity[])
       router.refresh()
     } catch (e) {
       const msg = e instanceof Error && e.message === "UPGRADE_REQUIRED"

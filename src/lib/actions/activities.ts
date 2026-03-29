@@ -133,6 +133,7 @@ export async function cycleActivityInterest(tripId: string, data: {
   imageUrl?: string
   category?: string
   durationMins?: number
+  types?: string[]
   currentPriority?: string | null // current state, null if not saved
 }) {
   await requireTripAccess(tripId, "EDITOR")
@@ -144,6 +145,7 @@ export async function cycleActivityInterest(tripId: string, data: {
 
   if (!existing) {
     // Not saved -> create with WISHLIST/LOW (Looks Cool)
+    const smartDuration = data.durationMins || await estimateDuration(data.types || (data.category ? [data.category] : []))
     const activity = await prisma.activity.create({
       data: {
         tripId,
@@ -155,7 +157,7 @@ export async function cycleActivityInterest(tripId: string, data: {
         rating: data.rating,
         imageUrl: data.imageUrl,
         category: data.category,
-        durationMins: data.durationMins || 120,
+        durationMins: smartDuration,
         costPerAdult: 0,
         costPerChild: 0,
         priority: "LOW",
@@ -283,6 +285,41 @@ export async function removeActivityFromWishlist(tripId: string, activityId: str
   revalidatePath(`/trip/${tripId}/itinerary`)
 }
 
+// ─── Duration estimator based on place types ────────────────────────────────
+
+export async function estimateDuration(placeTypes: string[]): Promise<number> {
+  if (!placeTypes || placeTypes.length === 0) return 90
+
+  const types = placeTypes.map(t => t.toLowerCase())
+
+  // Theme parks, amusement parks, zoos: 5 hours
+  const longDayTypes = ["amusement_park", "theme_park", "zoo", "water_park"]
+  if (types.some(t => longDayTypes.includes(t))) return 300
+
+  // Tours: 3 hours
+  const tourTypes = ["tourist_attraction"]
+  // Only if specifically a tour-like attraction with no more specific type
+  if (types.includes("travel_agency") || types.includes("tour_agency")) return 180
+
+  // Museums, aquariums, galleries: 2 hours
+  const mediumTypes = ["museum", "aquarium", "art_gallery"]
+  if (types.some(t => mediumTypes.includes(t))) return 120
+
+  // Parks, gardens, nature: 2 hours
+  const natureTypes = ["park", "garden", "national_park", "campground", "hiking_area", "state_park"]
+  if (types.some(t => natureTypes.includes(t))) return 120
+
+  // Shopping: 2 hours
+  const shoppingTypes = ["shopping_mall", "department_store", "market"]
+  if (types.some(t => shoppingTypes.includes(t))) return 120
+
+  // Restaurants, cafes, bars: 90 min
+  const diningTypes = ["restaurant", "cafe", "bar", "bakery", "meal_delivery", "meal_takeaway", "food"]
+  if (types.some(t => diningTypes.includes(t))) return 90
+
+  return 90
+}
+
 // ─── Indoor/Outdoor classifier ──────────────────────────────────────────────
 
 function classifyIndoorOutdoor(category?: string): "INDOOR" | "OUTDOOR" | "BOTH" {
@@ -327,7 +364,7 @@ export async function undoDismiss(tripId: string, googlePlaceId: string) {
 export async function addToWishlistMaybe(tripId: string, data: {
   googlePlaceId: string; name: string; address?: string;
   lat?: number; lng?: number; rating?: number; imageUrl?: string;
-  category?: string; durationMins?: number;
+  category?: string; durationMins?: number; types?: string[];
 }) {
   await requireTripAccess(tripId, "EDITOR")
   const existing = await prisma.activity.findFirst({
@@ -342,10 +379,12 @@ export async function addToWishlistMaybe(tripId: string, data: {
     return updated
   }
   const indoorOutdoor = classifyIndoorOutdoor(data.category)
+  const smartDuration = data.durationMins || await estimateDuration(data.types || (data.category ? [data.category] : []))
+  const { types: _types, ...dbData } = data
   const activity = await prisma.activity.create({
     data: {
-      tripId, ...data, priority: "LOW", status: "WISHLIST",
-      indoorOutdoor, durationMins: data.durationMins || 90,
+      tripId, ...dbData, priority: "LOW", status: "WISHLIST",
+      indoorOutdoor, durationMins: smartDuration,
       costPerAdult: 0, costPerChild: 0,
     },
   })
@@ -356,7 +395,7 @@ export async function addToWishlistMaybe(tripId: string, data: {
 export async function addToWishlistMustDo(tripId: string, data: {
   googlePlaceId: string; name: string; address?: string;
   lat?: number; lng?: number; rating?: number; imageUrl?: string;
-  category?: string; durationMins?: number;
+  category?: string; durationMins?: number; types?: string[];
 }) {
   await requireTripAccess(tripId, "EDITOR")
   const existing = await prisma.activity.findFirst({
@@ -371,10 +410,12 @@ export async function addToWishlistMustDo(tripId: string, data: {
     return updated
   }
   const indoorOutdoor = classifyIndoorOutdoor(data.category)
+  const smartDuration = data.durationMins || await estimateDuration(data.types || (data.category ? [data.category] : []))
+  const { types: _types2, ...dbData2 } = data
   const activity = await prisma.activity.create({
     data: {
-      tripId, ...data, priority: "MUST_DO", status: "WISHLIST",
-      indoorOutdoor, durationMins: data.durationMins || 90,
+      tripId, ...dbData2, priority: "MUST_DO", status: "WISHLIST",
+      indoorOutdoor, durationMins: smartDuration,
       costPerAdult: 0, costPerChild: 0,
     },
   })

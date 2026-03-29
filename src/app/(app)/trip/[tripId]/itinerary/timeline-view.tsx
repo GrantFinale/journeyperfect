@@ -4,6 +4,7 @@ import { useState, useRef, useCallback } from "react"
 import { cn } from "@/lib/utils"
 import { formatTime } from "@/lib/utils"
 import type { GroupedDay } from "@/lib/itinerary-utils"
+import { calculateTravel } from "./travel-connector"
 
 type ItineraryItem = {
   id: string
@@ -17,6 +18,18 @@ type ItineraryItem = {
   travelTimeToNextMins: number
   costEstimate: number
   position: number
+  activity?: {
+    lat: number | null
+    lng: number | null
+    address: string | null
+    name: string
+  } | null
+  hotel?: {
+    lat: number | null
+    lng: number | null
+    address: string | null
+    name: string
+  } | null
 }
 
 const HOUR_START = 7
@@ -249,12 +262,27 @@ function TimelineDay({
 
           // Travel connector to next item
           const nextItem = i < day.items.length - 1 ? day.items[i + 1] : null
-          const showTravel = item.travelTimeToNextMins > 0 && nextItem?.startTime
 
           const startMins = timeToMinutes(item.startTime)
           const itemEnd = item.endTime
             ? timeToMinutes(item.endTime)
             : startMins + item.durationMins
+
+          // Calculate travel info between this item and the next
+          const fromLat = item.activity?.lat || item.hotel?.lat
+          const fromLng = item.activity?.lng || item.hotel?.lng
+          const toLat = nextItem?.activity?.lat || nextItem?.hotel?.lat
+          const toLng = nextItem?.activity?.lng || nextItem?.hotel?.lng
+          const travel = nextItem?.startTime
+            ? calculateTravel(fromLat, fromLng, toLat, toLng)
+            : null
+
+          // Build Google Maps URL for directions
+          const fromName = item.activity?.name || item.hotel?.name || item.title
+          const toName = nextItem?.activity?.name || nextItem?.hotel?.name || nextItem?.title || ""
+          const mapsUrl = travel && fromLat && fromLng && toLat && toLng
+            ? `https://www.google.com/maps/dir/?api=1&origin=${fromLat},${fromLng}&destination=${toLat},${toLng}&travelmode=${travel.mode === "walk" ? "walking" : "driving"}`
+            : null
 
           return (
             <div key={item.id}>
@@ -265,19 +293,45 @@ function TimelineDay({
               />
 
               {/* Travel connector */}
-              {showTravel && (() => {
+              {travel && nextItem?.startTime && (() => {
                 const travelTop = ((itemEnd - HOUR_START * 60) / 60) * HOUR_HEIGHT
-                const travelHeight = (item.travelTimeToNextMins / 60) * HOUR_HEIGHT
+                const nextStartMins = timeToMinutes(nextItem.startTime!)
+                const gapHeight = ((nextStartMins - itemEnd) / 60) * HOUR_HEIGHT
+                const travelHeight = Math.min((travel.travelMins / 60) * HOUR_HEIGHT, gapHeight, 40)
+                const modeIcon = travel.mode === "walk" ? "\uD83D\uDEB6" : "\uD83D\uDE97"
+                const text = `${travel.travelMins} min ${travel.mode === "walk" ? "walk" : "drive"}`
 
                 return travelHeight > 2 ? (
-                  <div
-                    className="absolute left-1/2 -translate-x-1/2 w-0.5 bg-gray-300"
-                    style={{
-                      top: travelTop,
-                      height: Math.min(travelHeight, 40),
-                    }}
-                    title={`${formatDuration(item.travelTimeToNextMins)} travel`}
-                  />
+                  mapsUrl ? (
+                    <a
+                      href={mapsUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="absolute left-0 right-0 flex flex-col items-center group/travel cursor-pointer z-10"
+                      style={{ top: travelTop, height: Math.max(travelHeight, 16) }}
+                      title={`${text} - Click for directions`}
+                    >
+                      <div className="w-0.5 flex-1 bg-gray-300 group-hover/travel:bg-indigo-400 transition-colors" />
+                      <div className="text-[8px] text-gray-400 group-hover/travel:text-indigo-600 whitespace-nowrap flex items-center gap-0.5 bg-white px-1 rounded">
+                        <span>{modeIcon}</span>
+                        <span>{travel.travelMins}m</span>
+                      </div>
+                      <div className="w-0.5 flex-1 bg-gray-300 group-hover/travel:bg-indigo-400 transition-colors" />
+                    </a>
+                  ) : (
+                    <div
+                      className="absolute left-0 right-0 flex flex-col items-center z-10"
+                      style={{ top: travelTop, height: Math.max(travelHeight, 16) }}
+                      title={text}
+                    >
+                      <div className="w-0.5 flex-1 bg-gray-300" />
+                      <div className="text-[8px] text-gray-400 whitespace-nowrap flex items-center gap-0.5 bg-white px-1 rounded">
+                        <span>{modeIcon}</span>
+                        <span>{travel.travelMins}m</span>
+                      </div>
+                      <div className="w-0.5 flex-1 bg-gray-300" />
+                    </div>
+                  )
                 ) : null
               })()}
             </div>

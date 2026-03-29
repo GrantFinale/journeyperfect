@@ -436,7 +436,7 @@ function SortableItineraryItem({
   return (
     <div ref={setNodeRef} style={style}>
       {/* Travel connector BETWEEN items */}
-      {(isFirst || prevItem) && item.type !== "FLIGHT" && item.type !== "HOTEL_CHECK_IN" && item.type !== "HOTEL_CHECK_OUT" && (
+      {(isFirst || prevItem) && item.type !== "FLIGHT" && (
         <TravelConnector
           fromLat={fromLat}
           fromLng={fromLng}

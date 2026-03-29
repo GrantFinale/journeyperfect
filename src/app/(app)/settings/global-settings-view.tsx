@@ -10,7 +10,7 @@ import {
 } from "@/lib/actions/travelers"
 import { updatePreferences, updateTimezone } from "@/lib/actions/preferences"
 import { cn, getAgeGroupLabel, getCustomTags, getDefaultAvatar } from "@/lib/utils"
-import { User, Users, Plus, Trash2, X, Save, Mail, Copy, Check, Globe, ChevronDown, ChevronRight, Camera } from "lucide-react"
+import { User, Users, Plus, Trash2, X, Save, Mail, Copy, Check, Globe, ChevronDown, ChevronRight, Camera, Clock } from "lucide-react"
 import type { Prisma } from "@prisma/client"
 
 type TravelerProfile = {
@@ -34,6 +34,8 @@ type Preferences = {
   activityMix: string[]
   mobilityNotes: string | null
   maxDailyTravelMins: number
+  showFreeTime?: boolean
+  freeTimeMinGapHours?: number
 } | null
 
 interface Props {
@@ -1237,6 +1239,43 @@ export function GlobalSettingsView({ user, initialProfiles, initialPrefs, initia
                 }
                 className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
+            </div>
+          </div>
+
+          <div className="bg-white border border-gray-100 rounded-2xl p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <Clock className="w-4 h-4 text-indigo-500" />
+              <h3 className="font-semibold text-gray-900">Free Time Display</h3>
+            </div>
+            <p className="text-sm text-gray-500 mb-3">
+              Show free time blocks on your itinerary to identify gaps in your schedule.
+              You can also toggle this directly from the Plan page header.
+            </p>
+            <div className="space-y-3">
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={prefs.showFreeTime ?? false}
+                  onChange={(e) => setPrefs((p) => p ? { ...p, showFreeTime: e.target.checked } : p)}
+                  className="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                />
+                <span className="text-sm font-medium text-gray-700">Show free time blocks on itinerary</span>
+              </label>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                  Minimum gap to show (hours)
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  max={8}
+                  value={prefs.freeTimeMinGapHours ?? 2}
+                  onChange={(e) =>
+                    setPrefs((p) => p ? { ...p, freeTimeMinGapHours: parseInt(e.target.value) || 2 } : p)
+                  }
+                  className="w-24 px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
             </div>
           </div>
 

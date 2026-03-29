@@ -7,7 +7,7 @@ export interface AIOptimizedDay {
     title: string
     startTime: string // HH:MM
     endTime: string
-    type: "ACTIVITY" | "MEAL" | "TRANSIT" | "BUFFER"
+    type: "ACTIVITY"
     activityId?: string
     notes?: string
     travelTimeFromPrev?: number
@@ -126,14 +126,16 @@ OPTIMIZATION RULES:
 2. Group geographically close activities on the same day to minimize travel
 3. Schedule outdoor activities on days with good weather (low precipitation); move indoor activities to rainy days
 4. Respect fixed activities — they MUST be on their fixed date/time
-5. Include meal breaks: breakfast ~8:00-9:00, lunch ~12:00-13:30, dinner ~18:30-20:00
-6. Add realistic travel time between activities (15-45 min depending on distance)
-7. Add 15-30 min buffer between activities for transitions
+5. Leave gaps between activities for meals — travelers will eat on their own schedule
+6. Account for realistic travel time between activities (15-45 min depending on distance) when setting start times, but do NOT create separate items for travel or transit — travel times are displayed automatically between items
+7. Do NOT create meal, buffer, or transit items — ONLY schedule activities from the list
 8. Don't schedule activities during flight times (include 2h before departure for airport)
 9. Don't schedule before hotel check-in on arrival day or after check-out time on departure day
 ${hasKids ? "10. IMPORTANT: Keep days shorter (end by 17:00-18:00), include rest breaks, avoid back-to-back intense activities" : "10. Days can run from ~8:00 to ~21:00 max"}
 
-For each day, provide a reasoning explaining your choices.
+For each day, provide a reasoning explaining your choices (include travel time estimates in the reasoning).
+
+IMPORTANT: Only return items of type "ACTIVITY". Do NOT create MEAL, TRANSIT, or BUFFER items. Travel times between activities are calculated and displayed automatically by the app.
 
 Return ONLY a JSON array of days in this exact format:
 [
@@ -141,20 +143,20 @@ Return ONLY a JSON array of days in this exact format:
     "date": "YYYY-MM-DD",
     "items": [
       {
-        "title": "Activity name or Breakfast/Lunch/Dinner",
+        "title": "Activity name",
         "startTime": "HH:MM",
         "endTime": "HH:MM",
-        "type": "ACTIVITY" | "MEAL" | "TRANSIT" | "BUFFER",
-        "activityId": "id-from-list-above (only for ACTIVITY type, must match an id from the activities list)",
+        "type": "ACTIVITY",
+        "activityId": "id-from-list-above (must match an id from the activities list)",
         "notes": "optional tip or note",
         "travelTimeFromPrev": 15
       }
     ],
-    "reasoning": "Why activities were ordered this way for this day"
+    "reasoning": "Why activities were ordered this way for this day, including travel time considerations"
   }
 ]
 
-CRITICAL: For items of type "ACTIVITY", the activityId MUST match one of the IDs from the activities list above (the value in square brackets). Each activity should appear at most once across all days. Return ONLY valid JSON, no other text.`
+CRITICAL: The activityId MUST match one of the IDs from the activities list above (the value in square brackets). Each activity should appear at most once across all days. Only return ACTIVITY type items. Return ONLY valid JSON, no other text.`
 
   try {
     const controller = new AbortController()

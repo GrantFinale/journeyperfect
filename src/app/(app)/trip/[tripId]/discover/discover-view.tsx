@@ -366,7 +366,8 @@ export function DiscoverView({
       rating: place.rating,
       imageUrl: place.imageUrl || undefined,
       category: place.types?.[0],
-      durationMins: placeDurations.get(place.googlePlaceId) || 90,
+      types: place.types || [],
+      durationMins: placeDurations.get(place.googlePlaceId) || undefined,
     }
   }
 
@@ -439,7 +440,7 @@ export function DiscoverView({
             lng: data.lng || null,
             googlePlaceId: data.googlePlaceId,
             category: data.category || null,
-            durationMins: data.durationMins || 90,
+            durationMins: result.durationMins,
             costPerAdult: 0,
             priority: "LOW",
             status: "WISHLIST",
@@ -481,7 +482,7 @@ export function DiscoverView({
             lng: data.lng || null,
             googlePlaceId: data.googlePlaceId,
             category: data.category || null,
-            durationMins: data.durationMins || 90,
+            durationMins: result.durationMins,
             costPerAdult: 0,
             priority: "MUST_DO",
             status: "WISHLIST",

@@ -380,7 +380,7 @@ export async function runAIOptimizer(tripId: string) {
     date: Date
     startTime: string
     endTime: string
-    type: "ACTIVITY" | "MEAL" | "TRANSIT" | "BUFFER"
+    type: "ACTIVITY"
     title: string
     notes?: string
     durationMins: number
@@ -392,13 +392,17 @@ export async function runAIOptimizer(tripId: string) {
   let position = 0
   for (const day of aiResult) {
     for (const item of day.items) {
+      // Only create ACTIVITY items — skip any MEAL, TRANSIT, or BUFFER the AI may return
+      if (item.type !== "ACTIVITY") continue
+      // Skip items without a valid activityId
+      if (!item.activityId) continue
       itemsToCreate.push({
         tripId,
-        activityId: item.activityId || undefined,
+        activityId: item.activityId,
         date: new Date(day.date),
         startTime: item.startTime,
         endTime: item.endTime,
-        type: item.type,
+        type: "ACTIVITY",
         title: item.title,
         notes: item.notes || undefined,
         durationMins: timeDiffMins(item.startTime, item.endTime),

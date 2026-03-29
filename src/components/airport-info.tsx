@@ -4,25 +4,26 @@ import { ExternalLink, MapPin } from "lucide-react"
 
 const AIRPORT_MAPS: Record<string, { name: string; url: string }> = {
   JFK: { name: "John F. Kennedy Intl", url: "https://www.jfkairport.com/at-airport/airport-maps" },
-  LAX: { name: "Los Angeles Intl", url: "https://www.flylax.com/lax-terminal-maps" },
+  LAX: { name: "Los Angeles Intl", url: "https://www.flylax.com/terminals-background" },
   ORD: { name: "Chicago O'Hare Intl", url: "https://www.flychicago.com/ohare/map/pages/default.aspx" },
   ATL: { name: "Hartsfield-Jackson Atlanta", url: "https://www.atl.com/airport-maps/" },
   DFW: { name: "Dallas/Fort Worth Intl", url: "https://www.dfwairport.com/maps/" },
-  SFO: { name: "San Francisco Intl", url: "https://www.flysfo.com/passengers/airport-maps" },
-  DEN: { name: "Denver Intl", url: "https://www.flydenver.com/at-dia/maps-directions" },
+  SFO: { name: "San Francisco Intl", url: "https://www.flysfo.com/maps" },
+  DEN: { name: "Denver Intl", url: "https://www.flydenver.com/maps" },
   IAH: { name: "George Bush Intercontinental", url: "https://www.fly2houston.com/iah/maps" },
-  AUS: { name: "Austin-Bergstrom Intl", url: "https://www.austintexas.gov/airport/terminal-map" },
-  SAT: { name: "San Antonio Intl", url: "https://www.sanantonio.gov/SAT/Traveler-Information/Airport-Maps" },
+  HOU: { name: "William P. Hobby", url: "https://www.fly2houston.com/hobby/maps" },
+  AUS: { name: "Austin-Bergstrom Intl", url: "https://www.austinairport.com/airport-maps" },
+  SAT: { name: "San Antonio Intl", url: "https://www.sanantonio.gov/Aviation/At-the-Airport/Terminal-Maps" },
   GRR: { name: "Gerald R. Ford Intl", url: "https://www.grr.org/terminal-map" },
   MIA: { name: "Miami Intl", url: "https://www.miami-airport.com/airport_maps.asp" },
-  BOS: { name: "Boston Logan Intl", url: "https://www.massport.com/logan-airport/getting-around-logan/terminal-maps/" },
-  SEA: { name: "Seattle-Tacoma Intl", url: "https://www.portseattle.org/sea-tac/maps-and-parking" },
-  MSP: { name: "Minneapolis-St. Paul Intl", url: "https://www.mspairport.com/airport/terminal-maps" },
-  DTW: { name: "Detroit Metro Wayne County", url: "https://www.metroairport.com/terminals/terminal-maps" },
+  BOS: { name: "Boston Logan Intl", url: "https://www.massport.com/logan-airport/at-the-airport/terminal-maps/" },
+  SEA: { name: "Seattle-Tacoma Intl", url: "https://www.seatacairport.com/map" },
+  MSP: { name: "Minneapolis-St. Paul Intl", url: "https://www.mspairport.com/terminal-maps" },
+  DTW: { name: "Detroit Metro Wayne County", url: "https://www.metroairport.com/terminal-maps" },
   PHL: { name: "Philadelphia Intl", url: "https://www.phl.org/at-phl/terminal-maps" },
   LGA: { name: "LaGuardia", url: "https://www.laguardiaairport.com/at-airport/airport-maps" },
   EWR: { name: "Newark Liberty Intl", url: "https://www.newarkairport.com/at-airport/airport-maps" },
-  CLT: { name: "Charlotte Douglas Intl", url: "https://www.cltairport.com/airport-map/" },
+  CLT: { name: "Charlotte Douglas Intl", url: "https://www.cltairport.com/terminal-map/" },
   PHX: { name: "Phoenix Sky Harbor Intl", url: "https://www.skyharbor.com/maps" },
   SAN: { name: "San Diego Intl", url: "https://www.san.org/at-the-airport/terminal-maps" },
   IAD: { name: "Washington Dulles Intl", url: "https://www.flydulles.com/iad/iad-airport-map" },
@@ -73,12 +74,12 @@ interface AirportInfoProps {
 
 export function AirportMapLink({ airportCode, label, className }: { airportCode: string; label?: string; className?: string }) {
   const code = airportCode?.toUpperCase().trim()
-  const airport = AIRPORT_MAPS[code]
-  if (!airport) return null
+  if (!code) return null
+  const url = getAirportMapUrl(code)
 
   return (
     <a
-      href={airport.url}
+      href={url}
       target="_blank"
       rel="noopener noreferrer"
       className={className || "inline-flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-700 font-medium"}
@@ -113,8 +114,8 @@ export function AirportInfo({ airportCode, type, className }: AirportInfoProps) 
   )
 }
 
-export function getAirportMapUrl(code: string): string | null {
-  return AIRPORT_MAPS[code?.toUpperCase().trim()]?.url ?? null
+export function getAirportMapUrl(code: string): string {
+  return AIRPORT_MAPS[code?.toUpperCase().trim()]?.url ?? `https://www.google.com/search?q=${code}+airport+terminal+map`
 }
 
 export { AIRPORT_MAPS }

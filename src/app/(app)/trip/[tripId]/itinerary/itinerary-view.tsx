@@ -1031,7 +1031,21 @@ export function ItineraryView({
     const activeId = active.id as string
     const overId = over.id as string
 
-    // Wishlist item dropped on a day
+    // Wishlist item dropped on a timeline slot (timeline-day-YYYY-MM-DD-HH:MM)
+    if (overId.startsWith("timeline-day-")) {
+      const isWishlistItem = wishlist.some((a) => a.id === activeId)
+      if (isWishlistItem) {
+        // Parse day and time from droppable ID: timeline-day-YYYY-MM-DD-HH:MM
+        const match = overId.match(/^timeline-day-(\d{4}-\d{2}-\d{2})-(\d{2}:\d{2})$/)
+        if (match) {
+          const [, dayStr, time] = match
+          handleTimelineWishlistDrop(dayStr, time, activeId)
+          return
+        }
+      }
+    }
+
+    // Wishlist item dropped on a day zone
     if (overId.startsWith("day-")) {
       const dateStr = overId.replace("day-", "")
       const isWishlistItem = wishlist.some((a) => a.id === activeId)
@@ -1109,6 +1123,107 @@ export function ItineraryView({
         startTime: newStartTime,
         durationMins: newDurationMins,
       })
+    } catch {
+      toast.error("Failed to move item")
+      router.refresh()
+    }
+  }
+
+  // Handle dropping a wishlist item onto a specific timeline slot
+  async function handleTimelineWishlistDrop(dayStr: string, startTime: string, activityId: string) {
+    const activity = wishlist.find((a) => a.id === activityId)
+    if (!activity) return
+
+    markOnboardingSeen()
+    setShowOnboarding(false)
+
+    const startMins = timeToMinutes(startTime)
+    const endMins = startMins + activity.durationMins
+    const endTime = minutesToTime(endMins)
+
+    // Optimistically remove from wishlist
+    setWishlist((prev) => prev.filter((a) => a.id !== activityId))
+
+    try {
+      const dayItems = items.filter((i) => {
+        const d = new Date(i.date)
+        const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`
+        return key === dayStr
+      })
+
+      const item = await createItineraryItem(tripId, {
+        date: dayStr,
+        title: activity.name,
+        type: "ACTIVITY",
+        startTime,
+        durationMins: activity.durationMins,
+        costEstimate: 0,
+        position: dayItems.length,
+        activityId: activity.id,
+      })
+
+      setItems((prev) => [...prev, {
+        id: item.id,
+        date: item.date,
+        startTime: item.startTime,
+        endTime: item.endTime || endTime,
+        type: item.type,
+        title: item.title,
+        notes: item.notes,
+        userNotes: null,
+        durationMins: item.durationMins,
+        travelTimeToNextMins: item.travelTimeToNextMins,
+        costEstimate: item.costEstimate,
+        position: item.position,
+        isConfirmed: item.isConfirmed,
+        activityId: activity.id,
+        activity: {
+          lat: activity.lat,
+          lng: activity.lng,
+          address: activity.address,
+          name: activity.name,
+        },
+      }])
+
+      await updateActivityStatus(tripId, activity.id, "SCHEDULED")
+      toast.success(`${activity.name} added at ${formatTime(startTime)}`)
+    } catch {
+      setWishlist((prev) => [...prev, activity])
+      toast.error("Failed to add to itinerary")
+    }
+  }
+
+  // Handle moving an item to a different day via context menu
+  async function handleTimelineMoveToDay(itemId: string, newDayStr: string, newStartTime: string) {
+    const item = items.find((i) => i.id === itemId)
+    if (!item) return
+
+    const startMins = timeToMinutes(newStartTime)
+    const endMins = startMins + item.durationMins
+    const newEndTime = minutesToTime(endMins)
+
+    // Optimistic update
+    setItems((prev) =>
+      prev.map((i) =>
+        i.id === itemId
+          ? {
+              ...i,
+              date: new Date(newDayStr + "T12:00:00Z"),
+              startTime: newStartTime,
+              endTime: newEndTime,
+            }
+          : i
+      )
+    )
+
+    try {
+      await updateItineraryItem(tripId, itemId, {
+        date: newDayStr,
+        startTime: newStartTime,
+        durationMins: item.durationMins,
+      })
+      const dayIdx = allDays.findIndex((d) => d.dateStr === newDayStr)
+      toast.success(`Moved to Day ${dayIdx + 1} at ${formatTime(newStartTime)}`)
     } catch {
       toast.error("Failed to move item")
       router.refresh()
@@ -1316,6 +1431,10 @@ export function ItineraryView({
                   days={allDays}
                   onResizeItem={handleTimelineResize}
                   onMoveItem={handleTimelineMove}
+                  onDropFromWishlist={handleTimelineWishlistDrop}
+                  onMoveToWishlist={handleReturnToWishlist}
+                  onMoveToDay={handleTimelineMoveToDay}
+                  wishlistItems={wishlist}
                 />
               </div>
             ) : (

@@ -237,7 +237,7 @@ function typeIcon(type: string) {
   switch (type) {
     case "FLIGHT": return <Plane className="w-4 h-4" />
     case "HOTEL_CHECK_IN":
-    case "HOTEL_CHECK_OUT": return <Hotel className="w-4 h-4" />
+    case "HOTEL_CHECK_OUT": return <span className="text-base leading-none">🏨</span>
     case "ACTIVITY": return <Star className="w-4 h-4" />
     case "MEAL": return <UtensilsCrossed className="w-4 h-4" />
     case "TRANSIT": return <Bus className="w-4 h-4" />
@@ -250,7 +250,7 @@ function typeColor(type: string) {
   switch (type) {
     case "FLIGHT": return "bg-blue-50 text-blue-600 border-blue-100"
     case "HOTEL_CHECK_IN":
-    case "HOTEL_CHECK_OUT": return "bg-purple-50 text-purple-600 border-purple-100"
+    case "HOTEL_CHECK_OUT": return "bg-sky-50 text-sky-600 border-sky-200"
     case "ACTIVITY": return "bg-indigo-50 text-indigo-600 border-indigo-100"
     case "MEAL": return "bg-orange-50 text-orange-600 border-orange-100"
     case "TRANSIT": return "bg-gray-50 text-gray-600 border-gray-200"
@@ -492,7 +492,8 @@ function SortableItineraryItem({
       <div
         className={cn(
           "flex items-start gap-3 group rounded-xl transition-shadow",
-          !isFixed && "cursor-grab active:cursor-grabbing hover:shadow-md"
+          !isFixed && "cursor-grab active:cursor-grabbing hover:shadow-md",
+          (item.type === "HOTEL_CHECK_IN" || item.type === "HOTEL_CHECK_OUT") && "bg-sky-50/60 px-2 py-1.5 -mx-2 border border-sky-100"
         )}
         {...(!isFixed ? { ...attributes, ...listeners } : {})}
       >
@@ -524,6 +525,12 @@ function SortableItineraryItem({
                 {item.costEstimate > 0 && <span>${item.costEstimate.toFixed(0)}</span>}
                 {item.isConfirmed && <span className="text-green-600 font-medium">Confirmed</span>}
               </div>
+              {(item.type === "HOTEL_CHECK_IN" || item.type === "HOTEL_CHECK_OUT") && item.hotel?.address && (
+                <p className="text-xs text-sky-600 mt-0.5 flex items-center gap-1">
+                  <Hotel className="w-3 h-3 shrink-0" />
+                  {item.hotel.address}
+                </p>
+              )}
               {item.notes && <p className="text-xs text-gray-400 mt-0.5">{item.notes}</p>}
               {item.userNotes && !editingNote && (
                 <div className="mt-1 flex items-start gap-1.5">

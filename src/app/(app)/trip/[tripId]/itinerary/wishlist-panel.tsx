@@ -188,22 +188,36 @@ export function WishlistPanel({
   return (
     <div
       className={cn(
-        "border-l border-gray-200 bg-gray-50/50 flex flex-col transition-all duration-200 shrink-0",
-        collapsed ? "w-10" : "w-72 lg:w-80"
+        "border-l border-gray-200 bg-gray-50/50 flex flex-col transition-all duration-200 shrink-0 relative",
+        collapsed ? "w-0 overflow-visible" : "w-72 lg:w-80"
       )}
     >
       {/* Toggle button */}
-      <button
-        onClick={onToggleCollapse}
-        className="flex items-center justify-center h-10 border-b border-gray-200 hover:bg-gray-100 transition-colors"
-        title={collapsed ? "Show wishlist" : "Hide wishlist"}
-      >
-        {collapsed ? (
-          <ChevronLeft className="w-4 h-4 text-gray-500" />
-        ) : (
-          <ChevronRight className="w-4 h-4 text-gray-500" />
-        )}
-      </button>
+      {collapsed ? (
+        <button
+          onClick={onToggleCollapse}
+          className="absolute right-full top-3 z-30 flex items-center gap-1 px-2 py-2 bg-indigo-600 text-white rounded-l-lg shadow-lg hover:bg-indigo-700 transition-colors whitespace-nowrap"
+          title="Show wishlist"
+        >
+          <span className="text-xs font-semibold writing-vertical" style={{ writingMode: "vertical-rl", textOrientation: "mixed", letterSpacing: "0.05em" }}>
+            Wishlist
+          </span>
+          {activities.length > 0 && (
+            <span className="flex items-center justify-center w-5 h-5 rounded-full bg-white text-indigo-700 text-[10px] font-bold">
+              {activities.length}
+            </span>
+          )}
+        </button>
+      ) : (
+        <button
+          onClick={onToggleCollapse}
+          className="flex items-center justify-between px-3 h-10 border-b border-gray-200 hover:bg-gray-100 transition-colors"
+          title="Hide wishlist"
+        >
+          <span className="text-sm font-semibold text-gray-700">Wishlist</span>
+          <X className="w-4 h-4 text-gray-500" />
+        </button>
+      )}
 
       {!collapsed && (
         <div className="flex-1 overflow-y-auto p-3 space-y-3">

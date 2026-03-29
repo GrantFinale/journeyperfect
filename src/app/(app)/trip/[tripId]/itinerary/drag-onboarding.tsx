@@ -31,8 +31,39 @@ export function DragOnboarding({ onDismiss }: { onDismiss?: () => void }) {
         className="relative bg-white rounded-2xl shadow-xl p-8 max-w-sm mx-4 text-center"
         onClick={(e) => e.stopPropagation()}
       >
+        {/* Landscape suggestion */}
+        <div className="flex items-center justify-center mb-3">
+          <div className="relative w-16 h-16">
+            {/* Phone rotating animation */}
+            <div
+              className="absolute inset-0 flex items-center justify-center"
+              style={{ animation: "phoneSpin 2s ease-in-out infinite" }}
+            >
+              <div className="w-7 h-12 rounded-lg border-2 border-indigo-400 bg-indigo-50 relative overflow-hidden">
+                <div className="absolute top-0.5 left-1/2 -translate-x-1/2 w-3 h-0.5 rounded-full bg-indigo-300" />
+              </div>
+            </div>
+          </div>
+        </div>
+        <style>{`
+          @keyframes phoneSpin {
+            0%, 15% { transform: rotate(0deg); }
+            40%, 60% { transform: rotate(90deg); }
+            85%, 100% { transform: rotate(0deg); }
+          }
+        `}</style>
+        <p
+          className="text-lg text-indigo-700 mb-0.5 leading-relaxed"
+          style={{ fontFamily: "'Caveat', 'Segoe Script', 'Comic Sans MS', cursive" }}
+        >
+          Tip: Turn your phone sideways for the best planning experience
+        </p>
+        <p className="text-xs text-gray-400 mb-4">Landscape mode gives you more room to drag and plan.</p>
+
+        <div className="border-t border-gray-100 pt-4 mb-1" />
+
         {/* Hand-drawn arrow */}
-        <div className="flex items-center justify-center mb-4">
+        <div className="flex items-center justify-center mb-3">
           <svg width="180" height="60" viewBox="0 0 180 60" fill="none" className="text-indigo-400">
             <path
               d="M160 10 C130 5, 80 15, 40 30 C25 36, 15 42, 10 50"

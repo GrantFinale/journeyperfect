@@ -2,6 +2,7 @@ import { notFound } from "next/navigation"
 import { getTrip } from "@/lib/actions/trips"
 import { getItinerary } from "@/lib/actions/itinerary"
 import { getPlacesApiKey } from "@/lib/actions/user"
+import { formatDateInTimezone } from "@/lib/utils"
 import { TripMapClient } from "./map-client"
 
 export default async function TripMapPage({ params }: { params: Promise<{ tripId: string }> }) {
@@ -29,8 +30,21 @@ export default async function TripMapPage({ params }: { params: Promise<{ tripId
 
   // Build a date-to-day-index map
   const tripStart = new Date(trip.startDate)
+  const tripStartDateStr = tripStart.toISOString().slice(0, 10) // "YYYY-MM-DD"
   function dateToDayIndex(date: Date): number {
     return Math.floor((new Date(date).getTime() - tripStart.getTime()) / (1000 * 60 * 60 * 24))
+  }
+  // Timezone-aware version: determines the day index based on the local date
+  // in the given timezone, not UTC. This is crucial for flights that cross timezones.
+  function dateToDayIndexTz(date: Date, timezone?: string): number {
+    if (!timezone || timezone === "UTC") return dateToDayIndex(date)
+    const localDateStr = formatDateInTimezone(date, "yyyy-MM-dd", timezone)
+    // Parse both as simple date strings to get day difference
+    const [sy, sm, sd] = tripStartDateStr.split("-").map(Number)
+    const [ly, lm, ld] = localDateStr.split("-").map(Number)
+    const startMs = Date.UTC(sy, sm - 1, sd)
+    const localMs = Date.UTC(ly, lm - 1, ld)
+    return Math.floor((localMs - startMs) / (1000 * 60 * 60 * 24))
   }
 
   // Hotels — build markers and hotel-to-day mapping
@@ -136,7 +150,7 @@ export default async function TripMapPage({ params }: { params: Promise<{ tripId
             lng: coords[1],
             label: `${flight.departureAirport} (${flight.airline || "Flight"})`,
             type: "flight",
-            day: dateToDayIndex(flight.departureTime),
+            day: dateToDayIndexTz(flight.departureTime, flight.departureTimezone || undefined),
           })
         }
       }
@@ -152,7 +166,7 @@ export default async function TripMapPage({ params }: { params: Promise<{ tripId
             lng: coords[1],
             label: `${flight.arrivalAirport} (${flight.airline || "Flight"})`,
             type: "flight",
-            day: dateToDayIndex(flight.arrivalTime),
+            day: dateToDayIndexTz(flight.arrivalTime, flight.arrivalTimezone || undefined),
           })
         }
       }

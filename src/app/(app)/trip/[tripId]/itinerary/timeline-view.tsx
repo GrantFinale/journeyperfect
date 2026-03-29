@@ -86,6 +86,21 @@ function formatDuration(mins: number) {
   return m > 0 ? `${h}h ${m}m` : `${h}h`
 }
 
+// ─── Visual Duration for Flights ─────────────────────────────────────────
+// For flights, the itinerary startTime and endTime are in local departure/arrival
+// timezones respectively. The visual duration on the timeline should be the
+// difference between these local times (not the UTC-based durationMins which
+// includes timezone offset differences).
+function getVisualDuration(item: ItineraryItem): number {
+  if (item.type === "FLIGHT" && item.startTime && item.endTime) {
+    const startMins = timeToMinutes(item.startTime)
+    const endMins = timeToMinutes(item.endTime)
+    // Handle overnight flights: if end is before start, fall back to durationMins
+    return endMins > startMins ? endMins - startMins : item.durationMins
+  }
+  return item.durationMins
+}
+
 // ─── Overlap Detection (Google Calendar algorithm) ────────────────────────
 
 type OverlapLayout = {
@@ -175,7 +190,7 @@ function computeOverlapLayout(items: ItineraryItem[], previewDurations?: Map<str
 }
 
 function getItemEnd(item: ItineraryItem, previewDurations?: Map<string, number>, previewStartTimes?: Map<string, number>): number {
-  const duration = previewDurations?.get(item.id) ?? item.durationMins
+  const duration = previewDurations?.get(item.id) ?? getVisualDuration(item)
   const startMins = previewStartTimes?.get(item.id) ?? timeToMinutes(item.startTime!)
   return startMins + duration
 }
@@ -299,7 +314,7 @@ function TimelineItem({
   const offsetMins = startMins - HOUR_START * 60
   if (offsetMins < 0) return null
 
-  const currentDuration = previewDuration ?? item.durationMins
+  const currentDuration = previewDuration ?? getVisualDuration(item)
   const top = (offsetMins / 60) * HOUR_HEIGHT
   const height = Math.max((currentDuration / 60) * HOUR_HEIGHT, 20)
 
@@ -634,6 +649,12 @@ function TimelineDay({
             if (i >= sorted.length - 1) return null
             const nextItem = sorted[i + 1]
             if (!nextItem.startTime) return null
+
+            // Skip hotel check-in/out items — hotel-specific connectors handle those
+            const hotelTypes = ["HOTEL_CHECK_IN", "HOTEL_CHECK_OUT"]
+            if (hotel && (hotelTypes.includes(item.type) || hotelTypes.includes(nextItem.type))) return null
+            // Skip connectors from flights — flight gaps aren't ground travel
+            if (item.type === "FLIGHT") return null
 
             const itemLayout = layoutMap.get(item.id)
             const nextLayout = layoutMap.get(nextItem.id)

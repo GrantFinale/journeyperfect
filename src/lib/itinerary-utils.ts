@@ -27,11 +27,17 @@ export function groupByDay<T extends ItineraryItemForGrouping>(items: T[]): Grou
       date: new Date(dateStr + "T12:00:00"),
       dateStr,
       items: items.sort((a, b) => {
-        // Sort by position first (user-defined order via drag-and-drop)
-        // Fall back to startTime only when positions are equal
-        if (a.position !== b.position) return a.position - b.position
-        if (a.startTime && b.startTime) return a.startTime.localeCompare(b.startTime)
-        return 0
+        // Sort by startTime first (chronological order)
+        // Use position as tiebreaker for items at the same time (user drag reorder)
+        if (a.startTime && b.startTime) {
+          const timeCompare = a.startTime.localeCompare(b.startTime)
+          if (timeCompare !== 0) return timeCompare
+        }
+        // Items without startTime go after items with startTime
+        if (a.startTime && !b.startTime) return -1
+        if (!a.startTime && b.startTime) return 1
+        // Same time or both no time — use position
+        return a.position - b.position
       }),
     }))
 }

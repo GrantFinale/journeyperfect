@@ -130,19 +130,44 @@ export function TripMap({
     [hotels]
   )
 
-  // Build ordered waypoints for a day: hotel -> activity1 -> activity2 -> ... -> hotel
+  // Build ordered waypoints for a day: airport/hotel -> activities -> hotel/airport
   const buildDayWaypoints = useCallback(
     (day: number, visibleMarkers: MapMarker[]): { lat: number; lng: number; label: string }[] => {
       const hotel = getHotelForDay(day)
       const dayActivities = visibleMarkers.filter(
         (m) => m.day === day && m.type !== "hotel" && m.type !== "flight"
       )
+      // Get airport markers for this day (arrival or departure)
+      const dayFlights = visibleMarkers.filter(
+        (m) => m.day === day && m.type === "flight"
+      )
 
-      if (dayActivities.length === 0) return []
+      // If no activities and no flights to route, skip
+      if (dayActivities.length === 0 && dayFlights.length === 0) return []
 
       const waypoints: { lat: number; lng: number; label: string }[] = []
 
-      // Start from hotel if available
+      // First day with flights: start from arrival airport
+      // Last day with flights: end at departure airport
+      const arrivalAirport = dayFlights.find(f => f.label.includes("arriving") || dayFlights.indexOf(f) === dayFlights.length - 1)
+      const departureAirport = dayFlights.find(f => f.label.includes("departing") || dayFlights.indexOf(f) === 0)
+
+      // Determine if this is an arrival day (has flights AND hotel check-in or activities after)
+      const isArrivalDay = dayFlights.length > 0 && (dayActivities.length > 0 || hotel)
+      // Determine if this is a departure day (has flights AND hotel/activities before)
+      const isDepartureDay = dayFlights.length > 0 && (dayActivities.length > 0 || hotel)
+
+      // For arrival days: airport -> hotel -> activities -> hotel
+      // For departure days: hotel -> activities -> hotel -> airport
+      // For days with both: airport -> hotel -> activities -> hotel -> airport
+
+      if (isArrivalDay && dayFlights.length > 0) {
+        // Start from the last flight's arrival airport (final destination)
+        const lastFlight = dayFlights[dayFlights.length - 1]
+        waypoints.push({ lat: lastFlight.lat, lng: lastFlight.lng, label: lastFlight.label })
+      }
+
+      // Hotel as next stop (or starting point if no arrival)
       if (hotel) {
         waypoints.push({ lat: hotel.lat, lng: hotel.lng, label: hotel.name })
       }
@@ -152,12 +177,20 @@ export function TripMap({
         waypoints.push({ lat: act.lat, lng: act.lng, label: act.label })
       }
 
-      // Return to hotel if we started from one and have activities
+      // Return to hotel after activities
       if (hotel && dayActivities.length > 0) {
         waypoints.push({ lat: hotel.lat, lng: hotel.lng, label: hotel.name })
       }
 
-      return waypoints
+      // For departure days: end at the first flight's departure airport
+      if (isDepartureDay && dayFlights.length > 0 && dayActivities.length === 0) {
+        // No activities — just hotel to airport
+        const firstFlight = dayFlights[0]
+        waypoints.push({ lat: firstFlight.lat, lng: firstFlight.lng, label: firstFlight.label })
+      }
+
+      // Deduplicate consecutive identical waypoints
+      return waypoints.filter((w, i) => i === 0 || w.lat !== waypoints[i-1].lat || w.lng !== waypoints[i-1].lng)
     },
     [getHotelForDay]
   )

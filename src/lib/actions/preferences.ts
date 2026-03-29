@@ -23,6 +23,8 @@ export async function updatePreferences(data: {
   activityMix?: string[]
   mobilityNotes?: string
   maxDailyTravelMins?: number
+  showFreeTime?: boolean
+  freeTimeMinGapHours?: number
 }) {
   const session = await auth()
   if (!session?.user?.id) throw new Error("Unauthorized")

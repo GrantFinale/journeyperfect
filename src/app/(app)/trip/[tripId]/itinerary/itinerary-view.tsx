@@ -672,6 +672,8 @@ interface Props {
   isPaid?: boolean
   wishlistActivities?: WishlistActivity[]
   hotels?: HotelInfo[]
+  showFreeTime?: boolean
+  freeTimeMinGapHours?: number
 }
 
 export function ItineraryView({
@@ -683,6 +685,8 @@ export function ItineraryView({
   isPaid,
   wishlistActivities: initialWishlist = [],
   hotels = [],
+  showFreeTime = false,
+  freeTimeMinGapHours = 2,
 }: Props) {
   const router = useRouter()
   const [items, setItems] = useState<ItineraryItem[]>(initialItems)
@@ -714,8 +718,7 @@ export function ItineraryView({
   const [optimizing, setOptimizing] = useState(false)
   const [collapsedDays, setCollapsedDays] = useState<Set<string>>(new Set())
   const [addingToDay, setAddingToDay] = useState<string | null>(null)
-  const [showFreeTime, setShowFreeTime] = useState(false)
-  const [minGapHours, setMinGapHours] = useState<number>(2)
+  const minGapHours = freeTimeMinGapHours
   const [newItemForm, setNewItemForm] = useState({
     title: "",
     type: "CUSTOM",
@@ -1024,6 +1027,53 @@ export function ItineraryView({
     setActiveDragId(event.active.id as string)
   }
 
+  // Handle moving an itinerary item to a different day via drag
+  async function handleMoveToDay(itemId: string, newDayStr: string) {
+    const item = items.find((i) => i.id === itemId)
+    if (!item) return
+
+    // Keep the item's existing start time, or assign a default
+    const startTime = item.startTime || "09:00"
+    const endMins = timeToMinutes(startTime) + item.durationMins
+    const endTime = minutesToTime(endMins)
+
+    // Calculate new position: end of the target day's items
+    const targetDayItems = items.filter((i) => {
+      const d = new Date(i.date)
+      const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`
+      return key === newDayStr
+    })
+    const newPosition = targetDayItems.length
+
+    // Optimistic update
+    setItems((prev) =>
+      prev.map((i) =>
+        i.id === itemId
+          ? {
+              ...i,
+              date: new Date(newDayStr + "T12:00:00Z"),
+              startTime,
+              endTime,
+              position: newPosition,
+            }
+          : i
+      )
+    )
+
+    try {
+      await updateItineraryItem(tripId, itemId, {
+        date: newDayStr,
+        startTime,
+        durationMins: item.durationMins,
+      })
+      const dayIdx = allDays.findIndex((d) => d.dateStr === newDayStr)
+      toast.success(`Moved to Day ${dayIdx + 1}`)
+    } catch {
+      toast.error("Failed to move item")
+      router.refresh()
+    }
+  }
+
   function handleGlobalDragEnd(event: DragEndEvent) {
     const { active, over } = event
     setActiveDragId(null)
@@ -1047,7 +1097,7 @@ export function ItineraryView({
       }
     }
 
-    // Wishlist item dropped on a day zone
+    // Item dropped on a day zone
     if (overId.startsWith("day-")) {
       const dateStr = overId.replace("day-", "")
       const isWishlistItem = wishlist.some((a) => a.id === activeId)
@@ -1055,12 +1105,48 @@ export function ItineraryView({
         handleWishlistDrop(activeId, dateStr)
         return
       }
+
+      // Itinerary item dropped on a different day zone — cross-day move
+      const draggedItem = items.find((i) => i.id === activeId)
+      if (draggedItem) {
+        const d = new Date(draggedItem.date)
+        const currentDay = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`
+        if (currentDay !== dateStr) {
+          // Don't allow moving fixed items (flights, hotel check-in/out)
+          const isFixed = draggedItem.type === "FLIGHT" || draggedItem.type === "HOTEL_CHECK_IN" || draggedItem.type === "HOTEL_CHECK_OUT"
+          if (!isFixed) {
+            handleMoveToDay(activeId, dateStr)
+            return
+          }
+        }
+      }
     }
 
     // Itinerary item dropped on wishlist zone
     if (overId === "wishlist-drop-zone") {
       handleReturnToWishlist(activeId)
       return
+    }
+
+    // Within-day reorder: itinerary item dropped on another itinerary item
+    const activeItem = items.find((i) => i.id === activeId)
+    const overItem = items.find((i) => i.id === overId)
+    if (activeItem && overItem && activeId !== overId) {
+      const activeDate = new Date(activeItem.date)
+      const overDate = new Date(overItem.date)
+      const activeDateStr = `${activeDate.getUTCFullYear()}-${String(activeDate.getUTCMonth() + 1).padStart(2, "0")}-${String(activeDate.getUTCDate()).padStart(2, "0")}`
+      const overDateStr = `${overDate.getUTCFullYear()}-${String(overDate.getUTCMonth() + 1).padStart(2, "0")}-${String(overDate.getUTCDate()).padStart(2, "0")}`
+
+      if (activeDateStr === overDateStr) {
+        // Same-day reorder
+        handleDragEnd(event, activeDateStr)
+      } else {
+        // Cross-day: dropped on an item in another day — move to that day
+        const isFixed = activeItem.type === "FLIGHT" || activeItem.type === "HOTEL_CHECK_IN" || activeItem.type === "HOTEL_CHECK_OUT"
+        if (!isFixed) {
+          handleMoveToDay(activeId, overDateStr)
+        }
+      }
     }
   }
 
@@ -1322,6 +1408,7 @@ export function ItineraryView({
   return (
     <DndContext
       sensors={sensors}
+      collisionDetection={closestCenter}
       onDragStart={handleGlobalDragStart}
       onDragEnd={handleGlobalDragEnd}
     >
@@ -1374,35 +1461,6 @@ export function ItineraryView({
                     <span className="hidden sm:inline">Timeline</span>
                   </button>
                 </div>
-
-                {/* Free time toggle */}
-                {viewMode === "events" && (
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      onClick={() => setShowFreeTime(!showFreeTime)}
-                      className={cn(
-                        "flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium rounded-xl border transition-colors",
-                        showFreeTime
-                          ? "bg-gray-900 text-white border-gray-900"
-                          : "bg-white text-gray-600 border-gray-200 hover:border-gray-300"
-                      )}
-                    >
-                      <Clock className="w-4 h-4" />
-                      <span className="hidden sm:inline">Free time</span>
-                    </button>
-                    {showFreeTime && (
-                      <select
-                        value={minGapHours}
-                        onChange={(e) => setMinGapHours(Number(e.target.value))}
-                        className="px-2 py-2.5 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                      >
-                        <option value={1}>1h+</option>
-                        <option value={2}>2h+</option>
-                        <option value={3}>3h+</option>
-                      </select>
-                    )}
-                  </div>
-                )}
 
                 {/* Auto-plan button */}
                 <button
@@ -1501,70 +1559,64 @@ export function ItineraryView({
                                 No items yet — drag from wishlist or add one below
                               </div>
                             )}
-                            <DndContext
-                              sensors={sensors}
-                              collisionDetection={closestCenter}
-                              onDragEnd={(event) => handleDragEnd(event, day.dateStr)}
+                            <SortableContext
+                              items={day.items.map((i) => i.id)}
+                              strategy={verticalListSortingStrategy}
                             >
-                              <SortableContext
-                                items={day.items.map((i) => i.id)}
-                                strategy={verticalListSortingStrategy}
-                              >
-                                <div className="space-y-0 mb-3">
-                                  {/* Free time before first item */}
-                                  {showFreeTime && freeTimeBlocks
-                                    .filter((b) => b.afterItemIndex === -1)
-                                    .map((block, bi) => (
-                                      <FreeTimeBlockCard
-                                        key={`free-pre-${bi}`}
-                                        block={block}
-                                        onAddActivity={(startTime) => {
-                                          setAddingToDay(day.dateStr)
-                                          setNewItemForm((f) => ({ ...f, startTime }))
-                                        }}
-                                        wishlistItems={wishlist}
-                                        onQuickAddFromWishlist={(activityId, startTime) =>
-                                          handleQuickAddFromWishlist(activityId, startTime, day.dateStr)
-                                        }
-                                      />
-                                    ))}
-
-                                  {day.items.map((item, i) => (
-                                    <div key={item.id}>
-                                      <SortableItineraryItem
-                                        item={item}
-                                        prevItem={i > 0 ? day.items[i - 1] : null}
-                                        nextItem={i < day.items.length - 1 ? day.items[i + 1] : null}
-                                        isFirst={i === 0}
-                                        isLast={i === day.items.length - 1}
-                                        onDelete={handleDelete}
-                                        tripId={tripId}
-                                        onUpdateNotes={handleUpdateNotes}
-                                        hotel={hotel}
-                                      />
-
-                                      {/* Free time after this item */}
-                                      {showFreeTime && freeTimeBlocks
-                                        .filter((b) => b.afterItemIndex === i)
-                                        .map((block, bi) => (
-                                          <FreeTimeBlockCard
-                                            key={`free-${i}-${bi}`}
-                                            block={block}
-                                            onAddActivity={(startTime) => {
-                                              setAddingToDay(day.dateStr)
-                                              setNewItemForm((f) => ({ ...f, startTime }))
-                                            }}
-                                            wishlistItems={wishlist}
-                                            onQuickAddFromWishlist={(activityId, startTime) =>
-                                              handleQuickAddFromWishlist(activityId, startTime, day.dateStr)
-                                            }
-                                          />
-                                        ))}
-                                    </div>
+                              <div className="space-y-0 mb-3">
+                                {/* Free time before first item */}
+                                {showFreeTime && freeTimeBlocks
+                                  .filter((b) => b.afterItemIndex === -1)
+                                  .map((block, bi) => (
+                                    <FreeTimeBlockCard
+                                      key={`free-pre-${bi}`}
+                                      block={block}
+                                      onAddActivity={(startTime) => {
+                                        setAddingToDay(day.dateStr)
+                                        setNewItemForm((f) => ({ ...f, startTime }))
+                                      }}
+                                      wishlistItems={wishlist}
+                                      onQuickAddFromWishlist={(activityId, startTime) =>
+                                        handleQuickAddFromWishlist(activityId, startTime, day.dateStr)
+                                      }
+                                    />
                                   ))}
-                                </div>
-                              </SortableContext>
-                            </DndContext>
+
+                                {day.items.map((item, i) => (
+                                  <div key={item.id}>
+                                    <SortableItineraryItem
+                                      item={item}
+                                      prevItem={i > 0 ? day.items[i - 1] : null}
+                                      nextItem={i < day.items.length - 1 ? day.items[i + 1] : null}
+                                      isFirst={i === 0}
+                                      isLast={i === day.items.length - 1}
+                                      onDelete={handleDelete}
+                                      tripId={tripId}
+                                      onUpdateNotes={handleUpdateNotes}
+                                      hotel={hotel}
+                                    />
+
+                                    {/* Free time after this item */}
+                                    {showFreeTime && freeTimeBlocks
+                                      .filter((b) => b.afterItemIndex === i)
+                                      .map((block, bi) => (
+                                        <FreeTimeBlockCard
+                                          key={`free-${i}-${bi}`}
+                                          block={block}
+                                          onAddActivity={(startTime) => {
+                                            setAddingToDay(day.dateStr)
+                                            setNewItemForm((f) => ({ ...f, startTime }))
+                                          }}
+                                          wishlistItems={wishlist}
+                                          onQuickAddFromWishlist={(activityId, startTime) =>
+                                            handleQuickAddFromWishlist(activityId, startTime, day.dateStr)
+                                          }
+                                        />
+                                      ))}
+                                  </div>
+                                ))}
+                              </div>
+                            </SortableContext>
 
                             {/* Add item inline form */}
                             {addingToDay === day.dateStr ? (

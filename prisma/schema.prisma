@@ -129,6 +129,10 @@ model UserPreferences {
   mobilityNotes  String?
   maxDailyTravelMins Int @default(60)
 
+  // Free time display
+  showFreeTime        Boolean @default(false)
+  freeTimeMinGapHours Int     @default(2)
+
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   updatedAt DateTime @updatedAt

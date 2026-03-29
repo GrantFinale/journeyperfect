@@ -524,6 +524,8 @@ export function GlobalSettingsView({ user, initialProfiles, initialPrefs, initia
         activityMix: prefs.activityMix,
         mobilityNotes: prefs.mobilityNotes ?? undefined,
         maxDailyTravelMins: prefs.maxDailyTravelMins,
+        showFreeTime: prefs.showFreeTime ?? false,
+        freeTimeMinGapHours: prefs.freeTimeMinGapHours ?? 2,
       })
       toast.success("Preferences saved")
     } catch {
@@ -1249,7 +1251,6 @@ export function GlobalSettingsView({ user, initialProfiles, initialPrefs, initia
             </div>
             <p className="text-sm text-gray-500 mb-3">
               Show free time blocks on your itinerary to identify gaps in your schedule.
-              You can also toggle this directly from the Plan page header.
             </p>
             <div className="space-y-3">
               <label className="flex items-center gap-3 cursor-pointer">

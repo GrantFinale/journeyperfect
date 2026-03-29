@@ -7,6 +7,7 @@ import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/db"
 import { hasFeature } from "@/lib/features"
 import { requireTripAccess } from "@/lib/auth-trip"
+import { getPreferences } from "@/lib/actions/preferences"
 
 export default async function ItineraryPage({ params }: { params: Promise<{ tripId: string }> }) {
   const { tripId } = await params
@@ -53,6 +54,9 @@ export default async function ItineraryPage({ params }: { params: Promise<{ trip
     orderBy: [{ priority: "asc" }, { createdAt: "desc" }],
   })
 
+  // Fetch user preferences for free time display
+  const userPrefs = await getPreferences().catch(() => null)
+
   // Fetch hotels for travel time calculations
   const hotels = await prisma.hotel.findMany({
     where: { tripId },
@@ -77,6 +81,8 @@ export default async function ItineraryPage({ params }: { params: Promise<{ trip
       isPaid={isPaid}
       wishlistActivities={wishlistActivities}
       hotels={hotels}
+      showFreeTime={userPrefs?.showFreeTime ?? false}
+      freeTimeMinGapHours={userPrefs?.freeTimeMinGapHours ?? 2}
     />
   )
 }

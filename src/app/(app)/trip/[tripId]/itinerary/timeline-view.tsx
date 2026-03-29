@@ -7,7 +7,7 @@ import type { GroupedDay } from "@/lib/itinerary-utils"
 import { calculateTravel } from "./travel-connector"
 import { useDroppable } from "@dnd-kit/core"
 import type { WishlistActivity } from "./wishlist-panel"
-import { CalendarDays, ArrowRight } from "lucide-react"
+import { CalendarDays, ArrowRight, X } from "lucide-react"
 
 type ItineraryItem = {
   id: string
@@ -229,6 +229,7 @@ function MoveToDayMenu({
   days,
   currentDayStr,
   onMove,
+  onMoveToWishlist,
   onClose,
   position,
 }: {
@@ -236,10 +237,12 @@ function MoveToDayMenu({
   days: { dateStr: string; label: string; dayIdx: number }[]
   currentDayStr: string
   onMove: (itemId: string, newDayStr: string, newStartTime: string) => void
+  onMoveToWishlist?: (itemId: string) => void
   onClose: () => void
   position: { x: number; y: number }
 }) {
   const otherDays = days.filter((d) => d.dateStr !== currentDayStr)
+  const canUnschedule = item.type === "ACTIVITY" || item.type === "MEAL" || item.type === "BUFFER"
 
   return (
     <>
@@ -253,6 +256,23 @@ function MoveToDayMenu({
           top: Math.min(position.y, window.innerHeight - 200),
         }}
       >
+        {/* Unschedule / back to wishlist */}
+        {canUnschedule && onMoveToWishlist && (
+          <>
+            <button
+              onClick={() => {
+                onMoveToWishlist(item.id)
+                onClose()
+              }}
+              className="w-full text-left px-3 py-2 text-sm text-orange-600 hover:bg-orange-50 transition-colors flex items-center gap-2"
+            >
+              <X className="w-3.5 h-3.5" />
+              <span>Remove from plan</span>
+            </button>
+            <div className="border-b border-gray-100" />
+          </>
+        )}
+
         <div className="px-3 py-2 border-b border-gray-100">
           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
             Move to day
@@ -290,6 +310,7 @@ function TimelineItem({
   onResize,
   onDragMove,
   onContextMenu,
+  onMoveToWishlist,
   onPreviewChange,
   onPreviewStartChange,
 }: {
@@ -299,6 +320,7 @@ function TimelineItem({
   onResize: (itemId: string, newDurationMins: number) => void
   onDragMove: (itemId: string, newStartTime: string, newDurationMins: number) => void
   onContextMenu: (e: React.MouseEvent, item: ItineraryItem) => void
+  onMoveToWishlist?: (itemId: string) => void
   onPreviewChange?: (itemId: string, previewDuration: number | null) => void
   onPreviewStartChange?: (itemId: string, previewStartMins: number | null) => void
 }) {
@@ -407,7 +429,7 @@ function TimelineItem({
   return (
     <div
       className={cn(
-        "absolute rounded-lg border px-2 py-1 overflow-hidden select-none transition-shadow",
+        "absolute rounded-lg border px-2 py-1 overflow-hidden select-none transition-shadow group/timeline-item",
         typeColor(item.type),
         !isFixed && "cursor-grab active:cursor-grabbing",
         (resizing || dragging) && "z-20 shadow-lg ring-2 ring-indigo-400/50"
@@ -424,7 +446,7 @@ function TimelineItem({
       onPointerUp={!isFixed ? handleDragPointerUp : undefined}
       onContextMenu={!isFixed ? handleContextMenuEvent : undefined}
     >
-      <p className="text-[10px] font-medium truncate leading-tight">
+      <p className="text-[10px] font-medium truncate leading-tight pr-4">
         {item.title}
       </p>
       {height > 30 && (
@@ -433,6 +455,21 @@ function TimelineItem({
         </p>
       )}
 
+      {/* Hover unschedule button for non-fixed items */}
+      {!isFixed && onMoveToWishlist && (
+        <button
+          className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-white/80 hover:bg-red-100 text-gray-400 hover:text-red-600 opacity-0 group-hover/timeline-item:opacity-100 transition-all flex items-center justify-center z-10"
+          title="Remove from plan"
+          onClick={(e) => {
+            e.stopPropagation()
+            e.preventDefault()
+            onMoveToWishlist(item.id)
+          }}
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          <X className="w-2.5 h-2.5" />
+        </button>
+      )}
 
       {/* Duration change indicator */}
       {showDurationLabel && (
@@ -514,6 +551,7 @@ function TimelineDay({
   onResize,
   onDragMove,
   onContextMenu,
+  onMoveToWishlist,
   allDays,
   hotel,
 }: {
@@ -522,6 +560,7 @@ function TimelineDay({
   onResize: (itemId: string, newDurationMins: number) => void
   onDragMove: (itemId: string, newStartTime: string, newDurationMins: number) => void
   onContextMenu: (e: React.MouseEvent, item: ItineraryItem) => void
+  onMoveToWishlist?: (itemId: string) => void
   allDays: { dateStr: string; label: string; dayIdx: number }[]
   hotel?: HotelInfo | null
 }) {
@@ -627,6 +666,7 @@ function TimelineDay({
               onResize={onResize}
               onDragMove={onDragMove}
               onContextMenu={onContextMenu}
+              onMoveToWishlist={onMoveToWishlist}
               onPreviewChange={handlePreviewChange}
               onPreviewStartChange={handlePreviewStartChange}
             />
@@ -974,6 +1014,7 @@ export function TimelineView({
               onResize={handleResize}
               onDragMove={handleDragMove}
               onContextMenu={(e, item) => handleContextMenu(e, item, day.dateStr)}
+              onMoveToWishlist={onMoveToWishlist}
               allDays={dayInfos}
               hotel={getHotelForDate(day.dateStr)}
             />
@@ -988,6 +1029,7 @@ export function TimelineView({
           days={dayInfos}
           currentDayStr={contextMenu.dayStr}
           onMove={handleMoveToDay}
+          onMoveToWishlist={onMoveToWishlist}
           onClose={() => setContextMenu(null)}
           position={contextMenu.position}
         />

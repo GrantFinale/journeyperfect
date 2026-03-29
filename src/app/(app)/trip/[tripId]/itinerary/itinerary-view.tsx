@@ -425,26 +425,69 @@ function SortableItineraryItem({
     }
   }
 
-  // Compute travel from hotel to first item
-  const fromLat = isFirst && hotel ? hotel.lat : (prevItem?.activity?.lat || prevItem?.hotel?.lat)
-  const fromLng = isFirst && hotel ? hotel.lng : (prevItem?.activity?.lng || prevItem?.hotel?.lng)
-  const fromName = isFirst && hotel ? hotel.name : (prevItem?.activity?.name || prevItem?.hotel?.name || prevItem?.title || "")
+  // Compute travel between items
+  // For flights: use arrival airport coords as the "from" for the NEXT item
+  // For the first item of the day: use hotel as "from"
+  // For items after a flight: use the flight's arrival airport
+  // Airport coordinate lookup for travel from airport
+  const AIRPORT_COORDS: Record<string, [number, number]> = {
+    ATL: [33.6407, -84.4277], AUS: [30.1975, -97.6664], BOS: [42.3656, -71.0096],
+    CLT: [35.2140, -80.9431], DEN: [39.8561, -104.6737], DFW: [32.8998, -97.0403],
+    DTW: [42.2124, -83.3534], EWR: [40.6895, -74.1745], GRR: [42.8808, -85.5228],
+    IAH: [29.9902, -95.3368], JFK: [40.6413, -73.7781], LAX: [33.9416, -118.4085],
+    LGA: [40.7769, -73.8740], MCO: [28.4312, -81.3081], MIA: [25.7959, -80.2870],
+    MSP: [44.8848, -93.2223], ORD: [41.9742, -87.9073], PHL: [39.8729, -75.2437],
+    PHX: [33.4373, -112.0078], SAN: [32.7338, -117.1933], SAT: [29.5337, -98.4698],
+    SEA: [47.4502, -122.3088], SFO: [37.6213, -122.3790],
+  }
+  const prevIsFlight = prevItem?.type === "FLIGHT"
+  const arrCode = prevItem?.flight?.arrivalAirport?.toUpperCase() || ""
+  const arrCoords = AIRPORT_COORDS[arrCode]
+  const prevFlightArrival = prevIsFlight && arrCode
+    ? { lat: arrCoords?.[0] ?? null, lng: arrCoords?.[1] ?? null, name: `${arrCode} Airport` }
+    : null
+
+  const fromLat = prevFlightArrival ? prevFlightArrival.lat
+    : isFirst && hotel ? hotel.lat
+    : (prevItem?.activity?.lat || prevItem?.hotel?.lat)
+  const fromLng = prevFlightArrival ? prevFlightArrival.lng
+    : isFirst && hotel ? hotel.lng
+    : (prevItem?.activity?.lng || prevItem?.hotel?.lng)
+  const fromName = prevFlightArrival ? prevFlightArrival.name
+    : isFirst && hotel ? hotel.name
+    : (prevItem?.activity?.name || prevItem?.hotel?.name || prevItem?.title || "")
   const toLat = item.activity?.lat || item.hotel?.lat
   const toLng = item.activity?.lng || item.hotel?.lng
   const toName = item.activity?.name || item.hotel?.name || item.title
 
+  // Show travel connector:
+  // - Between any two non-flight items
+  // - After a flight to the next item (airport → hotel/activity)
+  // - Skip between two consecutive flights (connection)
+  const showTravel = item.type !== "FLIGHT" && (isFirst || prevItem)
+  // Also show after last flight of the day to next item
+  const showAfterFlight = prevIsFlight && item.type !== "FLIGHT"
+
   return (
     <div ref={setNodeRef} style={style}>
       {/* Travel connector BETWEEN items */}
-      {(isFirst || prevItem) && item.type !== "FLIGHT" && (
-        <TravelConnector
-          fromLat={fromLat}
-          fromLng={fromLng}
-          toLat={toLat}
-          toLng={toLng}
-          fromName={fromName || ""}
-          toName={toName}
-        />
+      {(showTravel || showAfterFlight) && (
+        <>
+          {prevIsFlight && (
+            <div className="flex items-center gap-2 py-1 ml-5">
+              <div className="w-5 h-5 rounded-full bg-blue-50 flex items-center justify-center text-[10px]">🧳</div>
+              <span className="text-[11px] text-gray-400">~1 hr luggage & airport exit</span>
+            </div>
+          )}
+          <TravelConnector
+            fromLat={fromLat}
+            fromLng={fromLng}
+            toLat={toLat}
+            toLng={toLng}
+            fromName={fromName || ""}
+            toName={toName}
+          />
+        </>
       )}
       <div
         className={cn(

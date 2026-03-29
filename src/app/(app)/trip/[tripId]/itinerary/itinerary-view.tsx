@@ -462,10 +462,12 @@ function SortableItineraryItem({
 
   // Show travel connector:
   // - Between any two non-flight items
-  // - After a flight to the next item (airport → hotel/activity)
-  // - Skip between two consecutive flights (connection)
+  // - After the LAST flight in a sequence to the next item (airport → hotel/activity)
+  // - Skip if current item is a flight (connections don't need luggage/travel display)
   const showTravel = item.type !== "FLIGHT" && (isFirst || prevItem)
-  // Also show after last flight of the day to next item
+  // Only show after a flight if the current item is NOT a flight (last flight in sequence)
+  // This correctly handles connections: Flight A→B, Flight B→C — luggage only shows before
+  // the first non-flight item after the last flight
   const showAfterFlight = prevIsFlight && item.type !== "FLIGHT"
 
   return (
@@ -1435,6 +1437,7 @@ export function ItineraryView({
                   onMoveToWishlist={handleReturnToWishlist}
                   onMoveToDay={handleTimelineMoveToDay}
                   wishlistItems={wishlist}
+                  hotels={hotels}
                 />
               </div>
             ) : (

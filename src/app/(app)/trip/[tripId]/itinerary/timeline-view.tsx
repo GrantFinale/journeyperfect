@@ -491,6 +491,7 @@ function TimelineDay({
   onDragMove,
   onContextMenu,
   allDays,
+  hotel,
 }: {
   day: GroupedDay<ItineraryItem>
   dayIdx: number
@@ -498,6 +499,7 @@ function TimelineDay({
   onDragMove: (itemId: string, newStartTime: string, newDurationMins: number) => void
   onContextMenu: (e: React.MouseEvent, item: ItineraryItem) => void
   allDays: { dateStr: string; label: string; dayIdx: number }[]
+  hotel?: HotelInfo | null
 }) {
   const dayDate = new Date(day.date)
   const dayLabel = dayDate.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })
@@ -638,12 +640,144 @@ function TimelineDay({
               )
             ) : null
           })}
+
+        {/* Hotel-to-first-event and last-event-to-hotel travel connectors */}
+        {hotel && (() => {
+          const sorted = day.items
+            .filter((item) => item.startTime && item.type !== "FLIGHT" && item.type !== "HOTEL_CHECK_IN" && item.type !== "HOTEL_CHECK_OUT")
+            .sort((a, b) => timeToMinutes(a.startTime!) - timeToMinutes(b.startTime!))
+          if (sorted.length === 0) return null
+
+          const firstItem = sorted[0]
+          const lastItem = sorted[sorted.length - 1]
+          const elements: React.ReactNode[] = []
+
+          // Travel from hotel to first event
+          if (firstItem.startTime) {
+            const firstStart = timeToMinutes(firstItem.startTime!)
+            const toLat = firstItem.activity?.lat || firstItem.hotel?.lat
+            const toLng = firstItem.activity?.lng || firstItem.hotel?.lng
+            const travel = calculateTravel(hotel.lat, hotel.lng, toLat, toLng)
+            if (travel) {
+              const travelEndTop = ((firstStart - HOUR_START * 60) / 60) * HOUR_HEIGHT
+              const travelHeight = Math.min((travel.travelMins / 60) * HOUR_HEIGHT, 40)
+              const travelTop = Math.max(0, travelEndTop - travelHeight)
+              const modeIcon = travel.mode === "walk" ? "\uD83D\uDEB6" : "\uD83D\uDE97"
+              const mapsUrl = hotel.lat && hotel.lng && toLat && toLng
+                ? `https://www.google.com/maps/dir/?api=1&origin=${hotel.lat},${hotel.lng}&destination=${toLat},${toLng}&travelmode=${travel.mode === "walk" ? "walking" : "driving"}`
+                : null
+
+              if (travelHeight > 2) {
+                elements.push(
+                  mapsUrl ? (
+                    <a
+                      key="travel-hotel-to-first"
+                      href={mapsUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="absolute left-0 right-0 flex flex-col items-center group/travel cursor-pointer z-10"
+                      style={{ top: travelTop, height: Math.max(travelHeight, 16) }}
+                      title={`${travel.travelMins} min ${travel.mode === "walk" ? "walk" : "drive"} from hotel - Click for directions`}
+                    >
+                      <div className="w-0.5 flex-1 bg-green-300 group-hover/travel:bg-green-500 transition-colors" />
+                      <div className="text-[8px] text-green-600 group-hover/travel:text-green-700 whitespace-nowrap flex items-center gap-0.5 bg-white px-1 rounded">
+                        <span>{modeIcon}</span>
+                        <span>{travel.travelMins}m</span>
+                      </div>
+                      <div className="w-0.5 flex-1 bg-green-300 group-hover/travel:bg-green-500 transition-colors" />
+                    </a>
+                  ) : (
+                    <div
+                      key="travel-hotel-to-first"
+                      className="absolute left-0 right-0 flex flex-col items-center z-10"
+                      style={{ top: travelTop, height: Math.max(travelHeight, 16) }}
+                      title={`${travel.travelMins} min ${travel.mode === "walk" ? "walk" : "drive"} from hotel`}
+                    >
+                      <div className="w-0.5 flex-1 bg-green-300" />
+                      <div className="text-[8px] text-green-600 whitespace-nowrap flex items-center gap-0.5 bg-white px-1 rounded">
+                        <span>{modeIcon}</span>
+                        <span>{travel.travelMins}m</span>
+                      </div>
+                      <div className="w-0.5 flex-1 bg-green-300" />
+                    </div>
+                  )
+                )
+              }
+            }
+          }
+
+          // Travel from last event back to hotel
+          if (lastItem.startTime) {
+            const lastEnd = lastItem.endTime
+              ? timeToMinutes(lastItem.endTime)
+              : timeToMinutes(lastItem.startTime!) + lastItem.durationMins
+            const fromLat = lastItem.activity?.lat || lastItem.hotel?.lat
+            const fromLng = lastItem.activity?.lng || lastItem.hotel?.lng
+            const travel = calculateTravel(fromLat, fromLng, hotel.lat, hotel.lng)
+            if (travel) {
+              const travelTop = ((lastEnd - HOUR_START * 60) / 60) * HOUR_HEIGHT
+              const travelHeight = Math.min((travel.travelMins / 60) * HOUR_HEIGHT, 40)
+              const modeIcon = travel.mode === "walk" ? "\uD83D\uDEB6" : "\uD83D\uDE97"
+              const mapsUrl = fromLat && fromLng && hotel.lat && hotel.lng
+                ? `https://www.google.com/maps/dir/?api=1&origin=${fromLat},${fromLng}&destination=${hotel.lat},${hotel.lng}&travelmode=${travel.mode === "walk" ? "walking" : "driving"}`
+                : null
+
+              if (travelHeight > 2) {
+                elements.push(
+                  mapsUrl ? (
+                    <a
+                      key="travel-last-to-hotel"
+                      href={mapsUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="absolute left-0 right-0 flex flex-col items-center group/travel cursor-pointer z-10"
+                      style={{ top: travelTop, height: Math.max(travelHeight, 16) }}
+                      title={`${travel.travelMins} min ${travel.mode === "walk" ? "walk" : "drive"} to hotel - Click for directions`}
+                    >
+                      <div className="w-0.5 flex-1 bg-green-300 group-hover/travel:bg-green-500 transition-colors" />
+                      <div className="text-[8px] text-green-600 group-hover/travel:text-green-700 whitespace-nowrap flex items-center gap-0.5 bg-white px-1 rounded">
+                        <span>{modeIcon}</span>
+                        <span>{travel.travelMins}m</span>
+                      </div>
+                      <div className="w-0.5 flex-1 bg-green-300 group-hover/travel:bg-green-500 transition-colors" />
+                    </a>
+                  ) : (
+                    <div
+                      key="travel-last-to-hotel"
+                      className="absolute left-0 right-0 flex flex-col items-center z-10"
+                      style={{ top: travelTop, height: Math.max(travelHeight, 16) }}
+                      title={`${travel.travelMins} min ${travel.mode === "walk" ? "walk" : "drive"} to hotel`}
+                    >
+                      <div className="w-0.5 flex-1 bg-green-300" />
+                      <div className="text-[8px] text-green-600 whitespace-nowrap flex items-center gap-0.5 bg-white px-1 rounded">
+                        <span>{modeIcon}</span>
+                        <span>{travel.travelMins}m</span>
+                      </div>
+                      <div className="w-0.5 flex-1 bg-green-300" />
+                    </div>
+                  )
+                )
+              }
+            }
+          }
+
+          return elements
+        })()}
       </div>
     </div>
   )
 }
 
 // ─── Main TimelineView ──────────────────────────────────────────────────
+
+type HotelInfo = {
+  id: string
+  name: string
+  lat: number | null
+  lng: number | null
+  checkIn: Date
+  checkOut: Date
+}
 
 interface TimelineViewProps {
   days: GroupedDay<ItineraryItem>[]
@@ -653,6 +787,7 @@ interface TimelineViewProps {
   onMoveToWishlist?: (itemId: string) => void
   onMoveToDay?: (itemId: string, newDayStr: string, newStartTime: string) => void
   wishlistItems?: WishlistActivity[]
+  hotels?: HotelInfo[]
 }
 
 export function TimelineView({
@@ -663,6 +798,7 @@ export function TimelineView({
   onMoveToWishlist,
   onMoveToDay,
   wishlistItems,
+  hotels,
 }: TimelineViewProps) {
   const [contextMenu, setContextMenu] = useState<{
     item: ItineraryItem
@@ -689,6 +825,17 @@ export function TimelineView({
   const handleMoveToDay = useCallback((itemId: string, newDayStr: string, newStartTime: string) => {
     onMoveToDay?.(itemId, newDayStr, newStartTime)
   }, [onMoveToDay])
+
+  // Find hotel for a given date
+  const getHotelForDate = useCallback((dateStr: string): HotelInfo | null => {
+    if (!hotels) return null
+    for (const h of hotels) {
+      const checkIn = new Date(h.checkIn).toISOString().split("T")[0]
+      const checkOut = new Date(h.checkOut).toISOString().split("T")[0]
+      if (dateStr >= checkIn && dateStr <= checkOut) return h
+    }
+    return null
+  }, [hotels])
 
   // Build day info for the context menu
   const dayInfos = useMemo(
@@ -738,6 +885,7 @@ export function TimelineView({
               onDragMove={handleDragMove}
               onContextMenu={(e, item) => handleContextMenu(e, item, day.dateStr)}
               allDays={dayInfos}
+              hotel={getHotelForDate(day.dateStr)}
             />
           </div>
         ))}

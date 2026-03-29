@@ -94,7 +94,7 @@ type OverlapLayout = {
   totalColumns: number
 }
 
-function computeOverlapLayout(items: ItineraryItem[]): OverlapLayout[] {
+function computeOverlapLayout(items: ItineraryItem[], previewDurations?: Map<string, number>): OverlapLayout[] {
   // Filter to only items with start times and sort by start
   const timed = items
     .filter((item) => item.startTime)
@@ -113,7 +113,7 @@ function computeOverlapLayout(items: ItineraryItem[]): OverlapLayout[] {
   while (groupStart < timed.length) {
     // Find all items in the current overlap cluster
     const group: ItineraryItem[] = [timed[groupStart]]
-    let maxEnd = getItemEnd(timed[groupStart])
+    let maxEnd = getItemEnd(timed[groupStart], previewDurations)
     let groupEnd = groupStart + 1
 
     while (groupEnd < timed.length) {
@@ -121,7 +121,7 @@ function computeOverlapLayout(items: ItineraryItem[]): OverlapLayout[] {
       if (itemStart < maxEnd) {
         // Overlaps with the group
         group.push(timed[groupEnd])
-        maxEnd = Math.max(maxEnd, getItemEnd(timed[groupEnd]))
+        maxEnd = Math.max(maxEnd, getItemEnd(timed[groupEnd], previewDurations))
         groupEnd++
       } else {
         break
@@ -146,9 +146,9 @@ function computeOverlapLayout(items: ItineraryItem[]): OverlapLayout[] {
       if (col === -1) {
         // Need a new column
         col = columns.length
-        columns.push({ end: getItemEnd(item) })
+        columns.push({ end: getItemEnd(item, previewDurations) })
       } else {
-        columns[col].end = getItemEnd(item)
+        columns[col].end = getItemEnd(item, previewDurations)
       }
 
       itemColumns.set(item.id, col)
@@ -170,9 +170,10 @@ function computeOverlapLayout(items: ItineraryItem[]): OverlapLayout[] {
   return result
 }
 
-function getItemEnd(item: ItineraryItem): number {
-  if (item.endTime) return timeToMinutes(item.endTime)
-  return timeToMinutes(item.startTime!) + item.durationMins
+function getItemEnd(item: ItineraryItem, previewDurations?: Map<string, number>): number {
+  const duration = previewDurations?.get(item.id) ?? item.durationMins
+  if (item.endTime && !previewDurations?.has(item.id)) return timeToMinutes(item.endTime)
+  return timeToMinutes(item.startTime!) + duration
 }
 
 // ─── Droppable Hour Slot ─────────────────────────────────────────────────
@@ -270,6 +271,7 @@ function TimelineItem({
   onResize,
   onDragMove,
   onContextMenu,
+  onPreviewChange,
 }: {
   item: ItineraryItem
   column: number
@@ -277,6 +279,7 @@ function TimelineItem({
   onResize: (itemId: string, newDurationMins: number) => void
   onDragMove: (itemId: string, newStartTime: string, newDurationMins: number) => void
   onContextMenu: (e: React.MouseEvent, item: ItineraryItem) => void
+  onPreviewChange?: (itemId: string, previewDuration: number | null) => void
 }) {
   const [resizing, setResizing] = useState(false)
   const [dragging, setDragging] = useState(false)
@@ -321,6 +324,7 @@ function TimelineItem({
     const deltaMins = (deltaY / HOUR_HEIGHT) * 60
     const newDuration = snapToGrid(Math.max(MIN_DURATION_MINS, resizeRef.current.startDuration + deltaMins))
     setPreviewDuration(newDuration)
+    onPreviewChange?.(item.id, newDuration)
   }
 
   function handleResizePointerUp(e: React.PointerEvent) {
@@ -331,6 +335,7 @@ function TimelineItem({
       onResize(item.id, previewDuration)
     }
     setPreviewDuration(null)
+    onPreviewChange?.(item.id, null)
     resizeRef.current = null
   }
 
@@ -504,8 +509,26 @@ function TimelineDay({
   const dayDate = new Date(day.date)
   const dayLabel = dayDate.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })
 
-  // Compute overlap layout for this day's items
-  const layoutItems = useMemo(() => computeOverlapLayout(day.items), [day.items])
+  // Track preview durations from items being actively resized
+  const [previewDurations, setPreviewDurations] = useState<Map<string, number>>(new Map())
+
+  const handlePreviewChange = useCallback((itemId: string, previewDuration: number | null) => {
+    setPreviewDurations(prev => {
+      const next = new Map(prev)
+      if (previewDuration == null) {
+        next.delete(itemId)
+      } else {
+        next.set(itemId, previewDuration)
+      }
+      return next
+    })
+  }, [])
+
+  // Compute overlap layout for this day's items, using preview durations for active resizes
+  const layoutItems = useMemo(
+    () => computeOverlapLayout(day.items, previewDurations.size > 0 ? previewDurations : undefined),
+    [day.items, previewDurations]
+  )
 
   // Build droppable hour slots
   const hourSlots = useMemo(
@@ -567,26 +590,49 @@ function TimelineDay({
               onResize={onResize}
               onDragMove={onDragMove}
               onContextMenu={onContextMenu}
+              onPreviewChange={handlePreviewChange}
             />
           )
         })}
 
         {/* Travel connectors between non-overlapping sequential items */}
-        {day.items
-          .filter((item) => item.startTime)
-          .sort((a, b) => timeToMinutes(a.startTime!) - timeToMinutes(b.startTime!))
-          .map((item, i, sorted) => {
+        {(() => {
+          // Build a lookup of overlap layout info
+          const layoutMap = new Map<string, OverlapLayout>()
+          for (const l of layoutItems) layoutMap.set(l.item.id, l)
+
+          // Find items that are the last in their overlap group (or solo items)
+          // and connect them to the next non-overlapping item
+          const sorted = day.items
+            .filter((item) => item.startTime)
+            .sort((a, b) => timeToMinutes(a.startTime!) - timeToMinutes(b.startTime!))
+
+          return sorted.map((item, i) => {
             if (i >= sorted.length - 1) return null
             const nextItem = sorted[i + 1]
             if (!nextItem.startTime) return null
 
-            // Only show travel connectors for non-overlapping items
-            const itemEnd = item.endTime
-              ? timeToMinutes(item.endTime)
-              : timeToMinutes(item.startTime!) + item.durationMins
+            const itemLayout = layoutMap.get(item.id)
+            const nextLayout = layoutMap.get(nextItem.id)
+
+            // Only show travel connectors when both items are in single-column groups
+            // (no overlap) or when this is the last item in one group and next is in a different group
+            const itemEnd = getItemEnd(item, previewDurations.size > 0 ? previewDurations : undefined)
             const nextStart = timeToMinutes(nextItem.startTime!)
 
-            if (nextStart <= itemEnd) return null // Overlapping, skip travel
+            // Skip if items actually overlap in time
+            if (nextStart < itemEnd) return null
+
+            // Skip if both items are in the same multi-column overlap group
+            // (they're concurrent, not sequential)
+            if (itemLayout && nextLayout && itemLayout.totalColumns > 1 && nextLayout.totalColumns > 1) {
+              // Check if they're in the same overlap group by seeing if they share the same totalColumns
+              // and are adjacent in the sorted list with overlapping times using stored durations
+              const storedEnd = item.endTime
+                ? timeToMinutes(item.endTime)
+                : timeToMinutes(item.startTime!) + item.durationMins
+              if (nextStart < storedEnd) return null
+            }
 
             const fromLat = item.activity?.lat || item.hotel?.lat
             const fromLng = item.activity?.lng || item.hotel?.lng
@@ -639,7 +685,8 @@ function TimelineDay({
                 </div>
               )
             ) : null
-          })}
+          })
+        })()}
 
         {/* Hotel-to-first-event and last-event-to-hotel travel connectors */}
         {hotel && (() => {

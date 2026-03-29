@@ -420,7 +420,7 @@ export async function POST(request: NextRequest) {
               const depTz = f.departureTimezone || "UTC"
               const localDate = formatDateInTimezone(depTime, "yyyy-MM-dd", depTz)
               const localTime = formatDateInTimezone(depTime, "HH:mm", depTz)
-              const localEndTime = formatDateInTimezone(arrTime, "HH:mm", f.arrivalTimezone || "UTC")
+              const localEndTime = formatDateInTimezone(arrTime, "HH:mm", depTz)
 
               await prisma.flight.create({
                 data: {

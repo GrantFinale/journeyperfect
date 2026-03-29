@@ -385,6 +385,38 @@ export function ItineraryView({
     const activeId = active.id as string
     const overId = over.id as string
 
+    // Timeline item (cross-day drag handle) dropped on a day zone or timeline slot
+    if (activeId.startsWith("timeline-item-")) {
+      const itemId = activeId.replace("timeline-item-", "")
+      const draggedItem = items.find((i) => i.id === itemId)
+      if (draggedItem) {
+        // Dropped on a day zone
+        if (overId.startsWith("day-")) {
+          const dateStr = overId.replace("day-", "")
+          const d = new Date(draggedItem.date)
+          const currentDay = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`
+          if (currentDay !== dateStr) {
+            handleTimelineMoveToDay(itemId, dateStr, draggedItem.startTime || "09:00")
+          }
+          return
+        }
+        // Dropped on a timeline slot
+        if (overId.startsWith("timeline-day-")) {
+          const match = overId.match(/^timeline-day-(\d{4}-\d{2}-\d{2})-(\d{2}:\d{2})$/)
+          if (match) {
+            const [, dayStr, time] = match
+            handleTimelineMoveToDay(itemId, dayStr, time)
+            return
+          }
+        }
+        // Dropped on wishlist
+        if (overId === "wishlist-drop-zone") {
+          handleReturnToWishlist(itemId)
+          return
+        }
+      }
+    }
+
     // Wishlist item dropped on a timeline slot
     if (overId.startsWith("timeline-day-")) {
       const isWishlistItem = wishlist.some((a) => a.id === activeId)
@@ -407,7 +439,7 @@ export function ItineraryView({
         return
       }
 
-      // Cross-day move
+      // Cross-day move (for non-timeline-item draggables, e.g. list view)
       const draggedItem = items.find((i) => i.id === activeId)
       if (draggedItem) {
         const d = new Date(draggedItem.date)

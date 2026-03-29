@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils"
 import { formatTime } from "@/lib/utils"
 import type { GroupedDay } from "@/lib/itinerary-utils"
 import { calculateTravel } from "./travel-connector"
-import { useDroppable } from "@dnd-kit/core"
+import { useDroppable, useDraggable } from "@dnd-kit/core"
 import type { WishlistActivity } from "./wishlist-panel"
 import { CalendarDays, ArrowRight, X, MapPin, Plus } from "lucide-react"
 
@@ -482,6 +482,15 @@ function TimelineItem({
   const resizeRef = useRef<{ startY: number; startDuration: number } | null>(null)
   const dragRef = useRef<{ startY: number; startMins: number } | null>(null)
 
+  const isFixed = item.type === "FLIGHT" || item.type === "HOTEL_CHECK_IN" || item.type === "HOTEL_CHECK_OUT"
+
+  // @dnd-kit draggable for cross-day drag
+  const { attributes, listeners, setNodeRef: setDragRef, isDragging: isDndDragging } = useDraggable({
+    id: `timeline-item-${item.id}`,
+    data: { type: "itinerary-item", itemId: item.id },
+    disabled: isFixed,
+  })
+
   if (!item.startTime) return null
   const startMins = previewStartMins ?? timeToMinutes(item.startTime)
   const offsetMins = startMins - HOUR_START * 60
@@ -490,8 +499,6 @@ function TimelineItem({
   const currentDuration = previewDuration ?? getVisualDuration(item)
   const top = (offsetMins / 60) * hourHeight
   const height = Math.max((currentDuration / 60) * hourHeight, 20)
-
-  const isFixed = item.type === "FLIGHT" || item.type === "HOTEL_CHECK_IN" || item.type === "HOTEL_CHECK_OUT"
 
   const widthPercent = 100 / totalColumns
   const leftPercent = column * widthPercent
@@ -679,7 +686,7 @@ function TimelineItem({
       const io = item.activity?.indoorOutdoor
       return (
         <div className="flex gap-2 h-full overflow-hidden">
-          {imgUrl && (
+          {totalColumns === 1 && imgUrl && (
             <div className="w-10 h-10 rounded-lg overflow-hidden shrink-0 mt-0.5">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={imgUrl} alt="" className="w-full h-full object-cover" />
@@ -741,11 +748,13 @@ function TimelineItem({
 
   return (
     <div
+      ref={setDragRef}
       className={cn(
         "absolute rounded-lg border overflow-hidden select-none transition-shadow group/timeline-item",
         typeColor(item.type),
         !isFixed && "cursor-grab active:cursor-grabbing",
-        (resizing || dragging) && "z-20 shadow-lg ring-2 ring-indigo-400/50"
+        (resizing || dragging) && "z-20 shadow-lg ring-2 ring-indigo-400/50",
+        isDndDragging && "opacity-50 z-30"
       )}
       style={{
         top,
@@ -762,6 +771,30 @@ function TimelineItem({
       <div className="px-2 py-1 h-full">
         {renderCardContent()}
       </div>
+
+      {/* Cross-day drag handle */}
+      {!isFixed && (
+        <div
+          className="absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white/80 hover:bg-indigo-100 text-gray-400 hover:text-indigo-600 opacity-0 group-hover/timeline-item:opacity-100 transition-all flex items-center justify-center z-10 shadow-sm cursor-grab active:cursor-grabbing"
+          title="Drag to another day"
+          {...attributes}
+          {...listeners}
+          onPointerDown={(e) => {
+            e.stopPropagation()
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            ;(listeners as any)?.onPointerDown?.(e)
+          }}
+        >
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
+            <circle cx="3" cy="2" r="1" />
+            <circle cx="7" cy="2" r="1" />
+            <circle cx="3" cy="5" r="1" />
+            <circle cx="7" cy="5" r="1" />
+            <circle cx="3" cy="8" r="1" />
+            <circle cx="7" cy="8" r="1" />
+          </svg>
+        </div>
+      )}
 
       {/* Hover unschedule button for non-fixed items */}
       {!isFixed && onMoveToWishlist && (

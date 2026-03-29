@@ -79,7 +79,7 @@ export async function createFlight(tripId: string, data: z.infer<typeof flightSc
   const depTz = parsed.departureTimezone || "UTC"
   const localDate = formatDateInTimezone(depTime, "yyyy-MM-dd", depTz)
   const localTime = formatDateInTimezone(depTime, "HH:mm", depTz)
-  const localEndTime = formatDateInTimezone(arrTime, "HH:mm", parsed.arrivalTimezone || "UTC")
+  const localEndTime = formatDateInTimezone(arrTime, "HH:mm", depTz)
   await prisma.itineraryItem.createMany({
     data: [
       {
@@ -141,7 +141,7 @@ export async function createFlightsBatch(tripId: string, flights: z.infer<typeof
       const depTz = parsed.departureTimezone || "UTC"
       const localDate = formatDateInTimezone(depTime, "yyyy-MM-dd", depTz)
       const localTime = formatDateInTimezone(depTime, "HH:mm", depTz)
-      const localEndTime = formatDateInTimezone(arrTime, "HH:mm", parsed.arrivalTimezone || "UTC")
+      const localEndTime = formatDateInTimezone(arrTime, "HH:mm", depTz)
       return prisma.flight.create({
         data: {
           tripId,

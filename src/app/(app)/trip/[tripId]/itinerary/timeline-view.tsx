@@ -1,13 +1,13 @@
 "use client"
 
-import { useState, useRef, useCallback, useMemo } from "react"
+import { useState, useRef, useCallback, useMemo, useEffect } from "react"
 import { cn } from "@/lib/utils"
 import { formatTime } from "@/lib/utils"
 import type { GroupedDay } from "@/lib/itinerary-utils"
 import { calculateTravel } from "./travel-connector"
 import { useDroppable } from "@dnd-kit/core"
 import type { WishlistActivity } from "./wishlist-panel"
-import { CalendarDays, ArrowRight, X } from "lucide-react"
+import { CalendarDays, ArrowRight, X, MapPin, Plus } from "lucide-react"
 
 type ItineraryItem = {
   id: string
@@ -22,11 +22,19 @@ type ItineraryItem = {
   costEstimate: number
   position: number
   activityId?: string | null
+  flight?: {
+    airline: string | null
+    flightNumber: string | null
+    departureAirport: string | null
+    arrivalAirport: string | null
+  } | null
   activity?: {
     lat: number | null
     lng: number | null
     address: string | null
     name: string
+    imageUrl?: string | null
+    indoorOutdoor?: string | null
   } | null
   hotel?: {
     lat: number | null
@@ -39,9 +47,26 @@ type ItineraryItem = {
 const HOUR_START = 7
 const HOUR_END = 23
 const TOTAL_HOURS = HOUR_END - HOUR_START
-const HOUR_HEIGHT = 56 // pixels per hour
+const HOUR_HEIGHT_DESKTOP = 56
+const HOUR_HEIGHT_MOBILE = 64
 const MIN_DURATION_MINS = 15
 const SNAP_MINS = 15
+
+function useResponsiveMode() {
+  const [mode, setMode] = useState<"mobile" | "tablet" | "desktop">("desktop")
+  useEffect(() => {
+    const check = () => {
+      const w = window.innerWidth
+      if (w < 768) setMode("mobile")
+      else if (w < 1024) setMode("tablet")
+      else setMode("desktop")
+    }
+    check()
+    window.addEventListener("resize", check)
+    return () => window.removeEventListener("resize", check)
+  }, [])
+  return mode
+}
 
 function timeToMinutes(time: string): number {
   const [h, m] = time.split(":").map(Number)
@@ -65,17 +90,28 @@ function typeColor(type: string) {
       return "bg-blue-100 border-blue-300 text-blue-800"
     case "HOTEL_CHECK_IN":
     case "HOTEL_CHECK_OUT":
-      return "bg-green-100 border-green-300 text-green-800"
+      return "bg-sky-100 border-sky-300 text-sky-800"
     case "ACTIVITY":
       return "bg-indigo-100 border-indigo-300 text-indigo-800"
     case "MEAL":
-      return "bg-orange-100 border-orange-300 text-orange-800"
+      return "bg-amber-100 border-amber-300 text-amber-800"
     case "TRANSIT":
       return "bg-gray-100 border-gray-300 text-gray-700"
     case "BUFFER":
       return "bg-yellow-100 border-yellow-300 text-yellow-800"
     default:
       return "bg-gray-100 border-gray-300 text-gray-700"
+  }
+}
+
+function typeIcon(type: string): string {
+  switch (type) {
+    case "FLIGHT": return "\u2708\uFE0F"
+    case "HOTEL_CHECK_IN":
+    case "HOTEL_CHECK_OUT": return "\uD83C\uDFE8"
+    case "MEAL": return "\uD83C\uDF7D\uFE0F"
+    case "TRANSIT": return "\uD83D\uDE8C"
+    default: return ""
   }
 }
 
@@ -87,15 +123,10 @@ function formatDuration(mins: number) {
 }
 
 // ─── Visual Duration for Flights ─────────────────────────────────────────
-// For flights, the itinerary startTime and endTime are in local departure/arrival
-// timezones respectively. The visual duration on the timeline should be the
-// difference between these local times (not the UTC-based durationMins which
-// includes timezone offset differences).
 function getVisualDuration(item: ItineraryItem): number {
   if (item.type === "FLIGHT" && item.startTime && item.endTime) {
     const startMins = timeToMinutes(item.startTime)
     const endMins = timeToMinutes(item.endTime)
-    // Handle overnight flights: if end is before start, fall back to durationMins
     return endMins > startMins ? endMins - startMins : item.durationMins
   }
   return item.durationMins
@@ -110,7 +141,6 @@ type OverlapLayout = {
 }
 
 function computeOverlapLayout(items: ItineraryItem[], previewDurations?: Map<string, number>, previewStartTimes?: Map<string, number>): OverlapLayout[] {
-  // Filter to only items with start times and sort by start (using preview start times when available)
   const timed = items
     .filter((item) => item.startTime)
     .sort((a, b) => {
@@ -121,16 +151,11 @@ function computeOverlapLayout(items: ItineraryItem[], previewDurations?: Map<str
 
   if (timed.length === 0) return []
 
-  // Build overlap groups using a sweep-line approach
   const result: OverlapLayout[] = []
-
-  // For each item, track its column assignment
   const itemColumns = new Map<string, number>()
 
-  // Process items in groups that overlap with each other
   let groupStart = 0
   while (groupStart < timed.length) {
-    // Find all items in the current overlap cluster
     const group: ItineraryItem[] = [timed[groupStart]]
     let maxEnd = getItemEnd(timed[groupStart], previewDurations, previewStartTimes)
     let groupEnd = groupStart + 1
@@ -138,7 +163,6 @@ function computeOverlapLayout(items: ItineraryItem[], previewDurations?: Map<str
     while (groupEnd < timed.length) {
       const itemStart = previewStartTimes?.get(timed[groupEnd].id) ?? timeToMinutes(timed[groupEnd].startTime!)
       if (itemStart < maxEnd) {
-        // Overlaps with the group
         group.push(timed[groupEnd])
         maxEnd = Math.max(maxEnd, getItemEnd(timed[groupEnd], previewDurations, previewStartTimes))
         groupEnd++
@@ -147,13 +171,9 @@ function computeOverlapLayout(items: ItineraryItem[], previewDurations?: Map<str
       }
     }
 
-    // Assign columns within this group using greedy coloring
     const columns: { end: number }[] = []
-
     for (const item of group) {
       const start = previewStartTimes?.get(item.id) ?? timeToMinutes(item.startTime!)
-
-      // Find the first column where this item fits (doesn't overlap)
       let col = -1
       for (let c = 0; c < columns.length; c++) {
         if (columns[c].end <= start) {
@@ -161,19 +181,15 @@ function computeOverlapLayout(items: ItineraryItem[], previewDurations?: Map<str
           break
         }
       }
-
       if (col === -1) {
-        // Need a new column
         col = columns.length
         columns.push({ end: getItemEnd(item, previewDurations, previewStartTimes) })
       } else {
         columns[col].end = getItemEnd(item, previewDurations, previewStartTimes)
       }
-
       itemColumns.set(item.id, col)
     }
 
-    // Now set totalColumns for all items in this group
     const totalCols = columns.length
     for (const item of group) {
       result.push({
@@ -200,9 +216,11 @@ function getItemEnd(item: ItineraryItem, previewDurations?: Map<string, number>,
 function DroppableHourSlot({
   dayStr,
   hour,
+  hourHeight,
 }: {
   dayStr: string
   hour: number
+  hourHeight: number
 }) {
   const timeStr = `${hour.toString().padStart(2, "0")}:00`
   const { isOver, setNodeRef } = useDroppable({
@@ -217,7 +235,7 @@ function DroppableHourSlot({
         "absolute left-0 right-0 transition-colors",
         isOver && "bg-indigo-50/60"
       )}
-      style={{ top: (hour - HOUR_START) * HOUR_HEIGHT, height: HOUR_HEIGHT }}
+      style={{ top: (hour - HOUR_START) * hourHeight, height: hourHeight }}
     />
   )
 }
@@ -246,9 +264,7 @@ function MoveToDayMenu({
 
   return (
     <>
-      {/* Backdrop */}
       <div className="fixed inset-0 z-40" onClick={onClose} />
-      {/* Menu */}
       <div
         className="fixed z-50 bg-white border border-gray-200 rounded-xl shadow-xl py-1 min-w-[180px] max-h-[300px] overflow-y-auto"
         style={{
@@ -256,7 +272,6 @@ function MoveToDayMenu({
           top: Math.min(position.y, window.innerHeight - 200),
         }}
       >
-        {/* Unschedule / back to wishlist */}
         {canUnschedule && onMoveToWishlist && (
           <>
             <button
@@ -301,12 +316,147 @@ function MoveToDayMenu({
   )
 }
 
-// ─── Timeline Item ──────────────────────────────────────────────────────
+// ─── Add Event Popover ───────────────────────────────────────────────────
+
+function AddEventPopover({
+  dayStr,
+  startTime,
+  position,
+  wishlistItems,
+  onAddFromWishlist,
+  onAddCustom,
+  onClose,
+}: {
+  dayStr: string
+  startTime: string
+  position: { x: number; y: number }
+  wishlistItems: WishlistActivity[]
+  onAddFromWishlist?: (activityId: string, dayStr: string, startTime: string) => void
+  onAddCustom?: (dayStr: string, startTime: string, title: string, durationMins: number) => void
+  onClose: () => void
+}) {
+  const [mode, setMode] = useState<"menu" | "wishlist" | "custom">("menu")
+  const [title, setTitle] = useState("")
+  const [duration, setDuration] = useState(60)
+
+  return (
+    <>
+      <div className="fixed inset-0 z-40" onClick={onClose} />
+      <div
+        className="fixed z-50 bg-white border border-gray-200 rounded-xl shadow-xl py-2 min-w-[220px] max-w-[280px]"
+        style={{
+          left: Math.min(position.x, window.innerWidth - 300),
+          top: Math.min(position.y, window.innerHeight - 250),
+        }}
+      >
+        <div className="px-3 pb-2 border-b border-gray-100">
+          <p className="text-xs font-semibold text-gray-500">Add at {formatTime(startTime)}</p>
+        </div>
+
+        {mode === "menu" && (
+          <div className="py-1">
+            {wishlistItems.length > 0 && onAddFromWishlist && (
+              <button
+                onClick={() => setMode("wishlist")}
+                className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 transition-colors flex items-center gap-2"
+              >
+                <Plus className="w-3.5 h-3.5 text-indigo-500" />
+                <span>From wishlist</span>
+                <span className="text-[10px] text-gray-400 ml-auto">({wishlistItems.length})</span>
+              </button>
+            )}
+            {onAddCustom && (
+              <button
+                onClick={() => setMode("custom")}
+                className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors flex items-center gap-2"
+              >
+                <Plus className="w-3.5 h-3.5 text-gray-500" />
+                <span>Custom event</span>
+              </button>
+            )}
+          </div>
+        )}
+
+        {mode === "wishlist" && (
+          <div className="py-1 max-h-[200px] overflow-y-auto">
+            <button
+              onClick={() => setMode("menu")}
+              className="w-full text-left px-3 py-1.5 text-[10px] text-gray-400 hover:text-gray-600 uppercase tracking-wide"
+            >
+              &larr; Back
+            </button>
+            {wishlistItems.map((a) => (
+              <button
+                key={a.id}
+                onClick={() => {
+                  onAddFromWishlist?.(a.id, dayStr, startTime)
+                  onClose()
+                }}
+                className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-indigo-50 hover:text-indigo-700 transition-colors flex items-center gap-2"
+              >
+                <span className="flex-1 truncate">{a.name}</span>
+                <span className="text-[10px] text-gray-400 shrink-0">{formatDuration(a.durationMins)}</span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {mode === "custom" && (
+          <div className="p-3 space-y-2">
+            <button
+              onClick={() => setMode("menu")}
+              className="text-[10px] text-gray-400 hover:text-gray-600 uppercase tracking-wide"
+            >
+              &larr; Back
+            </button>
+            <input
+              type="text"
+              placeholder="Event title"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              className="w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              autoFocus
+            />
+            <div className="flex items-center gap-2">
+              <label className="text-xs text-gray-500">Duration:</label>
+              <select
+                value={duration}
+                onChange={(e) => setDuration(Number(e.target.value))}
+                className="flex-1 px-2 py-1.5 border border-gray-200 rounded-lg text-sm bg-white"
+              >
+                <option value={30}>30m</option>
+                <option value={60}>1h</option>
+                <option value={90}>1h 30m</option>
+                <option value={120}>2h</option>
+                <option value={180}>3h</option>
+              </select>
+            </div>
+            <button
+              onClick={() => {
+                if (title.trim()) {
+                  onAddCustom?.(dayStr, startTime, title, duration)
+                  onClose()
+                }
+              }}
+              disabled={!title.trim()}
+              className="w-full py-1.5 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 disabled:opacity-40 transition-colors"
+            >
+              Add
+            </button>
+          </div>
+        )}
+      </div>
+    </>
+  )
+}
+
+// ─── Timeline Item (Enhanced) ────────────────────────────────────────────
 
 function TimelineItem({
   item,
   column,
   totalColumns,
+  hourHeight,
   onResize,
   onDragMove,
   onContextMenu,
@@ -317,6 +467,7 @@ function TimelineItem({
   item: ItineraryItem
   column: number
   totalColumns: number
+  hourHeight: number
   onResize: (itemId: string, newDurationMins: number) => void
   onDragMove: (itemId: string, newStartTime: string, newDurationMins: number) => void
   onContextMenu: (e: React.MouseEvent, item: ItineraryItem) => void
@@ -337,18 +488,24 @@ function TimelineItem({
   if (offsetMins < 0) return null
 
   const currentDuration = previewDuration ?? getVisualDuration(item)
-  const top = (offsetMins / 60) * HOUR_HEIGHT
-  const height = Math.max((currentDuration / 60) * HOUR_HEIGHT, 20)
+  const top = (offsetMins / 60) * hourHeight
+  const height = Math.max((currentDuration / 60) * hourHeight, 20)
 
   const isFixed = item.type === "FLIGHT" || item.type === "HOTEL_CHECK_IN" || item.type === "HOTEL_CHECK_OUT"
 
-  // Calculate width and left offset for overlap layout
   const widthPercent = 100 / totalColumns
   const leftPercent = column * widthPercent
-  // Add small gap between overlapping items
   const gap = totalColumns > 1 ? 2 : 0
   const leftPx = gap / 2
   const rightPx = gap / 2
+
+  // Card size tiers
+  const isLarge = height > 60
+  const isMedium = height > 40 && height <= 60
+
+  // Compute end time for display
+  const endMins = startMins + currentDuration
+  const endTimeStr = minutesToTime(endMins)
 
   // Resize handlers
   function handleResizePointerDown(e: React.PointerEvent) {
@@ -364,7 +521,7 @@ function TimelineItem({
     if (!resizing || !resizeRef.current) return
     e.preventDefault()
     const deltaY = e.clientY - resizeRef.current.startY
-    const deltaMins = (deltaY / HOUR_HEIGHT) * 60
+    const deltaMins = (deltaY / hourHeight) * 60
     const newDuration = snapToGrid(Math.max(MIN_DURATION_MINS, resizeRef.current.startDuration + deltaMins))
     setPreviewDuration(newDuration)
     onPreviewChange?.(item.id, newDuration)
@@ -397,7 +554,7 @@ function TimelineItem({
     if (!dragging && Math.abs(deltaY) < 5) return
     if (!dragging) setDragging(true)
     e.preventDefault()
-    const deltaMins = (deltaY / HOUR_HEIGHT) * 60
+    const deltaMins = (deltaY / hourHeight) * 60
     const newStart = snapToGrid(Math.max(HOUR_START * 60, Math.min(HOUR_END * 60 - item.durationMins, dragRef.current.startMins + deltaMins)))
     setPreviewStartMins(newStart)
     onPreviewStartChange?.(item.id, newStart)
@@ -426,17 +583,173 @@ function TimelineItem({
   const showDurationLabel = resizing && previewDuration != null
   const originalDuration = item.durationMins
 
+  // --- Render card content based on type and size ---
+  function renderCardContent() {
+    // FLIGHT items
+    if (item.type === "FLIGHT") {
+      const f = item.flight
+      return (
+        <div className="flex flex-col h-full overflow-hidden">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="text-xs shrink-0">{"\u2708\uFE0F"}</span>
+            <p className="text-[11px] font-semibold truncate leading-tight">
+              {f?.departureAirport && f?.arrivalAirport
+                ? `${f.departureAirport} \u2192 ${f.arrivalAirport}`
+                : item.title}
+            </p>
+          </div>
+          {isLarge && f && (
+            <>
+              {(f.airline || f.flightNumber) && (
+                <p className="text-[9px] opacity-70 mt-0.5 truncate">
+                  {[f.airline, f.flightNumber].filter(Boolean).join(" ")}
+                </p>
+              )}
+              <p className="text-[9px] opacity-70 mt-0.5">
+                {formatTime(minutesToTime(startMins))} - {formatTime(endTimeStr)} {"\u00B7"} {formatDuration(currentDuration)}
+              </p>
+              <div className="flex items-center gap-2 mt-1">
+                {f.departureAirport && (
+                  <a
+                    href={`https://www.google.com/maps/search/${f.departureAirport}+airport`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[8px] text-blue-600 hover:text-blue-800 underline flex items-center gap-0.5"
+                    onClick={(e) => e.stopPropagation()}
+                    onPointerDown={(e) => e.stopPropagation()}
+                  >
+                    <MapPin className="w-2 h-2" />{f.departureAirport}
+                  </a>
+                )}
+                {f.arrivalAirport && (
+                  <a
+                    href={`https://www.google.com/maps/search/${f.arrivalAirport}+airport`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[8px] text-blue-600 hover:text-blue-800 underline flex items-center gap-0.5"
+                    onClick={(e) => e.stopPropagation()}
+                    onPointerDown={(e) => e.stopPropagation()}
+                  >
+                    <MapPin className="w-2 h-2" />{f.arrivalAirport}
+                  </a>
+                )}
+              </div>
+            </>
+          )}
+          {isMedium && (
+            <p className="text-[9px] opacity-70 mt-0.5">
+              {formatTime(minutesToTime(startMins))} - {formatTime(endTimeStr)}
+            </p>
+          )}
+        </div>
+      )
+    }
+
+    // HOTEL items
+    if (item.type === "HOTEL_CHECK_IN" || item.type === "HOTEL_CHECK_OUT") {
+      return (
+        <div className="flex flex-col h-full overflow-hidden">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="text-xs shrink-0">{"\uD83C\uDFE8"}</span>
+            <p className="text-[11px] font-semibold truncate leading-tight">{item.title}</p>
+          </div>
+          {isLarge && (
+            <>
+              <p className="text-[9px] opacity-70 mt-0.5">
+                {item.type === "HOTEL_CHECK_IN" ? "Check-in" : "Check-out"} {"\u00B7"} {formatTime(minutesToTime(startMins))}
+              </p>
+              {item.hotel?.name && (
+                <p className="text-[9px] opacity-60 truncate mt-0.5">{item.hotel.name}</p>
+              )}
+            </>
+          )}
+          {isMedium && (
+            <p className="text-[9px] opacity-70 mt-0.5">
+              {formatTime(minutesToTime(startMins))} {"\u00B7"} {formatDuration(currentDuration)}
+            </p>
+          )}
+        </div>
+      )
+    }
+
+    // LARGE card (> 60px, ~1hr+): full details
+    if (isLarge) {
+      const imgUrl = item.activity?.imageUrl
+      const address = item.activity?.address || item.hotel?.address
+      const io = item.activity?.indoorOutdoor
+      return (
+        <div className="flex gap-2 h-full overflow-hidden">
+          {imgUrl && (
+            <div className="w-10 h-10 rounded-lg overflow-hidden shrink-0 mt-0.5">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={imgUrl} alt="" className="w-full h-full object-cover" />
+            </div>
+          )}
+          <div className="flex-1 min-w-0 flex flex-col">
+            <div className="flex items-start justify-between gap-1">
+              <p className="text-[11px] font-semibold truncate leading-tight flex-1">
+                {typeIcon(item.type) ? `${typeIcon(item.type)} ` : ""}{item.title}
+              </p>
+            </div>
+            <p className="text-[9px] opacity-70 mt-0.5">
+              {formatTime(minutesToTime(startMins))} - {formatTime(endTimeStr)} {"\u00B7"} {formatDuration(currentDuration)}
+            </p>
+            {address && (
+              <p className="text-[8px] opacity-50 truncate mt-0.5 flex items-center gap-0.5">
+                <MapPin className="w-2 h-2 shrink-0" />{address}
+              </p>
+            )}
+            {io && io !== "BOTH" && (
+              <span className={cn(
+                "inline-flex items-center gap-0.5 text-[8px] font-medium px-1 py-0.5 rounded-full mt-0.5 w-fit",
+                io === "INDOOR" ? "bg-blue-50/80 text-blue-600" : "bg-green-50/80 text-green-600"
+              )}>
+                {io === "INDOOR" ? "\uD83C\uDFE0" : "\uD83C\uDF33"} {io === "INDOOR" ? "Indoor" : "Outdoor"}
+              </span>
+            )}
+          </div>
+        </div>
+      )
+    }
+
+    // MEDIUM card (40-60px): title + time on one line, duration badge
+    if (isMedium) {
+      return (
+        <div className="flex flex-col h-full overflow-hidden">
+          <p className="text-[10px] font-semibold truncate leading-tight">
+            {typeIcon(item.type) ? `${typeIcon(item.type)} ` : ""}{item.title}
+          </p>
+          <div className="flex items-center gap-1.5 mt-0.5">
+            <span className="text-[9px] opacity-70">
+              {formatTime(minutesToTime(startMins))} - {formatTime(endTimeStr)}
+            </span>
+            <span className="text-[8px] bg-black/5 rounded px-1 py-0.5 font-medium">
+              {formatDuration(currentDuration)}
+            </span>
+          </div>
+        </div>
+      )
+    }
+
+    // SMALL card (< 40px): just title
+    return (
+      <p className="text-[10px] font-medium truncate leading-tight pr-4">
+        {typeIcon(item.type) ? `${typeIcon(item.type)} ` : ""}{item.title}
+      </p>
+    )
+  }
+
   return (
     <div
       className={cn(
-        "absolute rounded-lg border px-2 py-1 overflow-hidden select-none transition-shadow group/timeline-item",
+        "absolute rounded-lg border overflow-hidden select-none transition-shadow group/timeline-item",
         typeColor(item.type),
         !isFixed && "cursor-grab active:cursor-grabbing",
         (resizing || dragging) && "z-20 shadow-lg ring-2 ring-indigo-400/50"
       )}
       style={{
         top,
-        height: Math.min(height, (TOTAL_HOURS * HOUR_HEIGHT) - top),
+        height: Math.min(height, (TOTAL_HOURS * hourHeight) - top),
         left: `calc(${leftPercent}% + ${leftPx + 4}px)`,
         width: `calc(${widthPercent}% - ${leftPx + rightPx + 8}px)`,
       }}
@@ -446,19 +759,14 @@ function TimelineItem({
       onPointerUp={!isFixed ? handleDragPointerUp : undefined}
       onContextMenu={!isFixed ? handleContextMenuEvent : undefined}
     >
-      <p className="text-[10px] font-medium truncate leading-tight pr-4">
-        {item.title}
-      </p>
-      {height > 30 && (
-        <p className="text-[9px] opacity-70 mt-0.5">
-          {formatTime(minutesToTime(startMins))} · {formatDuration(currentDuration)}
-        </p>
-      )}
+      <div className="px-2 py-1 h-full">
+        {renderCardContent()}
+      </div>
 
       {/* Hover unschedule button for non-fixed items */}
       {!isFixed && onMoveToWishlist && (
         <button
-          className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-white/80 hover:bg-red-100 text-gray-400 hover:text-red-600 opacity-0 group-hover/timeline-item:opacity-100 transition-all flex items-center justify-center z-10"
+          className="absolute top-0.5 right-0.5 w-5 h-5 rounded-full bg-white/90 hover:bg-red-100 text-gray-400 hover:text-red-600 opacity-0 group-hover/timeline-item:opacity-100 transition-all flex items-center justify-center z-10 shadow-sm"
           title="Remove from plan"
           onClick={(e) => {
             e.stopPropagation()
@@ -467,14 +775,14 @@ function TimelineItem({
           }}
           onPointerDown={(e) => e.stopPropagation()}
         >
-          <X className="w-2.5 h-2.5" />
+          <X className="w-3 h-3" />
         </button>
       )}
 
       {/* Duration change indicator */}
       {showDurationLabel && (
         <div className="absolute bottom-5 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-[10px] font-medium px-2 py-0.5 rounded-full whitespace-nowrap z-30 shadow-md">
-          {formatDuration(originalDuration)} → {formatDuration(previewDuration)}
+          {formatDuration(originalDuration)} &rarr; {formatDuration(previewDuration)}
         </div>
       )}
 
@@ -502,17 +810,17 @@ function TimelineItem({
 
 // ─── Current Time Indicator ─────────────────────────────────────────────
 
-function CurrentTimeIndicator() {
+function CurrentTimeIndicator({ hourHeight }: { hourHeight: number }) {
   const now = new Date()
   const mins = now.getHours() * 60 + now.getMinutes()
   if (mins < HOUR_START * 60 || mins > HOUR_END * 60) return null
-  const top = ((mins - HOUR_START * 60) / 60) * HOUR_HEIGHT
+  const top = ((mins - HOUR_START * 60) / 60) * hourHeight
 
   return (
     <div className="absolute left-0 right-0 z-30 pointer-events-none" style={{ top }}>
       <div className="flex items-center">
-        <div className="w-2 h-2 rounded-full bg-red-500 -ml-1" />
-        <div className="flex-1 h-px bg-red-500" />
+        <div className="w-2.5 h-2.5 rounded-full bg-red-500 -ml-1 shadow-sm" />
+        <div className="flex-1 h-0.5 bg-red-500/80" />
       </div>
     </div>
   )
@@ -521,7 +829,6 @@ function CurrentTimeIndicator() {
 // ─── Wishlist Drop Preview ──────────────────────────────────────────────
 
 function WishlistDropPreview({
-  dayStr,
   isOver,
 }: {
   dayStr: string
@@ -548,38 +855,42 @@ function WishlistDropPreview({
 function TimelineDay({
   day,
   dayIdx,
+  hourHeight,
   onResize,
   onDragMove,
   onContextMenu,
   onMoveToWishlist,
-  allDays,
   hotel,
+  wishlistItems,
+  onAddFromWishlist,
+  onAddCustom,
+  isMobileFullWidth,
 }: {
   day: GroupedDay<ItineraryItem>
   dayIdx: number
+  hourHeight: number
   onResize: (itemId: string, newDurationMins: number) => void
   onDragMove: (itemId: string, newStartTime: string, newDurationMins: number) => void
   onContextMenu: (e: React.MouseEvent, item: ItineraryItem) => void
   onMoveToWishlist?: (itemId: string) => void
-  allDays: { dateStr: string; label: string; dayIdx: number }[]
   hotel?: HotelInfo | null
+  wishlistItems?: WishlistActivity[]
+  onAddFromWishlist?: (activityId: string, dayStr: string, startTime: string) => void
+  onAddCustom?: (dayStr: string, startTime: string, title: string, durationMins: number) => void
+  isMobileFullWidth?: boolean
 }) {
   const dayDate = new Date(day.date)
   const dayLabel = dayDate.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })
 
-  // Track preview durations from items being actively resized
   const [previewDurations, setPreviewDurations] = useState<Map<string, number>>(new Map())
-  // Track preview start times from items being actively dragged
   const [previewStartTimes, setPreviewStartTimes] = useState<Map<string, number>>(new Map())
+  const [addPopover, setAddPopover] = useState<{ startTime: string; position: { x: number; y: number } } | null>(null)
 
   const handlePreviewChange = useCallback((itemId: string, previewDuration: number | null) => {
     setPreviewDurations(prev => {
       const next = new Map(prev)
-      if (previewDuration == null) {
-        next.delete(itemId)
-      } else {
-        next.set(itemId, previewDuration)
-      }
+      if (previewDuration == null) next.delete(itemId)
+      else next.set(itemId, previewDuration)
       return next
     })
   }, [])
@@ -587,16 +898,12 @@ function TimelineDay({
   const handlePreviewStartChange = useCallback((itemId: string, previewStartMins: number | null) => {
     setPreviewStartTimes(prev => {
       const next = new Map(prev)
-      if (previewStartMins == null) {
-        next.delete(itemId)
-      } else {
-        next.set(itemId, previewStartMins)
-      }
+      if (previewStartMins == null) next.delete(itemId)
+      else next.set(itemId, previewStartMins)
       return next
     })
   }, [])
 
-  // Compute overlap layout for this day's items, using preview durations for active resizes
   const layoutItems = useMemo(
     () => computeOverlapLayout(
       day.items,
@@ -606,21 +913,32 @@ function TimelineDay({
     [day.items, previewDurations, previewStartTimes]
   )
 
-  // Build droppable hour slots
   const hourSlots = useMemo(
-    () =>
-      Array.from({ length: TOTAL_HOURS }, (_, i) => HOUR_START + i),
+    () => Array.from({ length: TOTAL_HOURS }, (_, i) => HOUR_START + i),
     []
   )
 
-  // Droppable zone for the entire day column (for wishlist drops)
   const { isOver: isDayOver, setNodeRef: setDayDropRef } = useDroppable({
     id: `day-${day.dateStr}`,
     data: { type: "timeline-day", dayStr: day.dateStr },
   })
 
+  // Click on empty space to add event
+  function handleTimelineClick(e: React.MouseEvent<HTMLDivElement>) {
+    // Only handle clicks on the timeline background, not on items
+    if ((e.target as HTMLElement).closest(".group\\/timeline-item")) return
+    const rect = e.currentTarget.getBoundingClientRect()
+    const y = e.clientY - rect.top
+    const mins = Math.round(((y / hourHeight) * 60 + HOUR_START * 60) / SNAP_MINS) * SNAP_MINS
+    const timeStr = minutesToTime(mins)
+    setAddPopover({
+      startTime: timeStr,
+      position: { x: e.clientX, y: e.clientY },
+    })
+  }
+
   return (
-    <div className="flex-1 min-w-[200px] max-w-[320px]" ref={setDayDropRef}>
+    <div className={cn("flex-1", isMobileFullWidth ? "w-full" : "min-w-[200px] max-w-[320px]")} ref={setDayDropRef}>
       {/* Day header */}
       <div className="sticky top-0 bg-white z-10 border-b border-gray-200 px-2 py-2 text-center">
         <p className="text-xs font-semibold text-gray-900">Day {dayIdx + 1}</p>
@@ -628,13 +946,17 @@ function TimelineDay({
       </div>
 
       {/* Timeline grid */}
-      <div className="relative" style={{ height: TOTAL_HOURS * HOUR_HEIGHT }}>
+      <div
+        className="relative cursor-crosshair"
+        style={{ height: TOTAL_HOURS * hourHeight }}
+        onClick={handleTimelineClick}
+      >
         {/* Hour lines */}
         {Array.from({ length: TOTAL_HOURS + 1 }, (_, i) => (
           <div
             key={i}
             className="absolute left-0 right-0 border-t border-gray-100"
-            style={{ top: i * HOUR_HEIGHT }}
+            style={{ top: i * hourHeight }}
           />
         ))}
 
@@ -644,6 +966,7 @@ function TimelineDay({
             key={hour}
             dayStr={day.dateStr}
             hour={hour}
+            hourHeight={hourHeight}
           />
         ))}
 
@@ -651,7 +974,7 @@ function TimelineDay({
         <WishlistDropPreview dayStr={day.dateStr} isOver={isDayOver} />
 
         {/* Current time indicator */}
-        <CurrentTimeIndicator />
+        <CurrentTimeIndicator hourHeight={hourHeight} />
 
         {/* Items with overlap layout */}
         {layoutItems.map((layout) => {
@@ -663,6 +986,7 @@ function TimelineDay({
               item={item}
               column={column}
               totalColumns={totalColumns}
+              hourHeight={hourHeight}
               onResize={onResize}
               onDragMove={onDragMove}
               onContextMenu={onContextMenu}
@@ -675,12 +999,9 @@ function TimelineDay({
 
         {/* Travel connectors between non-overlapping sequential items */}
         {(() => {
-          // Build a lookup of overlap layout info
           const layoutMap = new Map<string, OverlapLayout>()
           for (const l of layoutItems) layoutMap.set(l.item.id, l)
 
-          // Find items that are the last in their overlap group (or solo items)
-          // and connect them to the next non-overlapping item
           const sorted = day.items
             .filter((item) => item.startTime)
             .sort((a, b) => timeToMinutes(a.startTime!) - timeToMinutes(b.startTime!))
@@ -690,30 +1011,20 @@ function TimelineDay({
             const nextItem = sorted[i + 1]
             if (!nextItem.startTime) return null
 
-            // Skip hotel check-in/out items — hotel-specific connectors handle those
             const hotelTypes = ["HOTEL_CHECK_IN", "HOTEL_CHECK_OUT"]
             if (hotel && (hotelTypes.includes(item.type) || hotelTypes.includes(nextItem.type))) return null
-            // Skip connectors from flights — flight gaps aren't ground travel
             if (item.type === "FLIGHT") return null
 
-            const itemLayout = layoutMap.get(item.id)
-            const nextLayout = layoutMap.get(nextItem.id)
-
-            // Only show travel connectors when both items are in single-column groups
-            // (no overlap) or when this is the last item in one group and next is in a different group
             const activePreviews = previewDurations.size > 0 ? previewDurations : undefined
             const activeStartPreviews = previewStartTimes.size > 0 ? previewStartTimes : undefined
             const itemEnd = getItemEnd(item, activePreviews, activeStartPreviews)
             const nextStart = activeStartPreviews?.get(nextItem.id) ?? timeToMinutes(nextItem.startTime!)
 
-            // Skip if items actually overlap in time
             if (nextStart < itemEnd) return null
 
-            // Skip if both items are in the same multi-column overlap group
-            // (they're concurrent, not sequential)
+            const itemLayout = layoutMap.get(item.id)
+            const nextLayout = layoutMap.get(nextItem.id)
             if (itemLayout && nextLayout && itemLayout.totalColumns > 1 && nextLayout.totalColumns > 1) {
-              // Check if they're in the same overlap group by seeing if they share the same totalColumns
-              // and are adjacent in the sorted list with overlapping times
               if (nextStart < itemEnd) return null
             }
 
@@ -725,49 +1036,51 @@ function TimelineDay({
 
             if (!travel) return null
 
-            const travelTop = ((itemEnd - HOUR_START * 60) / 60) * HOUR_HEIGHT
-            const gapHeight = ((nextStart - itemEnd) / 60) * HOUR_HEIGHT
-            const travelHeight = Math.min((travel.travelMins / 60) * HOUR_HEIGHT, gapHeight, 40)
+            const travelTop = ((itemEnd - HOUR_START * 60) / 60) * hourHeight
+            const gapHeight = ((nextStart - itemEnd) / 60) * hourHeight
+            const travelHeight = Math.min((travel.travelMins / 60) * hourHeight, gapHeight, 40)
             const modeIcon = travel.mode === "walk" ? "\uD83D\uDEB6" : "\uD83D\uDE97"
 
             const mapsUrl = fromLat && fromLng && toLat && toLng
               ? `https://www.google.com/maps/dir/?api=1&origin=${fromLat},${fromLng}&destination=${toLat},${toLng}&travelmode=${travel.mode === "walk" ? "walking" : "driving"}`
               : null
 
-            return travelHeight > 2 ? (
-              mapsUrl ? (
-                <a
-                  key={`travel-${item.id}`}
-                  href={mapsUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="absolute left-0 right-0 flex flex-col items-center group/travel cursor-pointer z-10"
-                  style={{ top: travelTop, height: Math.max(travelHeight, 16) }}
-                  title={`${travel.travelMins} min ${travel.mode === "walk" ? "walk" : "drive"} - Click for directions`}
-                >
-                  <div className="w-0.5 flex-1 bg-gray-300 group-hover/travel:bg-indigo-400 transition-colors" />
-                  <div className="text-[8px] text-gray-400 group-hover/travel:text-indigo-600 whitespace-nowrap flex items-center gap-0.5 bg-white px-1 rounded">
-                    <span>{modeIcon}</span>
-                    <span>{travel.travelMins}m</span>
-                  </div>
-                  <div className="w-0.5 flex-1 bg-gray-300 group-hover/travel:bg-indigo-400 transition-colors" />
-                </a>
-              ) : (
-                <div
-                  key={`travel-${item.id}`}
-                  className="absolute left-0 right-0 flex flex-col items-center z-10"
-                  style={{ top: travelTop, height: Math.max(travelHeight, 16) }}
-                  title={`${travel.travelMins} min ${travel.mode === "walk" ? "walk" : "drive"}`}
-                >
-                  <div className="w-0.5 flex-1 bg-gray-300" />
-                  <div className="text-[8px] text-gray-400 whitespace-nowrap flex items-center gap-0.5 bg-white px-1 rounded">
-                    <span>{modeIcon}</span>
-                    <span>{travel.travelMins}m</span>
-                  </div>
-                  <div className="w-0.5 flex-1 bg-gray-300" />
+            if (travelHeight <= 2) return null
+
+            const connectorContent = (
+              <>
+                <div className="w-px flex-1 border-l border-dashed border-gray-300 group-hover/travel:border-indigo-400 transition-colors mx-auto" />
+                <div className="text-[8px] text-gray-400 group-hover/travel:text-indigo-600 whitespace-nowrap flex items-center gap-0.5 bg-white px-1.5 py-0.5 rounded-full shadow-sm border border-gray-100 group-hover/travel:border-indigo-200">
+                  <span>{modeIcon}</span>
+                  <span>{travel.travelMins}m</span>
                 </div>
-              )
-            ) : null
+                <div className="w-px flex-1 border-l border-dashed border-gray-300 group-hover/travel:border-indigo-400 transition-colors mx-auto" />
+              </>
+            )
+
+            return mapsUrl ? (
+              <a
+                key={`travel-${item.id}`}
+                href={mapsUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="absolute left-0 right-0 flex flex-col items-center group/travel cursor-pointer z-10"
+                style={{ top: travelTop, height: Math.max(travelHeight, 16) }}
+                title={`${travel.travelMins} min ${travel.mode === "walk" ? "walk" : "drive"} - Click for directions`}
+                onClick={(e) => e.stopPropagation()}
+              >
+                {connectorContent}
+              </a>
+            ) : (
+              <div
+                key={`travel-${item.id}`}
+                className="absolute left-0 right-0 flex flex-col items-center z-10"
+                style={{ top: travelTop, height: Math.max(travelHeight, 16) }}
+                title={`${travel.travelMins} min ${travel.mode === "walk" ? "walk" : "drive"}`}
+              >
+                {connectorContent}
+              </div>
+            )
           })
         })()}
 
@@ -789,8 +1102,8 @@ function TimelineDay({
             const toLng = firstItem.activity?.lng || firstItem.hotel?.lng
             const travel = calculateTravel(hotel.lat, hotel.lng, toLat, toLng)
             if (travel) {
-              const travelEndTop = ((firstStart - HOUR_START * 60) / 60) * HOUR_HEIGHT
-              const travelHeight = Math.min((travel.travelMins / 60) * HOUR_HEIGHT, 40)
+              const travelEndTop = ((firstStart - HOUR_START * 60) / 60) * hourHeight
+              const travelHeight = Math.min((travel.travelMins / 60) * hourHeight, 40)
               const travelTop = Math.max(0, travelEndTop - travelHeight)
               const modeIcon = travel.mode === "walk" ? "\uD83D\uDEB6" : "\uD83D\uDE97"
               const mapsUrl = hotel.lat && hotel.lng && toLat && toLng
@@ -798,6 +1111,16 @@ function TimelineDay({
                 : null
 
               if (travelHeight > 2) {
+                const connectorContent = (
+                  <>
+                    <div className="w-px flex-1 border-l border-dashed border-green-300 group-hover/travel:border-green-500 transition-colors mx-auto" />
+                    <div className="text-[8px] text-green-600 group-hover/travel:text-green-700 whitespace-nowrap flex items-center gap-0.5 bg-white px-1.5 py-0.5 rounded-full shadow-sm border border-green-100">
+                      <span>{modeIcon}</span>
+                      <span>{travel.travelMins}m</span>
+                    </div>
+                    <div className="w-px flex-1 border-l border-dashed border-green-300 group-hover/travel:border-green-500 transition-colors mx-auto" />
+                  </>
+                )
                 elements.push(
                   mapsUrl ? (
                     <a
@@ -807,28 +1130,18 @@ function TimelineDay({
                       rel="noopener noreferrer"
                       className="absolute left-0 right-0 flex flex-col items-center group/travel cursor-pointer z-10"
                       style={{ top: travelTop, height: Math.max(travelHeight, 16) }}
-                      title={`${travel.travelMins} min ${travel.mode === "walk" ? "walk" : "drive"} from hotel - Click for directions`}
+                      title={`${travel.travelMins} min ${travel.mode === "walk" ? "walk" : "drive"} from hotel`}
+                      onClick={(e) => e.stopPropagation()}
                     >
-                      <div className="w-0.5 flex-1 bg-green-300 group-hover/travel:bg-green-500 transition-colors" />
-                      <div className="text-[8px] text-green-600 group-hover/travel:text-green-700 whitespace-nowrap flex items-center gap-0.5 bg-white px-1 rounded">
-                        <span>{modeIcon}</span>
-                        <span>{travel.travelMins}m</span>
-                      </div>
-                      <div className="w-0.5 flex-1 bg-green-300 group-hover/travel:bg-green-500 transition-colors" />
+                      {connectorContent}
                     </a>
                   ) : (
                     <div
                       key="travel-hotel-to-first"
                       className="absolute left-0 right-0 flex flex-col items-center z-10"
                       style={{ top: travelTop, height: Math.max(travelHeight, 16) }}
-                      title={`${travel.travelMins} min ${travel.mode === "walk" ? "walk" : "drive"} from hotel`}
                     >
-                      <div className="w-0.5 flex-1 bg-green-300" />
-                      <div className="text-[8px] text-green-600 whitespace-nowrap flex items-center gap-0.5 bg-white px-1 rounded">
-                        <span>{modeIcon}</span>
-                        <span>{travel.travelMins}m</span>
-                      </div>
-                      <div className="w-0.5 flex-1 bg-green-300" />
+                      {connectorContent}
                     </div>
                   )
                 )
@@ -845,14 +1158,24 @@ function TimelineDay({
             const fromLng = lastItem.activity?.lng || lastItem.hotel?.lng
             const travel = calculateTravel(fromLat, fromLng, hotel.lat, hotel.lng)
             if (travel) {
-              const travelTop = ((lastEnd - HOUR_START * 60) / 60) * HOUR_HEIGHT
-              const travelHeight = Math.min((travel.travelMins / 60) * HOUR_HEIGHT, 40)
+              const travelTop = ((lastEnd - HOUR_START * 60) / 60) * hourHeight
+              const travelHeight = Math.min((travel.travelMins / 60) * hourHeight, 40)
               const modeIcon = travel.mode === "walk" ? "\uD83D\uDEB6" : "\uD83D\uDE97"
               const mapsUrl = fromLat && fromLng && hotel.lat && hotel.lng
                 ? `https://www.google.com/maps/dir/?api=1&origin=${fromLat},${fromLng}&destination=${hotel.lat},${hotel.lng}&travelmode=${travel.mode === "walk" ? "walking" : "driving"}`
                 : null
 
               if (travelHeight > 2) {
+                const connectorContent = (
+                  <>
+                    <div className="w-px flex-1 border-l border-dashed border-green-300 group-hover/travel:border-green-500 transition-colors mx-auto" />
+                    <div className="text-[8px] text-green-600 group-hover/travel:text-green-700 whitespace-nowrap flex items-center gap-0.5 bg-white px-1.5 py-0.5 rounded-full shadow-sm border border-green-100">
+                      <span>{modeIcon}</span>
+                      <span>{travel.travelMins}m</span>
+                    </div>
+                    <div className="w-px flex-1 border-l border-dashed border-green-300 group-hover/travel:border-green-500 transition-colors mx-auto" />
+                  </>
+                )
                 elements.push(
                   mapsUrl ? (
                     <a
@@ -862,28 +1185,18 @@ function TimelineDay({
                       rel="noopener noreferrer"
                       className="absolute left-0 right-0 flex flex-col items-center group/travel cursor-pointer z-10"
                       style={{ top: travelTop, height: Math.max(travelHeight, 16) }}
-                      title={`${travel.travelMins} min ${travel.mode === "walk" ? "walk" : "drive"} to hotel - Click for directions`}
+                      title={`${travel.travelMins} min ${travel.mode === "walk" ? "walk" : "drive"} to hotel`}
+                      onClick={(e) => e.stopPropagation()}
                     >
-                      <div className="w-0.5 flex-1 bg-green-300 group-hover/travel:bg-green-500 transition-colors" />
-                      <div className="text-[8px] text-green-600 group-hover/travel:text-green-700 whitespace-nowrap flex items-center gap-0.5 bg-white px-1 rounded">
-                        <span>{modeIcon}</span>
-                        <span>{travel.travelMins}m</span>
-                      </div>
-                      <div className="w-0.5 flex-1 bg-green-300 group-hover/travel:bg-green-500 transition-colors" />
+                      {connectorContent}
                     </a>
                   ) : (
                     <div
                       key="travel-last-to-hotel"
                       className="absolute left-0 right-0 flex flex-col items-center z-10"
                       style={{ top: travelTop, height: Math.max(travelHeight, 16) }}
-                      title={`${travel.travelMins} min ${travel.mode === "walk" ? "walk" : "drive"} to hotel`}
                     >
-                      <div className="w-0.5 flex-1 bg-green-300" />
-                      <div className="text-[8px] text-green-600 whitespace-nowrap flex items-center gap-0.5 bg-white px-1 rounded">
-                        <span>{modeIcon}</span>
-                        <span>{travel.travelMins}m</span>
-                      </div>
-                      <div className="w-0.5 flex-1 bg-green-300" />
+                      {connectorContent}
                     </div>
                   )
                 )
@@ -894,6 +1207,77 @@ function TimelineDay({
           return elements
         })()}
       </div>
+
+      {/* Add event popover */}
+      {addPopover && (
+        <AddEventPopover
+          dayStr={day.dateStr}
+          startTime={addPopover.startTime}
+          position={addPopover.position}
+          wishlistItems={wishlistItems || []}
+          onAddFromWishlist={onAddFromWishlist}
+          onAddCustom={onAddCustom}
+          onClose={() => setAddPopover(null)}
+        />
+      )}
+    </div>
+  )
+}
+
+// ─── Mobile Day Selector ─────────────────────────────────────────────────
+
+function MobileDaySelector({
+  days,
+  selectedIdx,
+  onSelect,
+}: {
+  days: GroupedDay<ItineraryItem>[]
+  selectedIdx: number
+  onSelect: (idx: number) => void
+}) {
+  const scrollRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      const btn = scrollRef.current.children[selectedIdx] as HTMLElement
+      if (btn) {
+        btn.scrollIntoView({ inline: "center", behavior: "smooth", block: "nearest" })
+      }
+    }
+  }, [selectedIdx])
+
+  return (
+    <div
+      ref={scrollRef}
+      className="flex gap-2 overflow-x-auto pb-2 px-1 scrollbar-none -mx-1"
+      style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
+    >
+      {days.map((day, i) => {
+        const dayDate = new Date(day.date)
+        const weekday = dayDate.toLocaleDateString("en-US", { weekday: "short" })
+        const dayNum = dayDate.getDate()
+        return (
+          <button
+            key={day.dateStr}
+            onClick={() => onSelect(i)}
+            className={cn(
+              "flex flex-col items-center px-3 py-2 rounded-xl text-xs font-medium transition-all shrink-0 min-w-[52px]",
+              i === selectedIdx
+                ? "bg-indigo-600 text-white shadow-md"
+                : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+            )}
+          >
+            <span className="text-[10px] opacity-80">{weekday}</span>
+            <span className="text-sm font-bold">{dayNum}</span>
+            <span className={cn(
+              "text-[9px] mt-0.5",
+              i === selectedIdx ? "opacity-80" : "opacity-50"
+            )}>
+              {day.items.length} item{day.items.length !== 1 ? "s" : ""}
+            </span>
+          </button>
+        )
+      })}
     </div>
   )
 }
@@ -916,6 +1300,8 @@ interface TimelineViewProps {
   onDropFromWishlist?: (dayStr: string, startTime: string, activityId: string) => void
   onMoveToWishlist?: (itemId: string) => void
   onMoveToDay?: (itemId: string, newDayStr: string, newStartTime: string) => void
+  onAddFromWishlist?: (activityId: string, dayStr: string, startTime: string) => void
+  onAddCustom?: (dayStr: string, startTime: string, title: string, durationMins: number) => void
   wishlistItems?: WishlistActivity[]
   hotels?: HotelInfo[]
 }
@@ -924,9 +1310,10 @@ export function TimelineView({
   days,
   onResizeItem,
   onMoveItem,
-  onDropFromWishlist,
   onMoveToWishlist,
   onMoveToDay,
+  onAddFromWishlist,
+  onAddCustom,
   wishlistItems,
   hotels,
 }: TimelineViewProps) {
@@ -935,6 +1322,10 @@ export function TimelineView({
     position: { x: number; y: number }
     dayStr: string
   } | null>(null)
+  const [mobileSelectedDay, setMobileSelectedDay] = useState(0)
+
+  const mode = useResponsiveMode()
+  const hourHeight = mode === "mobile" ? HOUR_HEIGHT_MOBILE : HOUR_HEIGHT_DESKTOP
 
   const handleResize = useCallback((itemId: string, newDurationMins: number) => {
     onResizeItem?.(itemId, newDurationMins)
@@ -956,7 +1347,6 @@ export function TimelineView({
     onMoveToDay?.(itemId, newDayStr, newStartTime)
   }, [onMoveToDay])
 
-  // Find hotel for a given date
   const getHotelForDate = useCallback((dateStr: string): HotelInfo | null => {
     if (!hotels) return null
     for (const h of hotels) {
@@ -967,7 +1357,6 @@ export function TimelineView({
     return null
   }, [hotels])
 
-  // Build day info for the context menu
   const dayInfos = useMemo(
     () =>
       days.map((d, i) => {
@@ -981,45 +1370,112 @@ export function TimelineView({
     [days]
   )
 
-  return (
-    <div className="overflow-x-auto">
-      <div className="flex gap-0">
-        {/* Hour labels */}
-        <div className="w-12 shrink-0">
-          <div className="h-[42px] border-b border-gray-200" /> {/* header spacer */}
-          <div className="relative" style={{ height: TOTAL_HOURS * HOUR_HEIGHT }}>
-            {Array.from({ length: TOTAL_HOURS + 1 }, (_, i) => {
-              const hour = HOUR_START + i
-              return (
-                <div
-                  key={i}
-                  className="absolute left-0 right-0 text-[10px] text-gray-400 text-right pr-2 -translate-y-1/2"
-                  style={{ top: i * HOUR_HEIGHT }}
-                >
-                  {hour <= 23
-                    ? `${hour > 12 ? hour - 12 : hour}${hour >= 12 ? "pm" : "am"}`
-                    : ""}
-                </div>
-              )
-            })}
-          </div>
-        </div>
+  // Determine which days to show based on responsive mode
+  const visibleDays = useMemo(() => {
+    if (mode === "mobile") {
+      return days.length > 0 ? [days[mobileSelectedDay]] : []
+    }
+    if (mode === "tablet") {
+      // Show 2-3 days centered around mobile selected day
+      const start = Math.max(0, Math.min(mobileSelectedDay, days.length - 3))
+      return days.slice(start, start + 3)
+    }
+    // Desktop: show all days (or up to 5 with scroll)
+    return days
+  }, [mode, days, mobileSelectedDay])
 
-        {/* Day columns */}
-        {days.map((day, i) => (
-          <div key={day.dateStr} className="border-l border-gray-200">
-            <TimelineDay
-              day={day}
-              dayIdx={i}
-              onResize={handleResize}
-              onDragMove={handleDragMove}
-              onContextMenu={(e, item) => handleContextMenu(e, item, day.dateStr)}
-              onMoveToWishlist={onMoveToWishlist}
-              allDays={dayInfos}
-              hotel={getHotelForDate(day.dateStr)}
-            />
+  // Swipe support for mobile
+  const touchRef = useRef<{ startX: number; startY: number } | null>(null)
+
+  function handleTouchStart(e: React.TouchEvent) {
+    if (mode !== "mobile") return
+    touchRef.current = {
+      startX: e.touches[0].clientX,
+      startY: e.touches[0].clientY,
+    }
+  }
+
+  function handleTouchEnd(e: React.TouchEvent) {
+    if (mode !== "mobile" || !touchRef.current) return
+    const deltaX = e.changedTouches[0].clientX - touchRef.current.startX
+    const deltaY = e.changedTouches[0].clientY - touchRef.current.startY
+    touchRef.current = null
+    // Only trigger swipe if horizontal movement is dominant
+    if (Math.abs(deltaX) > 50 && Math.abs(deltaX) > Math.abs(deltaY) * 1.5) {
+      if (deltaX < 0 && mobileSelectedDay < days.length - 1) {
+        setMobileSelectedDay(mobileSelectedDay + 1)
+      } else if (deltaX > 0 && mobileSelectedDay > 0) {
+        setMobileSelectedDay(mobileSelectedDay - 1)
+      }
+    }
+  }
+
+  return (
+    <div
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+    >
+      {/* Mobile day selector */}
+      {mode === "mobile" && (
+        <div className="mb-3">
+          <MobileDaySelector
+            days={days}
+            selectedIdx={mobileSelectedDay}
+            onSelect={setMobileSelectedDay}
+          />
+        </div>
+      )}
+
+      <div className="overflow-x-auto">
+        <div className="flex gap-0">
+          {/* Hour labels */}
+          <div className={cn("shrink-0", mode === "mobile" ? "w-10" : "w-12")}>
+            <div className="h-[42px] border-b border-gray-200" />
+            <div className="relative" style={{ height: TOTAL_HOURS * hourHeight }}>
+              {Array.from({ length: TOTAL_HOURS + 1 }, (_, i) => {
+                const hour = HOUR_START + i
+                return (
+                  <div
+                    key={i}
+                    className={cn(
+                      "absolute left-0 right-0 text-gray-400 text-right pr-2 -translate-y-1/2",
+                      mode === "mobile" ? "text-[9px]" : "text-[10px]"
+                    )}
+                    style={{ top: i * hourHeight }}
+                  >
+                    {hour <= 23
+                      ? `${hour > 12 ? hour - 12 : hour}${hour >= 12 ? "pm" : "am"}`
+                      : ""}
+                  </div>
+                )
+              })}
+            </div>
           </div>
-        ))}
+
+          {/* Day columns */}
+          {visibleDays.map((day) => {
+            const dayIdx = days.findIndex(d => d.dateStr === day.dateStr)
+            return (
+              <div key={day.dateStr} className={cn("border-l border-gray-200", mode === "mobile" && "flex-1")}>
+                <TimelineDay
+                  day={day}
+                  dayIdx={dayIdx}
+                  hourHeight={hourHeight}
+                  onResize={handleResize}
+                  onDragMove={handleDragMove}
+                  onContextMenu={(e, item) => handleContextMenu(e, item, day.dateStr)}
+                  onMoveToWishlist={onMoveToWishlist}
+
+                  hotel={getHotelForDate(day.dateStr)}
+                  wishlistItems={wishlistItems}
+                  onAddFromWishlist={onAddFromWishlist}
+                  onAddCustom={onAddCustom}
+                  isMobileFullWidth={mode === "mobile"}
+                />
+              </div>
+            )
+          })}
+        </div>
       </div>
 
       {/* Context menu for moving items between days */}

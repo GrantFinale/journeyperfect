@@ -6,11 +6,9 @@ import { toast } from "sonner"
 import {
   runOptimizer,
   runAIOptimizer,
-  deleteItineraryItem,
   createItineraryItem,
-  reorderItineraryItems,
-  updateItineraryItemNotes,
   updateItineraryItem,
+  deleteItineraryItem,
 } from "@/lib/actions/itinerary"
 import {
   updateActivityPriority,
@@ -18,11 +16,10 @@ import {
   removeActivityFromWishlist,
 } from "@/lib/actions/activities"
 import type { ItineraryItemResult } from "@/lib/actions/itinerary"
-import { formatDate, formatTime } from "@/lib/utils"
+import { formatTime } from "@/lib/utils"
 import {
   DndContext,
   DragEndEvent,
-  DragOverlay,
   DragStartEvent,
   PointerSensor,
   TouchSensor,
@@ -30,40 +27,12 @@ import {
   useSensor,
   useSensors,
   closestCenter,
-  useDroppable,
 } from "@dnd-kit/core"
 import {
-  SortableContext,
-  useSortable,
-  verticalListSortingStrategy,
-  arrayMove,
-} from "@dnd-kit/sortable"
-import { CSS } from "@dnd-kit/utilities"
-import {
-  Plane,
-  Hotel,
-  Star,
-  UtensilsCrossed,
-  Bus,
-  Clock,
   Sparkles,
-  Plus,
-  Trash2,
-  ChevronDown,
-  ChevronUp,
-  Coffee,
-  PenLine,
-  Check,
-  X,
-  ExternalLink,
-  LayoutList,
-  CalendarClock,
 } from "lucide-react"
-import { cn } from "@/lib/utils"
 import { CalendarExportButton } from "@/components/calendar-export"
 import { WeatherBar } from "@/components/weather-bar"
-import { FlightStatusBadge } from "@/components/flight-status-badge"
-import { AirportMapLink } from "@/components/airport-info"
 import type { TripWeatherData } from "@/lib/weather"
 import { groupByDay } from "@/lib/itinerary-utils"
 import type { GroupedDay } from "@/lib/itinerary-utils"
@@ -71,7 +40,6 @@ import type { GroupedDay } from "@/lib/itinerary-utils"
 import { WishlistPanel } from "./wishlist-panel"
 import type { WishlistActivity } from "./wishlist-panel"
 import { TimelineView } from "./timeline-view"
-import { TravelConnector } from "./travel-connector"
 import { DragOnboarding, markOnboardingSeen } from "./drag-onboarding"
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -101,6 +69,8 @@ type ItineraryItem = {
     lng: number | null
     address: string | null
     name: string
+    imageUrl?: string | null
+    indoorOutdoor?: string | null
   } | null
   hotel?: {
     lat: number | null
@@ -120,18 +90,7 @@ type HotelInfo = {
   checkOut: Date
 }
 
-type FreeTimeBlock = {
-  startTime: string
-  endTime: string
-  durationMins: number
-  date: string
-  afterItemIndex: number
-}
-
 // ─── Utility functions ──────────────────────────────────────────────────────
-
-const DAY_START_HOUR = 8
-const DAY_END_HOUR = 22
 
 function timeToMinutes(time: string): number {
   const [h, m] = time.split(":").map(Number)
@@ -142,523 +101,6 @@ function minutesToTime(mins: number): string {
   const h = Math.floor(mins / 60)
   const m = mins % 60
   return `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`
-}
-
-function formatDuration(mins: number) {
-  if (mins < 60) return `${mins}m`
-  const h = Math.floor(mins / 60)
-  const m = mins % 60
-  return m > 0 ? `${h}h ${m}m` : `${h}h`
-}
-
-function formatFreeTimeDuration(mins: number): string {
-  const h = Math.floor(mins / 60)
-  const m = mins % 60
-  if (h === 0) return `${m} min`
-  if (m === 0) return `${h} hour${h !== 1 ? "s" : ""}`
-  return `${h}.${Math.round((m / 60) * 10)} hours`
-}
-
-function computeFreeTimeBlocks(
-  dayItems: ItineraryItem[],
-  minGapMinutes: number = 120
-): FreeTimeBlock[] {
-  const blocks: FreeTimeBlock[] = []
-  const dayStartMins = DAY_START_HOUR * 60
-  const dayEndMins = DAY_END_HOUR * 60
-
-  const timed = dayItems
-    .map((item, idx) => ({ item, idx }))
-    .filter(({ item }) => item.startTime)
-    .sort((a, b) => timeToMinutes(a.item.startTime!) - timeToMinutes(b.item.startTime!))
-
-  if (timed.length === 0) {
-    const gap = dayEndMins - dayStartMins
-    if (gap >= minGapMinutes) {
-      blocks.push({
-        startTime: minutesToTime(dayStartMins),
-        endTime: minutesToTime(dayEndMins),
-        durationMins: gap,
-        date: "",
-        afterItemIndex: -1,
-      })
-    }
-    return blocks
-  }
-
-  const firstStart = timeToMinutes(timed[0].item.startTime!)
-  if (firstStart - dayStartMins >= minGapMinutes) {
-    blocks.push({
-      startTime: minutesToTime(dayStartMins),
-      endTime: minutesToTime(firstStart),
-      durationMins: firstStart - dayStartMins,
-      date: "",
-      afterItemIndex: -1,
-    })
-  }
-
-  for (let i = 0; i < timed.length - 1; i++) {
-    const currentEnd = timed[i].item.endTime
-      ? timeToMinutes(timed[i].item.endTime!)
-      : timeToMinutes(timed[i].item.startTime!) + timed[i].item.durationMins
-    const nextStart = timeToMinutes(timed[i + 1].item.startTime!)
-    const gap = nextStart - currentEnd
-    if (gap >= minGapMinutes) {
-      blocks.push({
-        startTime: minutesToTime(currentEnd),
-        endTime: minutesToTime(nextStart),
-        durationMins: gap,
-        date: "",
-        afterItemIndex: timed[i].idx,
-      })
-    }
-  }
-
-  const lastItem = timed[timed.length - 1]
-  const lastEnd = lastItem.item.endTime
-    ? timeToMinutes(lastItem.item.endTime!)
-    : timeToMinutes(lastItem.item.startTime!) + lastItem.item.durationMins
-  if (dayEndMins - lastEnd >= minGapMinutes) {
-    blocks.push({
-      startTime: minutesToTime(lastEnd),
-      endTime: minutesToTime(dayEndMins),
-      durationMins: dayEndMins - lastEnd,
-      date: "",
-      afterItemIndex: lastItem.idx,
-    })
-  }
-
-  return blocks
-}
-
-// ─── Sub-components ─────────────────────────────────────────────────────────
-
-function typeIcon(type: string) {
-  switch (type) {
-    case "FLIGHT": return <Plane className="w-4 h-4" />
-    case "HOTEL_CHECK_IN":
-    case "HOTEL_CHECK_OUT": return <span className="text-base leading-none">🏨</span>
-    case "ACTIVITY": return <Star className="w-4 h-4" />
-    case "MEAL": return <UtensilsCrossed className="w-4 h-4" />
-    case "TRANSIT": return <Bus className="w-4 h-4" />
-    case "BUFFER": return <Coffee className="w-4 h-4" />
-    default: return <Clock className="w-4 h-4" />
-  }
-}
-
-function typeColor(type: string) {
-  switch (type) {
-    case "FLIGHT": return "bg-blue-50 text-blue-600 border-blue-100"
-    case "HOTEL_CHECK_IN":
-    case "HOTEL_CHECK_OUT": return "bg-sky-50 text-sky-600 border-sky-200"
-    case "ACTIVITY": return "bg-indigo-50 text-indigo-600 border-indigo-100"
-    case "MEAL": return "bg-orange-50 text-orange-600 border-orange-100"
-    case "TRANSIT": return "bg-gray-50 text-gray-600 border-gray-200"
-    case "BUFFER": return "bg-yellow-50 text-yellow-600 border-yellow-100"
-    default: return "bg-gray-50 text-gray-600 border-gray-200"
-  }
-}
-
-function FreeTimeBlockCard({
-  block,
-  onAddActivity,
-  wishlistItems,
-  onQuickAddFromWishlist,
-}: {
-  block: FreeTimeBlock
-  onAddActivity: (startTime: string) => void
-  wishlistItems?: WishlistActivity[]
-  onQuickAddFromWishlist?: (activityId: string, startTime: string) => void
-}) {
-  const [showSuggestions, setShowSuggestions] = useState(false)
-
-  // Filter wishlist items that fit in this gap, sorted by priority
-  const fittingItems = (wishlistItems || [])
-    .filter((a) => a.durationMins <= block.durationMins)
-    .sort((a, b) => {
-      const priorityOrder: Record<string, number> = { MUST_DO: 0, HIGH: 1, MEDIUM: 2, LOW: 3 }
-      return (priorityOrder[a.priority] ?? 3) - (priorityOrder[b.priority] ?? 3)
-    })
-
-  function handleAddClick() {
-    if (fittingItems.length > 0 && onQuickAddFromWishlist) {
-      setShowSuggestions(!showSuggestions)
-    } else {
-      onAddActivity(block.startTime)
-    }
-  }
-
-  return (
-    <div className="flex items-start gap-3">
-      <div className="w-5" />
-      <div className="flex flex-col items-center mt-1">
-        <div className="w-7 h-7 rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center shrink-0 bg-gray-50">
-          <Clock className="w-3.5 h-3.5 text-gray-400" />
-        </div>
-      </div>
-      <div className="flex-1 min-w-0 pb-2">
-        <div className="px-3 py-2.5 bg-gray-50 border border-dashed border-gray-200 rounded-xl">
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2 text-sm text-gray-500">
-              <span className="font-medium">Free Time</span>
-              <span className="text-gray-300">·</span>
-              <span>{formatFreeTimeDuration(block.durationMins)}</span>
-              <span className="text-[11px] text-gray-400">
-                {formatTime(block.startTime)} – {formatTime(block.endTime)}
-              </span>
-            </div>
-            <div className="flex items-center gap-1">
-              <button
-                onClick={handleAddClick}
-                className="flex items-center gap-1 px-2 py-1 text-xs text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors font-medium"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                Add
-                {fittingItems.length > 0 && (
-                  <span className="text-[10px] text-gray-400 ml-0.5">({fittingItems.length})</span>
-                )}
-              </button>
-              {fittingItems.length > 0 && (
-                <button
-                  onClick={() => onAddActivity(block.startTime)}
-                  className="px-2 py-1 text-[10px] text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
-                  title="Manual add"
-                >
-                  Custom
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Wishlist suggestions dropdown */}
-          {showSuggestions && fittingItems.length > 0 && (
-            <div className="mt-2 border-t border-gray-200 pt-2 space-y-1 max-h-48 overflow-y-auto">
-              <p className="text-[10px] text-gray-400 uppercase font-semibold tracking-wide mb-1">
-                From your wishlist
-              </p>
-              {fittingItems.map((activity) => (
-                <button
-                  key={activity.id}
-                  onClick={() => {
-                    onQuickAddFromWishlist?.(activity.id, block.startTime)
-                    setShowSuggestions(false)
-                  }}
-                  className="w-full flex items-center justify-between gap-2 px-2 py-1.5 text-left hover:bg-white rounded-lg transition-colors group"
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span
-                      className={cn(
-                        "w-1.5 h-1.5 rounded-full shrink-0",
-                        activity.priority === "MUST_DO" ? "bg-green-500" : "bg-amber-400"
-                      )}
-                    />
-                    <span className="text-xs text-gray-700 truncate">{activity.name}</span>
-                  </div>
-                  <span className="text-[10px] text-gray-400 shrink-0">
-                    {formatDuration(activity.durationMins)}
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function SortableItineraryItem({
-  item,
-  prevItem,
-  nextItem,
-  isFirst,
-  isLast,
-  onDelete,
-  tripId,
-  onUpdateNotes,
-  hotel,
-}: {
-  item: ItineraryItem
-  prevItem?: ItineraryItem | null
-  nextItem?: ItineraryItem | null
-  isFirst: boolean
-  isLast: boolean
-  onDelete: (id: string) => void
-  tripId: string
-  onUpdateNotes: (itemId: string, notes: string) => void
-  hotel?: HotelInfo | null
-}) {
-  const [editingNote, setEditingNote] = useState(false)
-  const [noteText, setNoteText] = useState(item.userNotes || "")
-  const [saving, setSaving] = useState(false)
-  const noteRef = useRef<HTMLTextAreaElement>(null)
-
-  const isFixed = item.type === "FLIGHT" || item.type === "HOTEL_CHECK_IN" || item.type === "HOTEL_CHECK_OUT"
-
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: item.id, disabled: isFixed })
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-    zIndex: isDragging ? 10 : undefined,
-  }
-
-  async function handleSaveNote() {
-    setSaving(true)
-    try {
-      await updateItineraryItemNotes(tripId, item.id, noteText)
-      onUpdateNotes(item.id, noteText)
-      setEditingNote(false)
-      toast.success("Note saved")
-    } catch {
-      toast.error("Failed to save note")
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  // Compute travel between items
-  // For flights: use arrival airport coords as the "from" for the NEXT item
-  // For the first item of the day: use hotel as "from"
-  // For items after a flight: use the flight's arrival airport
-  // Airport coordinate lookup for travel from airport
-  const AIRPORT_COORDS: Record<string, [number, number]> = {
-    ATL: [33.6407, -84.4277], AUS: [30.1975, -97.6664], BOS: [42.3656, -71.0096],
-    CLT: [35.2140, -80.9431], DEN: [39.8561, -104.6737], DFW: [32.8998, -97.0403],
-    DTW: [42.2124, -83.3534], EWR: [40.6895, -74.1745], GRR: [42.8808, -85.5228],
-    IAH: [29.9902, -95.3368], JFK: [40.6413, -73.7781], LAX: [33.9416, -118.4085],
-    LGA: [40.7769, -73.8740], MCO: [28.4312, -81.3081], MIA: [25.7959, -80.2870],
-    MSP: [44.8848, -93.2223], ORD: [41.9742, -87.9073], PHL: [39.8729, -75.2437],
-    PHX: [33.4373, -112.0078], SAN: [32.7338, -117.1933], SAT: [29.5337, -98.4698],
-    SEA: [47.4502, -122.3088], SFO: [37.6213, -122.3790],
-  }
-  const prevIsFlight = prevItem?.type === "FLIGHT"
-  const arrCode = prevItem?.flight?.arrivalAirport?.toUpperCase() || ""
-  const arrCoords = AIRPORT_COORDS[arrCode]
-  const prevFlightArrival = prevIsFlight && arrCode
-    ? { lat: arrCoords?.[0] ?? null, lng: arrCoords?.[1] ?? null, name: `${arrCode} Airport` }
-    : null
-
-  const fromLat = prevFlightArrival ? prevFlightArrival.lat
-    : isFirst && hotel ? hotel.lat
-    : (prevItem?.activity?.lat || prevItem?.hotel?.lat)
-  const fromLng = prevFlightArrival ? prevFlightArrival.lng
-    : isFirst && hotel ? hotel.lng
-    : (prevItem?.activity?.lng || prevItem?.hotel?.lng)
-  const fromName = prevFlightArrival ? prevFlightArrival.name
-    : isFirst && hotel ? hotel.name
-    : (prevItem?.activity?.name || prevItem?.hotel?.name || prevItem?.title || "")
-  const toLat = item.activity?.lat || item.hotel?.lat
-  const toLng = item.activity?.lng || item.hotel?.lng
-  const toName = item.activity?.name || item.hotel?.name || item.title
-
-  // Show travel connector:
-  // - Between any two non-flight items
-  // - After the LAST flight in a sequence to the next item (airport → hotel/activity)
-  // - Skip if current item is a flight (connections don't need luggage/travel display)
-  const showTravel = item.type !== "FLIGHT" && (isFirst || prevItem)
-  // Only show after a flight if the current item is NOT a flight (last flight in sequence)
-  // This correctly handles connections: Flight A→B, Flight B→C — luggage only shows before
-  // the first non-flight item after the last flight
-  const showAfterFlight = prevIsFlight && item.type !== "FLIGHT"
-
-  return (
-    <div ref={setNodeRef} style={style}>
-      {/* Travel connector BETWEEN items */}
-      {(showTravel || showAfterFlight) && (
-        <>
-          {prevIsFlight && (
-            <div className="flex items-center gap-2 py-1 ml-5">
-              <div className="w-5 h-5 rounded-full bg-blue-50 flex items-center justify-center text-[10px]">🧳</div>
-              <span className="text-[11px] text-gray-400">~1 hr luggage & airport exit</span>
-            </div>
-          )}
-          <TravelConnector
-            fromLat={fromLat}
-            fromLng={fromLng}
-            toLat={toLat}
-            toLng={toLng}
-            fromName={fromName || ""}
-            toName={toName}
-          />
-        </>
-      )}
-      <div
-        className={cn(
-          "flex items-start gap-3 group rounded-xl transition-shadow",
-          !isFixed && "cursor-grab active:cursor-grabbing hover:shadow-md",
-          (item.type === "HOTEL_CHECK_IN" || item.type === "HOTEL_CHECK_OUT") && "bg-sky-50/60 px-2 py-1.5 -mx-2 border border-sky-100"
-        )}
-        {...(!isFixed ? { ...attributes, ...listeners } : {})}
-      >
-        {/* Timeline dot */}
-        <div className="flex flex-col items-center mt-1">
-          <div
-            className={cn(
-              "w-7 h-7 rounded-lg border flex items-center justify-center shrink-0",
-              typeColor(item.type)
-            )}
-          >
-            {typeIcon(item.type)}
-          </div>
-          {!isLast && (
-            <div className="w-0.5 bg-gray-100 flex-1 min-h-4 mt-1" />
-          )}
-        </div>
-        <div className="flex-1 min-w-0 pb-2">
-          <div className="flex items-start justify-between gap-2">
-            <div className="flex-1 min-w-0">
-              <div className="font-medium text-gray-900 text-sm leading-tight">
-                {item.type === "FLIGHT" && item.flight
-                  ? `${item.flight.airline || ""} ${item.flight.flightNumber || "Flight"}${item.flight.departureAirport || item.flight.arrivalAirport ? ` · ${[item.flight.departureAirport, item.flight.arrivalAirport].filter(Boolean).join(" → ")}` : ""}`.trim()
-                  : item.title}
-              </div>
-              <div className="flex items-center gap-2 mt-0.5 text-xs text-gray-500">
-                {item.startTime && <span>{formatTime(item.startTime)}</span>}
-                <span>{formatDuration(item.durationMins)}</span>
-                {item.costEstimate > 0 && <span>${item.costEstimate.toFixed(0)}</span>}
-                {item.isConfirmed && <span className="text-green-600 font-medium">Confirmed</span>}
-              </div>
-              {(item.type === "HOTEL_CHECK_IN" || item.type === "HOTEL_CHECK_OUT") && item.hotel?.address && (
-                <p className="text-xs text-sky-600 mt-0.5 flex items-center gap-1">
-                  <Hotel className="w-3 h-3 shrink-0" />
-                  {item.hotel.address}
-                </p>
-              )}
-              {item.notes && <p className="text-xs text-gray-400 mt-0.5">{item.notes}</p>}
-              {item.userNotes && !editingNote && (
-                <div className="mt-1 flex items-start gap-1.5">
-                  <PenLine className="w-3 h-3 text-amber-500 shrink-0 mt-0.5" />
-                  <p className="text-xs text-amber-700 italic whitespace-pre-wrap">{item.userNotes}</p>
-                </div>
-              )}
-              {editingNote && (
-                <div className="mt-2 space-y-1.5">
-                  <textarea
-                    ref={noteRef}
-                    value={noteText}
-                    onChange={(e) => setNoteText(e.target.value)}
-                    placeholder="Write a personal note or story about this..."
-                    rows={2}
-                    className="w-full px-3 py-2 border border-amber-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-amber-400 bg-amber-50/50 resize-none"
-                    autoFocus
-                  />
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      onClick={handleSaveNote}
-                      disabled={saving}
-                      className="flex items-center gap-1 px-2.5 py-1 bg-amber-500 text-white text-[11px] font-medium rounded-md hover:bg-amber-600 disabled:opacity-50 transition-colors"
-                    >
-                      <Check className="w-3 h-3" />
-                      {saving ? "Saving..." : "Save"}
-                    </button>
-                    <button
-                      onClick={() => {
-                        setEditingNote(false)
-                        setNoteText(item.userNotes || "")
-                      }}
-                      className="flex items-center gap-1 px-2.5 py-1 text-gray-500 text-[11px] rounded-md hover:bg-gray-100 transition-colors"
-                    >
-                      <X className="w-3 h-3" />
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              )}
-              {item.type === "FLIGHT" && item.flight?.flightNumber && (() => {
-                const depDate = new Date(item.date)
-                const now = new Date()
-                const diffHours = (depDate.getTime() - now.getTime()) / (1000 * 60 * 60)
-                if (diffHours > -12 && diffHours < 24) {
-                  return (
-                    <div className="mt-1">
-                      <FlightStatusBadge
-                        flightNumber={item.flight.flightNumber}
-                        departureDate={depDate.toISOString().split("T")[0]}
-                      />
-                    </div>
-                  )
-                }
-                return null
-              })()}
-              {item.type === "FLIGHT" && item.flight && (
-                <div className="flex items-center gap-3 mt-1">
-                  {item.flight.departureAirport && (
-                    <AirportMapLink airportCode={item.flight.departureAirport} label={`${item.flight.departureAirport} map`} className="inline-flex items-center gap-1 text-[11px] text-indigo-600 hover:text-indigo-700 font-medium" />
-                  )}
-                  {item.flight.arrivalAirport && (
-                    <AirportMapLink airportCode={item.flight.arrivalAirport} label={`${item.flight.arrivalAirport} map`} className="inline-flex items-center gap-1 text-[11px] text-indigo-600 hover:text-indigo-700 font-medium" />
-                  )}
-                </div>
-              )}
-            </div>
-            <div className="flex items-center gap-0.5 shrink-0">
-              <button
-                onClick={() => {
-                  setEditingNote(!editingNote)
-                  setNoteText(item.userNotes || "")
-                }}
-                className={cn(
-                  "p-1 transition-all",
-                  editingNote
-                    ? "text-amber-600"
-                    : item.userNotes
-                      ? "text-amber-400 hover:text-amber-600"
-                      : "opacity-0 group-hover:opacity-100 text-gray-400 hover:text-amber-600"
-                )}
-                title="Add a personal note"
-              >
-                <PenLine className="w-3.5 h-3.5" />
-              </button>
-              <button
-                onClick={() => onDelete(item.id)}
-                className="opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-red-500 transition-all"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-      {/* Travel back to hotel after last item */}
-      {isLast && hotel && item.type !== "FLIGHT" && item.type !== "HOTEL_CHECK_IN" && item.type !== "HOTEL_CHECK_OUT" && (
-        <TravelConnector
-          fromLat={item.activity?.lat || item.hotel?.lat}
-          fromLng={item.activity?.lng || item.hotel?.lng}
-          toLat={hotel.lat}
-          toLng={hotel.lng}
-          fromName={item.activity?.name || item.hotel?.name || item.title}
-          toName={hotel.name}
-          label={undefined}
-        />
-      )}
-    </div>
-  )
-}
-
-// Droppable day zone for wishlist items
-function DroppableDayZone({ dateStr, children }: { dateStr: string; children: React.ReactNode }) {
-  const { isOver, setNodeRef } = useDroppable({ id: `day-${dateStr}` })
-
-  return (
-    <div
-      ref={setNodeRef}
-      className={cn(
-        "transition-all rounded-xl",
-        isOver && "ring-2 ring-indigo-400 ring-offset-2 bg-indigo-50/30"
-      )}
-    >
-      {children}
-    </div>
-  )
 }
 
 // ─── Main Component ─────────────────────────────────────────────────────────
@@ -685,17 +127,14 @@ export function ItineraryView({
   isPaid,
   wishlistActivities: initialWishlist = [],
   hotels = [],
-  showFreeTime = false,
-  freeTimeMinGapHours = 2,
 }: Props) {
   const router = useRouter()
   const [items, setItems] = useState<ItineraryItem[]>(initialItems)
   const [wishlist, setWishlist] = useState<WishlistActivity[]>(initialWishlist)
-  const [viewMode, setViewMode] = useState<"events" | "timeline">("events")
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [showOnboarding, setShowOnboarding] = useState(false)
   const reorderingRef = useRef(false)
-  const [activeDragId, setActiveDragId] = useState<string | null>(null)
+  const [, setActiveDragId] = useState<string | null>(null)
 
   useEffect(() => {
     if (!reorderingRef.current) {
@@ -716,15 +155,6 @@ export function ItineraryView({
   }, [wishlist.length])
 
   const [optimizing, setOptimizing] = useState(false)
-  const [collapsedDays, setCollapsedDays] = useState<Set<string>>(new Set())
-  const [addingToDay, setAddingToDay] = useState<string | null>(null)
-  const minGapHours = freeTimeMinGapHours
-  const [newItemForm, setNewItemForm] = useState({
-    title: "",
-    type: "CUSTOM",
-    startTime: "",
-    durationMins: 60,
-  })
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -734,10 +164,6 @@ export function ItineraryView({
       activationConstraint: { delay: 200, tolerance: 5 },
     }),
     useSensor(KeyboardSensor)
-  )
-
-  const weatherByDate = new Map(
-    weather?.forecasts.map((f) => [f.date, f]) ?? []
   )
 
   const days = groupByDay(items)
@@ -766,19 +192,9 @@ export function ItineraryView({
     return result
   })()
 
-  // Find hotel for a given date
-  function getHotelForDate(dateStr: string): HotelInfo | null {
-    for (const h of hotels) {
-      const checkIn = new Date(h.checkIn).toISOString().split("T")[0]
-      const checkOut = new Date(h.checkOut).toISOString().split("T")[0]
-      if (dateStr >= checkIn && dateStr <= checkOut) return h
-    }
-    return hotels[0] || null
-  }
-
   async function handleAutoPlan() {
     setOptimizing(true)
-    reorderingRef.current = false // Allow state sync after refresh
+    reorderingRef.current = false
     try {
       if (isPaid) {
         const result = await runAIOptimizer(tripId)
@@ -787,21 +203,18 @@ export function ItineraryView({
         const result = await runOptimizer(tripId)
         toast.success(`Auto-plan scheduled ${result.scheduledItems.length} activities!`)
       }
-      // Re-fetch itinerary items with full relations (including activity lat/lng)
       const { getItinerary } = await import("@/lib/actions/itinerary")
       const freshItems = await getItinerary(tripId)
       setItems(freshItems as ItineraryItem[])
-      // Also refresh wishlist since items moved to SCHEDULED
       const { getAllActivitiesForTrip } = await import("@/lib/actions/activities")
       const allActivities = await getAllActivitiesForTrip(tripId)
-      setWishlist(allActivities.filter((a: any) => a.status === "WISHLIST") as WishlistActivity[])
+      setWishlist(allActivities.filter((a: { status: string }) => a.status === "WISHLIST") as WishlistActivity[])
       router.refresh()
     } catch (e) {
       const msg = e instanceof Error && e.message === "UPGRADE_REQUIRED"
         ? "AI auto-plan requires a paid plan. Using basic optimizer."
         : "Auto-plan failed. Make sure you have activities on your wishlist."
       toast.error(msg)
-      // Fallback to basic optimizer if AI fails
       if (e instanceof Error && e.message === "UPGRADE_REQUIRED") {
         try {
           const result = await runOptimizer(tripId)
@@ -816,64 +229,6 @@ export function ItineraryView({
     }
   }
 
-  async function handleDelete(itemId: string) {
-    // If the item has an activityId, return it to wishlist
-    const item = items.find((i) => i.id === itemId)
-    try {
-      await deleteItineraryItem(tripId, itemId)
-      setItems((prev) => prev.filter((i) => i.id !== itemId))
-      if (item?.activityId) {
-        try {
-          await updateActivityStatus(tripId, item.activityId, "WISHLIST")
-          router.refresh()
-        } catch {
-          // Activity may have been deleted
-        }
-      }
-      toast.success("Item removed")
-    } catch {
-      toast.error("Failed to remove item")
-    }
-  }
-
-  async function handleAddItem(dateStr: string) {
-    if (!newItemForm.title) {
-      toast.error("Title is required")
-      return
-    }
-    try {
-      const item: ItineraryItemResult = await createItineraryItem(tripId, {
-        date: dateStr,
-        title: newItemForm.title,
-        type: newItemForm.type as "CUSTOM",
-        startTime: newItemForm.startTime || undefined,
-        durationMins: newItemForm.durationMins,
-        costEstimate: 0,
-        position: 99,
-      })
-      setItems((prev) => [...prev, {
-        id: item.id,
-        date: item.date,
-        startTime: item.startTime,
-        endTime: item.endTime,
-        type: item.type,
-        title: item.title,
-        notes: item.notes,
-        userNotes: null,
-        durationMins: item.durationMins,
-        travelTimeToNextMins: item.travelTimeToNextMins,
-        costEstimate: item.costEstimate,
-        position: item.position,
-        isConfirmed: item.isConfirmed,
-      }])
-      setAddingToDay(null)
-      setNewItemForm({ title: "", type: "CUSTOM", startTime: "", durationMins: 60 })
-      toast.success("Item added")
-    } catch {
-      toast.error("Failed to add item")
-    }
-  }
-
   // Handle dropping a wishlist item onto a day
   async function handleWishlistDrop(activityId: string, dateStr: string) {
     const activity = wishlist.find((a) => a.id === activityId)
@@ -882,7 +237,6 @@ export function ItineraryView({
     markOnboardingSeen()
     setShowOnboarding(false)
 
-    // Find next available time slot
     const dayItems = items.filter((i) => {
       const d = new Date(i.date)
       const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`
@@ -899,17 +253,14 @@ export function ItineraryView({
         const lastEnd = lastItem.endTime
           ? timeToMinutes(lastItem.endTime)
           : timeToMinutes(lastItem.startTime!) + lastItem.durationMins
-        // Add 30 min buffer for travel
         startTime = minutesToTime(lastEnd + 30)
       }
     }
 
-    // Calculate end time
     const startMins = timeToMinutes(startTime)
     const endMins = startMins + activity.durationMins
     const endTime = minutesToTime(endMins)
 
-    // Optimistically remove from wishlist
     setWishlist((prev) => prev.filter((a) => a.id !== activityId))
 
     try {
@@ -950,7 +301,6 @@ export function ItineraryView({
       await updateActivityStatus(tripId, activity.id, "SCHEDULED")
       toast.success(`${activity.name} added to Day ${allDays.findIndex((d) => d.dateStr === dateStr) + 1}`)
     } catch {
-      // Revert on failure
       setWishlist((prev) => [...prev, activity])
       toast.error("Failed to add to itinerary")
     }
@@ -964,80 +314,28 @@ export function ItineraryView({
       return
     }
 
-    // Optimistically remove from itinerary
     setItems((prev) => prev.filter((i) => i.id !== itemId))
 
     try {
       await deleteItineraryItem(tripId, itemId)
       await updateActivityStatus(tripId, item.activityId, "WISHLIST")
-      // Refresh to get the activity back in wishlist
       router.refresh()
       toast.success("Returned to wishlist")
     } catch {
-      // Revert
       setItems((prev) => [...prev, item])
       toast.error("Failed to return to wishlist")
     }
   }
 
-  function handleDragEnd(event: DragEndEvent, dayDateStr: string) {
-    const { active, over } = event
-    if (!over || active.id === over.id) return
-
-    const dayItems = items.filter((i) => {
-      const d = new Date(i.date)
-      const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`
-      return key === dayDateStr
-    })
-    const oldIndex = dayItems.findIndex((i) => i.id === active.id)
-    const newIndex = dayItems.findIndex((i) => i.id === over.id)
-    if (oldIndex === -1 || newIndex === -1) return
-
-    const reordered = arrayMove(dayItems, oldIndex, newIndex)
-    reorderingRef.current = true
-
-    setItems((prev) => {
-      const otherItems = prev.filter((i) => {
-        const d = new Date(i.date)
-        const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`
-        return key !== dayDateStr
-      })
-      const updated = reordered.map((item, idx) => ({ ...item, position: idx }))
-      return [...otherItems, ...updated]
-    })
-
-    const updates = reordered.map((item, idx) => ({
-      id: item.id,
-      position: idx,
-      date: dayDateStr,
-    }))
-    reorderItineraryItems(tripId, updates)
-      .then(() => {
-        setTimeout(() => { reorderingRef.current = false }, 1000)
-      })
-      .catch(() => {
-        toast.error("Failed to save new order")
-        reorderingRef.current = false
-        router.refresh()
-      })
-  }
-
-  // Global drag handler for wishlist -> day drops
-  function handleGlobalDragStart(event: DragStartEvent) {
-    setActiveDragId(event.active.id as string)
-  }
-
-  // Handle moving an itinerary item to a different day via drag
+  // Handle moving an itinerary item to a different day
   async function handleMoveToDay(itemId: string, newDayStr: string) {
     const item = items.find((i) => i.id === itemId)
     if (!item) return
 
-    // Keep the item's existing start time, or assign a default
     const startTime = item.startTime || "09:00"
     const endMins = timeToMinutes(startTime) + item.durationMins
     const endTime = minutesToTime(endMins)
 
-    // Calculate new position: end of the target day's items
     const targetDayItems = items.filter((i) => {
       const d = new Date(i.date)
       const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`
@@ -1045,7 +343,6 @@ export function ItineraryView({
     })
     const newPosition = targetDayItems.length
 
-    // Optimistic update
     setItems((prev) =>
       prev.map((i) =>
         i.id === itemId
@@ -1074,6 +371,11 @@ export function ItineraryView({
     }
   }
 
+  // Global drag handler for wishlist -> day drops
+  function handleGlobalDragStart(event: DragStartEvent) {
+    setActiveDragId(event.active.id as string)
+  }
+
   function handleGlobalDragEnd(event: DragEndEvent) {
     const { active, over } = event
     setActiveDragId(null)
@@ -1083,11 +385,10 @@ export function ItineraryView({
     const activeId = active.id as string
     const overId = over.id as string
 
-    // Wishlist item dropped on a timeline slot (timeline-day-YYYY-MM-DD-HH:MM)
+    // Wishlist item dropped on a timeline slot
     if (overId.startsWith("timeline-day-")) {
       const isWishlistItem = wishlist.some((a) => a.id === activeId)
       if (isWishlistItem) {
-        // Parse day and time from droppable ID: timeline-day-YYYY-MM-DD-HH:MM
         const match = overId.match(/^timeline-day-(\d{4}-\d{2}-\d{2})-(\d{2}:\d{2})$/)
         if (match) {
           const [, dayStr, time] = match
@@ -1106,13 +407,12 @@ export function ItineraryView({
         return
       }
 
-      // Itinerary item dropped on a different day zone — cross-day move
+      // Cross-day move
       const draggedItem = items.find((i) => i.id === activeId)
       if (draggedItem) {
         const d = new Date(draggedItem.date)
         const currentDay = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`
         if (currentDay !== dateStr) {
-          // Don't allow moving fixed items (flights, hotel check-in/out)
           const isFixed = draggedItem.type === "FLIGHT" || draggedItem.type === "HOTEL_CHECK_IN" || draggedItem.type === "HOTEL_CHECK_OUT"
           if (!isFixed) {
             handleMoveToDay(activeId, dateStr)
@@ -1122,51 +422,14 @@ export function ItineraryView({
       }
     }
 
-    // Itinerary item dropped on wishlist zone
+    // Item dropped on wishlist zone
     if (overId === "wishlist-drop-zone") {
       handleReturnToWishlist(activeId)
       return
     }
-
-    // Within-day reorder: itinerary item dropped on another itinerary item
-    const activeItem = items.find((i) => i.id === activeId)
-    const overItem = items.find((i) => i.id === overId)
-    if (activeItem && overItem && activeId !== overId) {
-      const activeDate = new Date(activeItem.date)
-      const overDate = new Date(overItem.date)
-      const activeDateStr = `${activeDate.getUTCFullYear()}-${String(activeDate.getUTCMonth() + 1).padStart(2, "0")}-${String(activeDate.getUTCDate()).padStart(2, "0")}`
-      const overDateStr = `${overDate.getUTCFullYear()}-${String(overDate.getUTCMonth() + 1).padStart(2, "0")}-${String(overDate.getUTCDate()).padStart(2, "0")}`
-
-      if (activeDateStr === overDateStr) {
-        // Same-day reorder
-        handleDragEnd(event, activeDateStr)
-      } else {
-        // Cross-day: dropped on an item in another day — move to that day
-        const isFixed = activeItem.type === "FLIGHT" || activeItem.type === "HOTEL_CHECK_IN" || activeItem.type === "HOTEL_CHECK_OUT"
-        if (!isFixed) {
-          handleMoveToDay(activeId, overDateStr)
-        }
-      }
-    }
-  }
-
-  function handleUpdateNotes(itemId: string, userNotes: string) {
-    setItems((prev) =>
-      prev.map((i) => (i.id === itemId ? { ...i, userNotes: userNotes || null } : i))
-    )
-  }
-
-  function toggleDay(dateStr: string) {
-    setCollapsedDays((prev) => {
-      const next = new Set(prev)
-      if (next.has(dateStr)) next.delete(dateStr)
-      else next.add(dateStr)
-      return next
-    })
   }
 
   async function handleTimelineResize(itemId: string, newDurationMins: number) {
-    // Calculate new endTime
     const item = items.find((i) => i.id === itemId)
     if (!item || !item.startTime) return
 
@@ -1174,7 +437,6 @@ export function ItineraryView({
     const endMins = startMins + newDurationMins
     const newEndTime = minutesToTime(endMins)
 
-    // Optimistic update
     setItems((prev) =>
       prev.map((i) =>
         i.id === itemId ? { ...i, durationMins: newDurationMins, endTime: newEndTime } : i
@@ -1199,7 +461,6 @@ export function ItineraryView({
     const endMins = startMins + newDurationMins
     const newEndTime = minutesToTime(endMins)
 
-    // Optimistic update
     setItems((prev) =>
       prev.map((i) =>
         i.id === itemId ? { ...i, startTime: newStartTime, endTime: newEndTime, durationMins: newDurationMins } : i
@@ -1229,7 +490,6 @@ export function ItineraryView({
     const endMins = startMins + activity.durationMins
     const endTime = minutesToTime(endMins)
 
-    // Optimistically remove from wishlist
     setWishlist((prev) => prev.filter((a) => a.id !== activityId))
 
     try {
@@ -1290,7 +550,6 @@ export function ItineraryView({
     const endMins = startMins + item.durationMins
     const newEndTime = minutesToTime(endMins)
 
-    // Optimistic update
     setItems((prev) =>
       prev.map((i) =>
         i.id === itemId
@@ -1318,33 +577,32 @@ export function ItineraryView({
     }
   }
 
-  async function handleQuickAddFromWishlist(activityId: string, startTime: string, dateStr: string) {
-    const activity = wishlist.find((a) => a.id === activityId)
-    if (!activity) return
+  // Handle adding from wishlist via timeline click popover
+  async function handleAddFromWishlistViaPopover(activityId: string, dayStr: string, startTime: string) {
+    await handleTimelineWishlistDrop(dayStr, startTime, activityId)
+  }
 
+  // Handle adding a custom event via timeline click popover
+  async function handleAddCustomViaPopover(dayStr: string, startTime: string, title: string, durationMins: number) {
     const startMins = timeToMinutes(startTime)
-    const endMins = startMins + activity.durationMins
+    const endMins = startMins + durationMins
     const endTime = minutesToTime(endMins)
 
-    // Optimistically remove from wishlist
-    setWishlist((prev) => prev.filter((a) => a.id !== activityId))
+    const dayItems = items.filter((i) => {
+      const d = new Date(i.date)
+      const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`
+      return key === dayStr
+    })
 
     try {
-      const dayItems = items.filter((i) => {
-        const d = new Date(i.date)
-        const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`
-        return key === dateStr
-      })
-
-      const item = await createItineraryItem(tripId, {
-        date: dateStr,
-        title: activity.name,
-        type: "ACTIVITY",
+      const item: ItineraryItemResult = await createItineraryItem(tripId, {
+        date: dayStr,
+        title,
+        type: "CUSTOM" as const,
         startTime,
-        durationMins: activity.durationMins,
+        durationMins,
         costEstimate: 0,
         position: dayItems.length,
-        activityId: activity.id,
       })
 
       setItems((prev) => [...prev, {
@@ -1361,20 +619,10 @@ export function ItineraryView({
         costEstimate: item.costEstimate,
         position: item.position,
         isConfirmed: item.isConfirmed,
-        activityId: activity.id,
-        activity: {
-          lat: activity.lat,
-          lng: activity.lng,
-          address: activity.address,
-          name: activity.name,
-        },
       }])
-
-      await updateActivityStatus(tripId, activity.id, "SCHEDULED")
-      toast.success(`${activity.name} added!`)
+      toast.success(`${title} added`)
     } catch {
-      setWishlist((prev) => [...prev, activity])
-      toast.error("Failed to add to itinerary")
+      toast.error("Failed to add item")
     }
   }
 
@@ -1424,52 +672,25 @@ export function ItineraryView({
       <div className="flex h-full">
         {/* Main itinerary panel */}
         <div className="flex-1 overflow-y-auto">
-          <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8">
+          <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 md:py-8">
             {/* Header */}
-            <div className="flex items-center justify-between mb-8">
+            <div className="flex items-center justify-between mb-6 md:mb-8">
               <div>
-                <h1 className="text-2xl font-bold text-gray-900">Plan</h1>
+                <h1 className="text-xl md:text-2xl font-bold text-gray-900">Plan</h1>
                 <p className="text-gray-500 text-sm mt-0.5">{items.length} items planned</p>
               </div>
               <div className="flex items-center gap-2">
                 <CalendarExportButton tripId={tripId} />
 
-                {/* View toggle */}
-                <div className="flex items-center bg-gray-100 rounded-xl p-0.5">
-                  <button
-                    onClick={() => setViewMode("events")}
-                    className={cn(
-                      "flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg transition-colors",
-                      viewMode === "events"
-                        ? "bg-white text-gray-900 shadow-sm"
-                        : "text-gray-500 hover:text-gray-700"
-                    )}
-                  >
-                    <LayoutList className="w-4 h-4" />
-                    <span className="hidden sm:inline">Events</span>
-                  </button>
-                  <button
-                    onClick={() => setViewMode("timeline")}
-                    className={cn(
-                      "flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg transition-colors",
-                      viewMode === "timeline"
-                        ? "bg-white text-gray-900 shadow-sm"
-                        : "text-gray-500 hover:text-gray-700"
-                    )}
-                  >
-                    <CalendarClock className="w-4 h-4" />
-                    <span className="hidden sm:inline">Timeline</span>
-                  </button>
-                </div>
-
                 {/* Auto-plan button */}
                 <button
                   onClick={handleAutoPlan}
                   disabled={optimizing}
-                  className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-violet-600 to-indigo-600 text-white text-sm font-medium rounded-xl hover:from-violet-700 hover:to-indigo-700 disabled:opacity-50 transition-all shadow-sm"
+                  className="flex items-center gap-2 px-3 md:px-4 py-2 md:py-2.5 bg-gradient-to-r from-violet-600 to-indigo-600 text-white text-sm font-medium rounded-xl hover:from-violet-700 hover:to-indigo-700 disabled:opacity-50 transition-all shadow-sm"
                 >
                   <Sparkles className="w-4 h-4" />
-                  {optimizing ? "Planning..." : "Auto-plan"}
+                  <span className="hidden sm:inline">{optimizing ? "Planning..." : "Auto-plan"}</span>
+                  <span className="sm:hidden">{optimizing ? "..." : "Plan"}</span>
                 </button>
               </div>
             </div>
@@ -1484,211 +705,21 @@ export function ItineraryView({
               />
             )}
 
-            {/* Timeline view */}
-            {viewMode === "timeline" ? (
-              <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden p-4">
-                <TimelineView
-                  days={allDays}
-                  onResizeItem={handleTimelineResize}
-                  onMoveItem={handleTimelineMove}
-                  onDropFromWishlist={handleTimelineWishlistDrop}
-                  onMoveToWishlist={handleReturnToWishlist}
-                  onMoveToDay={handleTimelineMoveToDay}
-                  wishlistItems={wishlist}
-                  hotels={hotels}
-                />
-              </div>
-            ) : (
-              /* Events view (day list) */
-              <div className="space-y-6">
-                {allDays.map((day, dayIdx) => {
-                  const isCollapsed = collapsedDays.has(day.dateStr)
-                  const dayWeather = weatherByDate.get(day.dateStr)
-                  const hotel = getHotelForDate(day.dateStr)
-                  const freeTimeBlocks = showFreeTime
-                    ? computeFreeTimeBlocks(day.items, minGapHours * 60).map((b) => ({
-                        ...b,
-                        date: day.dateStr,
-                      }))
-                    : []
-
-                  return (
-                    <DroppableDayZone key={day.dateStr} dateStr={day.dateStr}>
-                      <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden">
-                        {/* Day header */}
-                        <button
-                          onClick={() => toggleDay(day.dateStr)}
-                          className="w-full flex items-center justify-between px-5 py-4 hover:bg-gray-50 transition-colors"
-                        >
-                          <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-xl bg-indigo-50 flex flex-col items-center justify-center">
-                              <span className="text-[10px] text-indigo-500 font-medium leading-none">
-                                {formatDate(day.date, "EEE")}
-                              </span>
-                              <span className="text-lg font-bold text-indigo-700 leading-none">
-                                {formatDate(day.date, "d")}
-                              </span>
-                            </div>
-                            <div className="text-left">
-                              <div className="font-semibold text-gray-900 text-sm flex items-center gap-1.5">
-                                <span>Day {dayIdx + 1} · {formatDate(day.date, "MMMM d, yyyy")}</span>
-                                {dayWeather && (
-                                  <span className="inline-flex items-center gap-1 text-xs font-normal text-gray-500 ml-1">
-                                    <span>{dayWeather.emoji}</span>
-                                    <span>{dayWeather.highTemp}&deg;/{dayWeather.lowTemp}&deg;</span>
-                                  </span>
-                                )}
-                              </div>
-                              <div className="text-xs text-gray-500">
-                                {day.items.length} item{day.items.length !== 1 ? "s" : ""}
-                              </div>
-                            </div>
-                          </div>
-                          {isCollapsed ? (
-                            <ChevronDown className="w-4 h-4 text-gray-400" />
-                          ) : (
-                            <ChevronUp className="w-4 h-4 text-gray-400" />
-                          )}
-                        </button>
-
-                        {/* Day items */}
-                        {!isCollapsed && (
-                          <div className="px-5 pb-4">
-                            {day.items.length === 0 && !showFreeTime && (
-                              <div className="text-center py-6 text-gray-400 text-sm">
-                                No items yet — drag from wishlist or add one below
-                              </div>
-                            )}
-                            <SortableContext
-                              items={day.items.map((i) => i.id)}
-                              strategy={verticalListSortingStrategy}
-                            >
-                              <div className="space-y-0 mb-3">
-                                {/* Free time before first item */}
-                                {showFreeTime && freeTimeBlocks
-                                  .filter((b) => b.afterItemIndex === -1)
-                                  .map((block, bi) => (
-                                    <FreeTimeBlockCard
-                                      key={`free-pre-${bi}`}
-                                      block={block}
-                                      onAddActivity={(startTime) => {
-                                        setAddingToDay(day.dateStr)
-                                        setNewItemForm((f) => ({ ...f, startTime }))
-                                      }}
-                                      wishlistItems={wishlist}
-                                      onQuickAddFromWishlist={(activityId, startTime) =>
-                                        handleQuickAddFromWishlist(activityId, startTime, day.dateStr)
-                                      }
-                                    />
-                                  ))}
-
-                                {day.items.map((item, i) => (
-                                  <div key={item.id}>
-                                    <SortableItineraryItem
-                                      item={item}
-                                      prevItem={i > 0 ? day.items[i - 1] : null}
-                                      nextItem={i < day.items.length - 1 ? day.items[i + 1] : null}
-                                      isFirst={i === 0}
-                                      isLast={i === day.items.length - 1}
-                                      onDelete={handleDelete}
-                                      tripId={tripId}
-                                      onUpdateNotes={handleUpdateNotes}
-                                      hotel={hotel}
-                                    />
-
-                                    {/* Free time after this item */}
-                                    {showFreeTime && freeTimeBlocks
-                                      .filter((b) => b.afterItemIndex === i)
-                                      .map((block, bi) => (
-                                        <FreeTimeBlockCard
-                                          key={`free-${i}-${bi}`}
-                                          block={block}
-                                          onAddActivity={(startTime) => {
-                                            setAddingToDay(day.dateStr)
-                                            setNewItemForm((f) => ({ ...f, startTime }))
-                                          }}
-                                          wishlistItems={wishlist}
-                                          onQuickAddFromWishlist={(activityId, startTime) =>
-                                            handleQuickAddFromWishlist(activityId, startTime, day.dateStr)
-                                          }
-                                        />
-                                      ))}
-                                  </div>
-                                ))}
-                              </div>
-                            </SortableContext>
-
-                            {/* Add item inline form */}
-                            {addingToDay === day.dateStr ? (
-                              <div className="bg-gray-50 rounded-xl p-3 space-y-2 mt-2">
-                                <input
-                                  type="text"
-                                  placeholder="Item title *"
-                                  value={newItemForm.title}
-                                  onChange={(e) => setNewItemForm((f) => ({ ...f, title: e.target.value }))}
-                                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                                  autoFocus
-                                />
-                                <div className="flex gap-2">
-                                  <select
-                                    value={newItemForm.type}
-                                    onChange={(e) => setNewItemForm((f) => ({ ...f, type: e.target.value }))}
-                                    className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
-                                  >
-                                    <option value="CUSTOM">Custom</option>
-                                    <option value="ACTIVITY">Activity</option>
-                                    <option value="MEAL">Meal</option>
-                                    <option value="TRANSIT">Transit</option>
-                                    <option value="BUFFER">Buffer</option>
-                                  </select>
-                                  <input
-                                    type="time"
-                                    value={newItemForm.startTime}
-                                    onChange={(e) => setNewItemForm((f) => ({ ...f, startTime: e.target.value }))}
-                                    className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                                  />
-                                  <input
-                                    type="number"
-                                    placeholder="Min"
-                                    value={newItemForm.durationMins}
-                                    onChange={(e) =>
-                                      setNewItemForm((f) => ({ ...f, durationMins: parseInt(e.target.value) || 60 }))
-                                    }
-                                    className="w-16 px-2 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                                  />
-                                </div>
-                                <div className="flex gap-2">
-                                  <button
-                                    onClick={() => setAddingToDay(null)}
-                                    className="flex-1 py-2 border border-gray-200 text-gray-600 text-sm rounded-lg hover:bg-gray-100 transition-colors"
-                                  >
-                                    Cancel
-                                  </button>
-                                  <button
-                                    onClick={() => handleAddItem(day.dateStr)}
-                                    className="flex-1 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 transition-colors"
-                                  >
-                                    Add
-                                  </button>
-                                </div>
-                              </div>
-                            ) : (
-                              <button
-                                onClick={() => setAddingToDay(day.dateStr)}
-                                className="flex items-center gap-2 text-xs text-gray-400 hover:text-indigo-600 transition-colors mt-1"
-                              >
-                                <Plus className="w-3.5 h-3.5" />
-                                Add item
-                              </button>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    </DroppableDayZone>
-                  )
-                })}
-              </div>
-            )}
+            {/* Timeline view - now the only view */}
+            <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden p-2 md:p-4">
+              <TimelineView
+                days={allDays}
+                onResizeItem={handleTimelineResize}
+                onMoveItem={handleTimelineMove}
+                onDropFromWishlist={handleTimelineWishlistDrop}
+                onMoveToWishlist={handleReturnToWishlist}
+                onMoveToDay={handleTimelineMoveToDay}
+                onAddFromWishlist={handleAddFromWishlistViaPopover}
+                onAddCustom={handleAddCustomViaPopover}
+                wishlistItems={wishlist}
+                hotels={hotels}
+              />
+            </div>
           </div>
         </div>
 

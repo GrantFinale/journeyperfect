@@ -94,11 +94,15 @@ type OverlapLayout = {
   totalColumns: number
 }
 
-function computeOverlapLayout(items: ItineraryItem[], previewDurations?: Map<string, number>): OverlapLayout[] {
-  // Filter to only items with start times and sort by start
+function computeOverlapLayout(items: ItineraryItem[], previewDurations?: Map<string, number>, previewStartTimes?: Map<string, number>): OverlapLayout[] {
+  // Filter to only items with start times and sort by start (using preview start times when available)
   const timed = items
     .filter((item) => item.startTime)
-    .sort((a, b) => timeToMinutes(a.startTime!) - timeToMinutes(b.startTime!))
+    .sort((a, b) => {
+      const aStart = previewStartTimes?.get(a.id) ?? timeToMinutes(a.startTime!)
+      const bStart = previewStartTimes?.get(b.id) ?? timeToMinutes(b.startTime!)
+      return aStart - bStart
+    })
 
   if (timed.length === 0) return []
 
@@ -113,15 +117,15 @@ function computeOverlapLayout(items: ItineraryItem[], previewDurations?: Map<str
   while (groupStart < timed.length) {
     // Find all items in the current overlap cluster
     const group: ItineraryItem[] = [timed[groupStart]]
-    let maxEnd = getItemEnd(timed[groupStart], previewDurations)
+    let maxEnd = getItemEnd(timed[groupStart], previewDurations, previewStartTimes)
     let groupEnd = groupStart + 1
 
     while (groupEnd < timed.length) {
-      const itemStart = timeToMinutes(timed[groupEnd].startTime!)
+      const itemStart = previewStartTimes?.get(timed[groupEnd].id) ?? timeToMinutes(timed[groupEnd].startTime!)
       if (itemStart < maxEnd) {
         // Overlaps with the group
         group.push(timed[groupEnd])
-        maxEnd = Math.max(maxEnd, getItemEnd(timed[groupEnd], previewDurations))
+        maxEnd = Math.max(maxEnd, getItemEnd(timed[groupEnd], previewDurations, previewStartTimes))
         groupEnd++
       } else {
         break
@@ -132,7 +136,7 @@ function computeOverlapLayout(items: ItineraryItem[], previewDurations?: Map<str
     const columns: { end: number }[] = []
 
     for (const item of group) {
-      const start = timeToMinutes(item.startTime!)
+      const start = previewStartTimes?.get(item.id) ?? timeToMinutes(item.startTime!)
 
       // Find the first column where this item fits (doesn't overlap)
       let col = -1
@@ -146,9 +150,9 @@ function computeOverlapLayout(items: ItineraryItem[], previewDurations?: Map<str
       if (col === -1) {
         // Need a new column
         col = columns.length
-        columns.push({ end: getItemEnd(item, previewDurations) })
+        columns.push({ end: getItemEnd(item, previewDurations, previewStartTimes) })
       } else {
-        columns[col].end = getItemEnd(item, previewDurations)
+        columns[col].end = getItemEnd(item, previewDurations, previewStartTimes)
       }
 
       itemColumns.set(item.id, col)
@@ -170,10 +174,10 @@ function computeOverlapLayout(items: ItineraryItem[], previewDurations?: Map<str
   return result
 }
 
-function getItemEnd(item: ItineraryItem, previewDurations?: Map<string, number>): number {
+function getItemEnd(item: ItineraryItem, previewDurations?: Map<string, number>, previewStartTimes?: Map<string, number>): number {
   const duration = previewDurations?.get(item.id) ?? item.durationMins
-  if (item.endTime && !previewDurations?.has(item.id)) return timeToMinutes(item.endTime)
-  return timeToMinutes(item.startTime!) + duration
+  const startMins = previewStartTimes?.get(item.id) ?? timeToMinutes(item.startTime!)
+  return startMins + duration
 }
 
 // ─── Droppable Hour Slot ─────────────────────────────────────────────────
@@ -272,6 +276,7 @@ function TimelineItem({
   onDragMove,
   onContextMenu,
   onPreviewChange,
+  onPreviewStartChange,
 }: {
   item: ItineraryItem
   column: number
@@ -280,6 +285,7 @@ function TimelineItem({
   onDragMove: (itemId: string, newStartTime: string, newDurationMins: number) => void
   onContextMenu: (e: React.MouseEvent, item: ItineraryItem) => void
   onPreviewChange?: (itemId: string, previewDuration: number | null) => void
+  onPreviewStartChange?: (itemId: string, previewStartMins: number | null) => void
 }) {
   const [resizing, setResizing] = useState(false)
   const [dragging, setDragging] = useState(false)
@@ -357,6 +363,7 @@ function TimelineItem({
     const deltaMins = (deltaY / HOUR_HEIGHT) * 60
     const newStart = snapToGrid(Math.max(HOUR_START * 60, Math.min(HOUR_END * 60 - item.durationMins, dragRef.current.startMins + deltaMins)))
     setPreviewStartMins(newStart)
+    onPreviewStartChange?.(item.id, newStart)
   }
 
   function handleDragPointerUp(e: React.PointerEvent) {
@@ -370,6 +377,7 @@ function TimelineItem({
     }
     setDragging(false)
     setPreviewStartMins(null)
+    onPreviewStartChange?.(item.id, null)
     dragRef.current = null
   }
 
@@ -409,11 +417,7 @@ function TimelineItem({
           {formatTime(minutesToTime(startMins))} · {formatDuration(currentDuration)}
         </p>
       )}
-      {height > 50 && totalColumns > 1 && (
-        <p className="text-[8px] opacity-50 mt-0.5">
-          Col {column + 1}/{totalColumns}
-        </p>
-      )}
+
 
       {/* Duration change indicator */}
       {showDurationLabel && (
@@ -511,6 +515,8 @@ function TimelineDay({
 
   // Track preview durations from items being actively resized
   const [previewDurations, setPreviewDurations] = useState<Map<string, number>>(new Map())
+  // Track preview start times from items being actively dragged
+  const [previewStartTimes, setPreviewStartTimes] = useState<Map<string, number>>(new Map())
 
   const handlePreviewChange = useCallback((itemId: string, previewDuration: number | null) => {
     setPreviewDurations(prev => {
@@ -524,10 +530,26 @@ function TimelineDay({
     })
   }, [])
 
+  const handlePreviewStartChange = useCallback((itemId: string, previewStartMins: number | null) => {
+    setPreviewStartTimes(prev => {
+      const next = new Map(prev)
+      if (previewStartMins == null) {
+        next.delete(itemId)
+      } else {
+        next.set(itemId, previewStartMins)
+      }
+      return next
+    })
+  }, [])
+
   // Compute overlap layout for this day's items, using preview durations for active resizes
   const layoutItems = useMemo(
-    () => computeOverlapLayout(day.items, previewDurations.size > 0 ? previewDurations : undefined),
-    [day.items, previewDurations]
+    () => computeOverlapLayout(
+      day.items,
+      previewDurations.size > 0 ? previewDurations : undefined,
+      previewStartTimes.size > 0 ? previewStartTimes : undefined
+    ),
+    [day.items, previewDurations, previewStartTimes]
   )
 
   // Build droppable hour slots
@@ -591,6 +613,7 @@ function TimelineDay({
               onDragMove={onDragMove}
               onContextMenu={onContextMenu}
               onPreviewChange={handlePreviewChange}
+              onPreviewStartChange={handlePreviewStartChange}
             />
           )
         })}
@@ -617,8 +640,10 @@ function TimelineDay({
 
             // Only show travel connectors when both items are in single-column groups
             // (no overlap) or when this is the last item in one group and next is in a different group
-            const itemEnd = getItemEnd(item, previewDurations.size > 0 ? previewDurations : undefined)
-            const nextStart = timeToMinutes(nextItem.startTime!)
+            const activePreviews = previewDurations.size > 0 ? previewDurations : undefined
+            const activeStartPreviews = previewStartTimes.size > 0 ? previewStartTimes : undefined
+            const itemEnd = getItemEnd(item, activePreviews, activeStartPreviews)
+            const nextStart = activeStartPreviews?.get(nextItem.id) ?? timeToMinutes(nextItem.startTime!)
 
             // Skip if items actually overlap in time
             if (nextStart < itemEnd) return null
@@ -627,11 +652,8 @@ function TimelineDay({
             // (they're concurrent, not sequential)
             if (itemLayout && nextLayout && itemLayout.totalColumns > 1 && nextLayout.totalColumns > 1) {
               // Check if they're in the same overlap group by seeing if they share the same totalColumns
-              // and are adjacent in the sorted list with overlapping times using stored durations
-              const storedEnd = item.endTime
-                ? timeToMinutes(item.endTime)
-                : timeToMinutes(item.startTime!) + item.durationMins
-              if (nextStart < storedEnd) return null
+              // and are adjacent in the sorted list with overlapping times
+              if (nextStart < itemEnd) return null
             }
 
             const fromLat = item.activity?.lat || item.hotel?.lat

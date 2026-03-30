@@ -315,6 +315,7 @@ model Activity {
   isFixed           Boolean        @default(false)
   fixedDateTime     DateTime?
   indoorOutdoor     IndoorOutdoor  @default(BOTH)
+  confirmationNumber String?
   reservationNeeded Boolean        @default(false)
   bookingLink       String?
   websiteUrl        String?
@@ -366,6 +367,7 @@ model ItineraryItem {
   flight    Flight?    @relation(fields: [flightId], references: [id], onDelete: SetNull)
   hotel     Hotel?     @relation(fields: [hotelId], references: [id], onDelete: SetNull)
   rentalCar RentalCar? @relation(fields: [rentalCarId], references: [id], onDelete: SetNull)
+  reservation Reservation?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -676,6 +678,36 @@ model DismissedPlace {
 
   @@unique([tripId, googlePlaceId])
   @@index([tripId])
+}
+
+// ─── Reservations ──────────────────────────────────────────────────────────
+
+model Reservation {
+  id                 String            @id @default(cuid())
+  itineraryItemId    String            @unique
+  confirmationNumber String?
+  provider           String?
+  bookingUrl         String?
+  partySize          Int?
+  specialRequests    String?
+  price              Float?
+  currency           String            @default("USD")
+  status             ReservationStatus @default(CONFIRMED)
+  notes              String?
+
+  itineraryItem      ItineraryItem     @relation(fields: [itineraryItemId], references: [id], onDelete: Cascade)
+
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  @@index([itineraryItemId])
+}
+
+enum ReservationStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  WAITLISTED
 }
 
 enum BudgetCategory {

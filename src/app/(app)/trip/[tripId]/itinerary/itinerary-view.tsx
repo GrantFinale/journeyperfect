@@ -79,6 +79,18 @@ type ItineraryItem = {
     name: string
   } | null
   activityId?: string | null
+  reservation?: {
+    id: string
+    confirmationNumber: string | null
+    provider: string | null
+    bookingUrl: string | null
+    partySize: number | null
+    specialRequests: string | null
+    price: number | null
+    currency: string
+    status: string
+    notes: string | null
+  } | null
 }
 
 type HotelInfo = {
@@ -740,6 +752,7 @@ export function ItineraryView({
             {/* Timeline view - now the only view */}
             <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden p-2 md:p-4">
               <TimelineView
+                tripId={tripId}
                 days={allDays}
                 onResizeItem={handleTimelineResize}
                 onMoveItem={handleTimelineMove}

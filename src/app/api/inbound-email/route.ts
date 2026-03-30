@@ -560,7 +560,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Process restaurant reservations (create as Activity)
+    // Process restaurant reservations (create as Activity + ItineraryItem + Reservation)
     if (detectedTypes.includes("restaurant")) {
       try {
         const restaurants = await parseRestaurantWithAI(fullContent, userId)
@@ -572,26 +572,101 @@ export async function POST(request: NextRequest) {
                 ? new Date(`${r.date}T12:00:00`)
                 : null
 
-            await prisma.activity.create({
-              data: {
-                tripId: trip.id,
-                name: r.name || "Restaurant reservation",
-                description: [
-                  r.confirmationNumber ? `Confirmation: ${r.confirmationNumber}` : null,
-                  r.partySize ? `Party size: ${r.partySize}` : null,
-                  r.notes || null,
-                ].filter(Boolean).join("\n"),
-                address: r.address,
-                category: "restaurant",
-                durationMins: 90,
-                priority: "HIGH",
-                isFixed: !!dateTime,
-                fixedDateTime: dateTime,
-                indoorOutdoor: "INDOOR",
-                reservationNeeded: true,
-              },
-            })
-            results.push(`Restaurant: ${r.name || "reservation"}`)
+            // Try to find an existing matching itinerary item
+            let matchedItineraryItemId: string | null = null
+            if (r.name) {
+              const nameLower = r.name.toLowerCase()
+              const existingItems = await prisma.itineraryItem.findMany({
+                where: {
+                  tripId: trip.id,
+                  ...(r.date ? {
+                    date: {
+                      gte: new Date(`${r.date}T00:00:00Z`),
+                      lte: new Date(new Date(`${r.date}T00:00:00Z`).getTime() + 2 * 86400000),
+                    },
+                  } : {}),
+                },
+                include: { activity: true, reservation: true },
+              })
+              for (const ei of existingItems) {
+                if (ei.reservation) continue // already has a reservation
+                const titleMatch = ei.title.toLowerCase().includes(nameLower) || nameLower.includes(ei.title.toLowerCase())
+                const activityMatch = ei.activity && (
+                  ei.activity.name.toLowerCase().includes(nameLower) || nameLower.includes(ei.activity.name.toLowerCase())
+                )
+                if (titleMatch || activityMatch) {
+                  matchedItineraryItemId = ei.id
+                  break
+                }
+              }
+            }
+
+            if (matchedItineraryItemId) {
+              // Create reservation linked to existing item
+              await prisma.reservation.create({
+                data: {
+                  itineraryItemId: matchedItineraryItemId,
+                  confirmationNumber: r.confirmationNumber,
+                  provider: r.name || undefined,
+                  partySize: r.partySize,
+                  specialRequests: r.notes,
+                  status: "CONFIRMED",
+                },
+              })
+              results.push(`Restaurant reservation: ${r.name || "reservation"} (linked to existing)`)
+            } else {
+              // Create Activity + ItineraryItem + Reservation
+              const activity = await prisma.activity.create({
+                data: {
+                  tripId: trip.id,
+                  name: r.name || "Restaurant reservation",
+                  description: r.notes || undefined,
+                  address: r.address,
+                  category: "restaurant",
+                  durationMins: 90,
+                  priority: "HIGH",
+                  isFixed: !!dateTime,
+                  fixedDateTime: dateTime,
+                  indoorOutdoor: "INDOOR",
+                  reservationNeeded: true,
+                  confirmationNumber: r.confirmationNumber,
+                  status: "SCHEDULED",
+                },
+              })
+
+              const localDate = r.date ? new Date(`${r.date}T00:00:00Z`) : new Date()
+              const localTime = r.time || "19:00"
+              const endMins = (parseInt(localTime.split(":")[0]) * 60 + parseInt(localTime.split(":")[1])) + 90
+              const endTime = `${Math.floor(endMins / 60).toString().padStart(2, "0")}:${(endMins % 60).toString().padStart(2, "0")}`
+
+              const itineraryItem = await prisma.itineraryItem.create({
+                data: {
+                  tripId: trip.id,
+                  activityId: activity.id,
+                  date: localDate,
+                  startTime: localTime,
+                  endTime,
+                  type: "MEAL",
+                  title: r.name || "Restaurant reservation",
+                  durationMins: 90,
+                  position: 0,
+                  isConfirmed: true,
+                },
+              })
+
+              await prisma.reservation.create({
+                data: {
+                  itineraryItemId: itineraryItem.id,
+                  confirmationNumber: r.confirmationNumber,
+                  provider: r.name || undefined,
+                  partySize: r.partySize,
+                  specialRequests: r.notes,
+                  status: "CONFIRMED",
+                },
+              })
+
+              results.push(`Restaurant: ${r.name || "reservation"}`)
+            }
           }
         }
       } catch (err) {
@@ -599,7 +674,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Process event tickets (create as Activity)
+    // Process event tickets (create as Activity + ItineraryItem + Reservation)
     // Skip if this email was also detected as a flight — flight emails often
     // contain "e-ticket" or "ticket confirmation" which triggers event detection
     if (detectedTypes.includes("event") && !detectedTypes.includes("flight")) {
@@ -613,29 +688,108 @@ export async function POST(request: NextRequest) {
                 ? new Date(`${e.date}T19:00:00`)
                 : null
 
-            await prisma.activity.create({
-              data: {
-                tripId: trip.id,
-                name: e.name || "Event",
-                description: [
-                  e.venue ? `Venue: ${e.venue}` : null,
-                  e.seatInfo ? `Seats: ${e.seatInfo}` : null,
-                  e.confirmationNumber ? `Confirmation: ${e.confirmationNumber}` : null,
-                  e.ticketCount ? `Tickets: ${e.ticketCount}` : null,
-                  e.notes || null,
-                ].filter(Boolean).join("\n"),
-                address: e.venueAddress,
-                category: "event",
-                durationMins: 180,
-                costPerAdult: e.price || 0,
-                priority: "MUST_DO",
-                isFixed: !!dateTime,
-                fixedDateTime: dateTime,
-                indoorOutdoor: "INDOOR",
-                reservationNeeded: false,
-              },
-            })
-            results.push(`Event: ${e.name || "ticket"}`)
+            // Try to find an existing matching itinerary item
+            let matchedItineraryItemId: string | null = null
+            if (e.name) {
+              const nameLower = e.name.toLowerCase()
+              const existingItems = await prisma.itineraryItem.findMany({
+                where: {
+                  tripId: trip.id,
+                  ...(e.date ? {
+                    date: {
+                      gte: new Date(`${e.date}T00:00:00Z`),
+                      lte: new Date(new Date(`${e.date}T00:00:00Z`).getTime() + 2 * 86400000),
+                    },
+                  } : {}),
+                },
+                include: { activity: true, reservation: true },
+              })
+              for (const ei of existingItems) {
+                if (ei.reservation) continue
+                const titleMatch = ei.title.toLowerCase().includes(nameLower) || nameLower.includes(ei.title.toLowerCase())
+                const activityMatch = ei.activity && (
+                  ei.activity.name.toLowerCase().includes(nameLower) || nameLower.includes(ei.activity.name.toLowerCase())
+                )
+                if (titleMatch || activityMatch) {
+                  matchedItineraryItemId = ei.id
+                  break
+                }
+              }
+            }
+
+            if (matchedItineraryItemId) {
+              await prisma.reservation.create({
+                data: {
+                  itineraryItemId: matchedItineraryItemId,
+                  confirmationNumber: e.confirmationNumber,
+                  provider: e.venue || e.name || undefined,
+                  partySize: e.ticketCount,
+                  price: e.price,
+                  currency: e.priceCurrency || "USD",
+                  notes: [e.seatInfo ? `Seats: ${e.seatInfo}` : null, e.notes].filter(Boolean).join("\n") || undefined,
+                  status: "CONFIRMED",
+                },
+              })
+              results.push(`Event reservation: ${e.name || "ticket"} (linked to existing)`)
+            } else {
+              const activity = await prisma.activity.create({
+                data: {
+                  tripId: trip.id,
+                  name: e.name || "Event",
+                  description: [
+                    e.venue ? `Venue: ${e.venue}` : null,
+                    e.seatInfo ? `Seats: ${e.seatInfo}` : null,
+                    e.notes || null,
+                  ].filter(Boolean).join("\n") || undefined,
+                  address: e.venueAddress,
+                  category: "event",
+                  durationMins: 180,
+                  costPerAdult: e.price || 0,
+                  priority: "MUST_DO",
+                  isFixed: !!dateTime,
+                  fixedDateTime: dateTime,
+                  indoorOutdoor: "INDOOR",
+                  reservationNeeded: false,
+                  confirmationNumber: e.confirmationNumber,
+                  status: "SCHEDULED",
+                },
+              })
+
+              const localDate = e.date ? new Date(`${e.date}T00:00:00Z`) : new Date()
+              const localTime = e.time || "19:00"
+              const endMins = (parseInt(localTime.split(":")[0]) * 60 + parseInt(localTime.split(":")[1])) + 180
+              const endTime = `${Math.floor(endMins / 60).toString().padStart(2, "0")}:${(endMins % 60).toString().padStart(2, "0")}`
+
+              const itineraryItem = await prisma.itineraryItem.create({
+                data: {
+                  tripId: trip.id,
+                  activityId: activity.id,
+                  date: localDate,
+                  startTime: localTime,
+                  endTime,
+                  type: "ACTIVITY",
+                  title: e.name || "Event",
+                  durationMins: 180,
+                  position: 0,
+                  isConfirmed: true,
+                },
+              })
+
+              await prisma.reservation.create({
+                data: {
+                  itineraryItemId: itineraryItem.id,
+                  confirmationNumber: e.confirmationNumber,
+                  provider: e.venue || e.name || undefined,
+                  partySize: e.ticketCount,
+                  price: e.price,
+                  currency: e.priceCurrency || "USD",
+                  notes: [e.seatInfo ? `Seats: ${e.seatInfo}` : null, e.notes].filter(Boolean).join("\n") || undefined,
+                  status: "CONFIRMED",
+                },
+              })
+
+              results.push(`Event: ${e.name || "ticket"}`)
+            }
           }
         }
       } catch (err) {
@@ -647,11 +801,12 @@ export async function POST(request: NextRequest) {
       `[inbound-email] Processed for user ${userId}, trip ${trip.id}: ${results.join(", ") || "nothing detected"}`
     )
 
-    // Send confirmation email back to the user
+    // Send confirmation email back to the user with deep link
     if (results.length > 0 && user.email) {
+      const tripLink = `https://journeyperfect.com/trip/${trip.id}/itinerary`
       const itemsSummary = results.length === 1
-        ? `Added ${results[0]} to your trip.`
-        : `Added ${results.length} items to your trip:\n${results.map(r => `- ${r}`).join("\n")}`
+        ? `Added ${results[0]} to your trip. <a href="${tripLink}">View itinerary</a>`
+        : `Added ${results.length} items to your trip:\n${results.map(r => `- ${r}`).join("\n")}\n\n<a href="${tripLink}">View itinerary</a>`
 
       // Fire and forget - don't block the response
       sendInboundConfirmation(user.email, itemsSummary, trip.title || trip.destination || "your trip").catch(

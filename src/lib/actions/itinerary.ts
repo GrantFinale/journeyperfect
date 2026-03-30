@@ -40,6 +40,7 @@ export async function getItinerary(tripId: string) {
       flight: true,
       hotel: true,
       rentalCar: true,
+      reservation: true,
     },
     orderBy: [{ date: "asc" }, { position: "asc" }, { startTime: "asc" }],
   })

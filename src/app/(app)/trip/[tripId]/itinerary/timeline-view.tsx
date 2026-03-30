@@ -7,6 +7,7 @@ import type { GroupedDay } from "@/lib/itinerary-utils"
 import { calculateTravel } from "./travel-connector"
 import { useDroppable, useDraggable } from "@dnd-kit/core"
 import type { WishlistActivity } from "./wishlist-panel"
+import type { DayForecast } from "@/lib/weather"
 import { CalendarDays, ArrowRight, X, MapPin, Plus, ChevronLeft, ChevronRight, Copy, Check, ExternalLink, Ticket, Pencil, Trash2, Loader2, Clock } from "lucide-react"
 import { createReservation, updateReservation, deleteReservation } from "@/lib/actions/reservations"
 import type { ReservationInput } from "@/lib/actions/reservations"
@@ -985,7 +986,7 @@ function TimelineItem({
   const endMins = startMins + currentDuration
   const endTimeStr = minutesToTime(endMins)
 
-  // Resize handlers
+  // Resize handlers — stopPropagation prevents interfering with card-level DnD listeners
   function handleResizePointerDown(e: React.PointerEvent) {
     if (isFixed) return
     e.stopPropagation()
@@ -997,6 +998,7 @@ function TimelineItem({
 
   function handleResizePointerMove(e: React.PointerEvent) {
     if (!resizing || !resizeRef.current) return
+    e.stopPropagation()
     e.preventDefault()
     const deltaY = e.clientY - resizeRef.current.startY
     const deltaMins = (deltaY / hourHeight) * 60
@@ -1007,6 +1009,7 @@ function TimelineItem({
 
   function handleResizePointerUp(e: React.PointerEvent) {
     if (!resizing) return
+    e.stopPropagation()
     ;(e.target as HTMLElement).releasePointerCapture(e.pointerId)
     setResizing(false)
     if (previewDuration != null && previewDuration !== item.durationMins) {
@@ -1087,13 +1090,14 @@ function TimelineItem({
       )
     }
 
-    // HOTEL items
+    // HOTEL items — strip leading 🏨 from title since we render it separately
     if (item.type === "HOTEL_CHECK_IN" || item.type === "HOTEL_CHECK_OUT") {
+      const hotelTitle = item.title.replace(/^\uD83C\uDFE8\s*/, "")
       return (
         <div className="flex flex-col h-full overflow-hidden">
           <div className="flex items-center gap-1.5 min-w-0">
             <span className="text-xs shrink-0">{"\uD83C\uDFE8"}</span>
-            <p className="text-[11px] font-semibold truncate leading-tight">{item.title}</p>
+            <p className="text-[11px] font-semibold truncate leading-tight">{hotelTitle}</p>
           </div>
           {isLarge && (
             <>
@@ -1231,6 +1235,7 @@ function TimelineItem({
           height: Math.min(height, (TOTAL_HOURS * hourHeight) - top),
           left: `calc(${leftPercent}% + ${leftPx + 4}px)`,
           width: `calc(${widthPercent}% - ${leftPx + rightPx + 8}px)`,
+          touchAction: isDndDragging || resizing ? "none" : "auto",
         }}
         title={`${item.title} (${formatTime(item.startTime!)}${item.endTime ? ` - ${formatTime(item.endTime)}` : ""}, ${formatDuration(currentDuration)})`}
         onContextMenu={!isFixed ? handleContextMenuEvent : undefined}
@@ -1241,10 +1246,10 @@ function TimelineItem({
           {renderCardContent()}
         </div>
 
-        {/* Hover unschedule button for non-fixed items */}
+        {/* Unschedule button: always visible on mobile, hover on desktop */}
         {!isFixed && onMoveToWishlist && (
           <button
-            className="absolute top-0.5 right-0.5 w-5 h-5 rounded-full bg-white/90 hover:bg-red-100 text-gray-400 hover:text-red-600 opacity-0 group-hover/timeline-item:opacity-100 transition-all flex items-center justify-center z-10 shadow-sm"
+            className="absolute top-0.5 right-0.5 w-5 h-5 rounded-full bg-white/90 hover:bg-red-100 text-gray-400 hover:text-red-600 opacity-100 md:opacity-0 md:group-hover/timeline-item:opacity-100 transition-all flex items-center justify-center z-10 shadow-sm"
             title="Remove from plan"
             onClick={(e) => {
               e.stopPropagation()
@@ -1718,12 +1723,23 @@ function MobileDaySelector({
   days,
   selectedIdx,
   onSelect,
+  forecasts,
 }: {
   days: GroupedDay<ItineraryItem>[]
   selectedIdx: number
   onSelect: (idx: number) => void
+  forecasts?: DayForecast[]
 }) {
   const scrollRef = useRef<HTMLDivElement>(null)
+
+  // Build a lookup from date string to forecast
+  const forecastMap = useMemo(() => {
+    const map = new Map<string, DayForecast>()
+    if (forecasts) {
+      for (const f of forecasts) map.set(f.date, f)
+    }
+    return map
+  }, [forecasts])
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -1743,20 +1759,26 @@ function MobileDaySelector({
       {days.map((day, i) => {
         const dayDate = new Date(day.date)
         const weekday = dayDate.toLocaleDateString("en-US", { weekday: "short" })
-        const dayNum = dayDate.getDate()
+        const monthDay = dayDate.toLocaleDateString("en-US", { month: "short", day: "numeric" })
+        const forecast = forecastMap.get(day.dateStr)
         return (
           <button
             key={day.dateStr}
             onClick={() => onSelect(i)}
             className={cn(
-              "flex flex-col items-center px-3 py-2 rounded-xl text-xs font-medium transition-all shrink-0 min-w-[52px]",
+              "flex flex-col items-center px-3 py-2 rounded-xl text-xs font-medium transition-all shrink-0 min-w-[64px]",
               i === selectedIdx
                 ? "bg-indigo-600 text-white shadow-md"
                 : "bg-gray-100 text-gray-600 hover:bg-gray-200"
             )}
           >
-            <span className="text-[10px] opacity-80">{weekday}</span>
-            <span className="text-sm font-bold">{dayNum}</span>
+            <span className="text-[10px] font-semibold">Day {i + 1}</span>
+            <span className="text-[9px] opacity-80">{weekday}, {monthDay}</span>
+            {forecast && (
+              <span className="text-[10px] mt-0.5">
+                {forecast.emoji} {forecast.highTemp}&deg;
+              </span>
+            )}
             <span className={cn(
               "text-[9px] mt-0.5",
               i === selectedIdx ? "opacity-80" : "opacity-50"
@@ -1794,6 +1816,7 @@ interface TimelineViewProps {
   onOpenCustomModal?: (dayStr: string, startTime: string) => void
   wishlistItems?: WishlistActivity[]
   hotels?: HotelInfo[]
+  forecasts?: DayForecast[]
 }
 
 export function TimelineView({
@@ -1808,6 +1831,7 @@ export function TimelineView({
   onOpenCustomModal,
   wishlistItems,
   hotels,
+  forecasts,
 }: TimelineViewProps) {
   const [contextMenu, setContextMenu] = useState<{
     item: ItineraryItem
@@ -1931,13 +1955,14 @@ export function TimelineView({
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
     >
-      {/* Mobile day selector */}
+      {/* Mobile day selector (includes weather when available) */}
       {mode === "mobile" && (
         <div className="mb-3">
           <MobileDaySelector
             days={days}
             selectedIdx={mobileSelectedDay}
             onSelect={setMobileSelectedDay}
+            forecasts={forecasts}
           />
         </div>
       )}

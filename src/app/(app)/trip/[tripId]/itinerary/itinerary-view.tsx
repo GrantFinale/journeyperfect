@@ -764,14 +764,27 @@ export function ItineraryView({
               </div>
             </div>
 
-            {/* Weather bar */}
+            {/* Weather bar — hidden on mobile since weather is integrated into day selector pills */}
             {weather && (
-              <WeatherBar
-                forecasts={weather.forecasts}
-                tripStart={weather.tripStart}
-                tripEnd={weather.tripEnd}
-                alerts={weather.alerts}
-              />
+              <div className="hidden md:block">
+                <WeatherBar
+                  forecasts={weather.forecasts}
+                  tripStart={weather.tripStart}
+                  tripEnd={weather.tripEnd}
+                  alerts={weather.alerts}
+                />
+              </div>
+            )}
+            {/* Weather alerts still shown on mobile */}
+            {weather && weather.alerts.length > 0 && (
+              <div className="md:hidden mb-4">
+                <WeatherBar
+                  forecasts={[]}
+                  tripStart={weather.tripStart}
+                  tripEnd={weather.tripEnd}
+                  alerts={weather.alerts}
+                />
+              </div>
             )}
 
             {/* Timeline view - now the only view */}
@@ -789,6 +802,7 @@ export function ItineraryView({
                 onOpenCustomModal={handleOpenCustomModal}
                 wishlistItems={wishlist}
                 hotels={hotels}
+                forecasts={weather?.forecasts}
               />
             </div>
           </div>
@@ -801,7 +815,14 @@ export function ItineraryView({
           onRemove={handleRemoveFromWishlist}
           onTogglePriority={handleTogglePriority}
           collapsed={sidebarCollapsed}
-          onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+          onToggleCollapse={() => {
+            const newCollapsed = !sidebarCollapsed
+            setSidebarCollapsed(newCollapsed)
+            // Force scroll recalculation after sidebar transition completes
+            requestAnimationFrame(() => {
+              window.dispatchEvent(new Event("resize"))
+            })
+          }}
           onAddCustom={() => setShowAddCustom(true)}
         />
       </div>

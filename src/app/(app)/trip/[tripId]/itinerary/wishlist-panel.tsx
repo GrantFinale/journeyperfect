@@ -195,7 +195,7 @@ export function WishlistPanel({
     <div
       className={cn(
         "border-l border-gray-200 bg-gray-50/50 flex flex-col transition-all duration-200 shrink-0 relative",
-        collapsed ? "w-0 overflow-visible" : "w-72 lg:w-80"
+        collapsed ? "w-0 overflow-visible border-l-0" : "w-72 lg:w-80"
       )}
     >
       {/* Toggle button */}

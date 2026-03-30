@@ -52,12 +52,12 @@ export function WeatherBar({ forecasts, tripStart, tripEnd, alerts }: WeatherBar
     setDismissedAlerts((prev) => new Set([...prev, id]))
   }
 
-  if (forecasts.length === 0) return null
+  if (forecasts.length === 0 && alerts.length === 0) return null
 
   return (
     <div className="mb-6">
       {/* Forecast day cards */}
-      <div className="overflow-x-auto -mx-4 sm:-mx-6 px-4 sm:px-6 pb-2">
+      {forecasts.length > 0 && <div className="overflow-x-auto -mx-4 sm:-mx-6 px-4 sm:px-6 pb-2">
         <div className="flex gap-2 min-w-min">
           {forecasts.map((day) => {
             const alertSeverity = hasAlertForDate(alerts, day.date)
@@ -104,7 +104,7 @@ export function WeatherBar({ forecasts, tripStart, tripEnd, alerts }: WeatherBar
             )
           })}
         </div>
-      </div>
+      </div>}
 
       {/* Alert banners */}
       {visibleAlerts.length > 0 && (

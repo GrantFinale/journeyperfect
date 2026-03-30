@@ -228,35 +228,6 @@ function getItemEnd(item: ItineraryItem, previewDurations?: Map<string, number>,
   return startMins + duration
 }
 
-// ─── Droppable Hour Slot ─────────────────────────────────────────────────
-
-function DroppableHourSlot({
-  dayStr,
-  hour,
-  hourHeight,
-}: {
-  dayStr: string
-  hour: number
-  hourHeight: number
-}) {
-  const timeStr = `${hour.toString().padStart(2, "0")}:00`
-  const { isOver, setNodeRef } = useDroppable({
-    id: `timeline-day-${dayStr}-${timeStr}`,
-    data: { type: "timeline-slot", dayStr, time: timeStr },
-  })
-
-  return (
-    <div
-      ref={setNodeRef}
-      className={cn(
-        "absolute left-0 right-0 transition-colors",
-        isOver && "bg-indigo-50/60"
-      )}
-      style={{ top: (hour - HOUR_START) * hourHeight, height: hourHeight }}
-    />
-  )
-}
-
 // ─── Move to Day Modal ──────────────────────────────────────────────────
 
 function MoveToDayMenu({
@@ -1420,11 +1391,6 @@ function TimelineDay({
     [day.items, previewDurations]
   )
 
-  const hourSlots = useMemo(
-    () => Array.from({ length: TOTAL_HOURS }, (_, i) => HOUR_START + i),
-    []
-  )
-
   const { isOver: isDayOver, setNodeRef: setDayDropRef } = useDroppable({
     id: `day-${day.dateStr}`,
     data: { type: "timeline-day", dayStr: day.dateStr },
@@ -1445,7 +1411,7 @@ function TimelineDay({
   }
 
   return (
-    <div className={cn("flex-1", isMobileFullWidth ? "w-full" : "min-w-[200px] max-w-[320px]")} ref={setDayDropRef}>
+    <div className={cn("flex-1", isMobileFullWidth ? "w-full" : "min-w-[200px] max-w-[320px]")} ref={setDayDropRef} data-day={day.dateStr}>
       {/* Day header */}
       <div className="sticky top-0 bg-white z-10 border-b border-gray-200 px-2 py-2 text-center">
         <p className="text-xs font-semibold text-gray-900">Day {dayIdx + 1}</p>
@@ -1457,6 +1423,7 @@ function TimelineDay({
         className="relative cursor-crosshair"
         style={{ height: TOTAL_HOURS * hourHeight }}
         onClick={handleTimelineClick}
+        data-timeline-grid
       >
         {/* Hour lines */}
         {Array.from({ length: TOTAL_HOURS + 1 }, (_, i) => (
@@ -1464,16 +1431,6 @@ function TimelineDay({
             key={i}
             className="absolute left-0 right-0 border-t border-gray-100"
             style={{ top: i * hourHeight }}
-          />
-        ))}
-
-        {/* Droppable hour slots for wishlist drops */}
-        {hourSlots.map((hour) => (
-          <DroppableHourSlot
-            key={hour}
-            dayStr={day.dateStr}
-            hour={hour}
-            hourHeight={hourHeight}
           />
         ))}
 

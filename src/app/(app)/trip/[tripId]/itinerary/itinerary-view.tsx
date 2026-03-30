@@ -26,7 +26,7 @@ import {
   KeyboardSensor,
   useSensor,
   useSensors,
-  closestCenter,
+  pointerWithin,
 } from "@dnd-kit/core"
 import {
   Sparkles,
@@ -422,7 +422,29 @@ export function ItineraryView({
     const activeId = active.id as string
     const overId = over.id as string
 
-    // Timeline item (cross-day drag handle) dropped on a day zone or timeline slot
+    // Helper: calculate drop time from pointer Y position relative to a day column
+    function calcDropTime(dayStr: string): string {
+      const HOUR_START = 7
+      const dayEl = document.querySelector(`[data-day="${dayStr}"]`)
+      const activeRect = event.active.rect.current.translated
+      if (dayEl && activeRect) {
+        const gridEl = dayEl.querySelector("[data-timeline-grid]")
+        if (gridEl) {
+          const rect = gridEl.getBoundingClientRect()
+          const hourHeight = rect.height / (23 - HOUR_START)
+          const relativeY = activeRect.top - rect.top
+          const minutesFromStart = (relativeY / hourHeight) * 60
+          const snappedMins = Math.round(minutesFromStart / 15) * 15
+          const totalMins = Math.max(HOUR_START * 60, Math.min(23 * 60, HOUR_START * 60 + snappedMins))
+          const hour = Math.floor(totalMins / 60)
+          const min = totalMins % 60
+          return `${String(hour).padStart(2, "0")}:${String(min).padStart(2, "0")}`
+        }
+      }
+      return "09:00"
+    }
+
+    // Timeline item (cross-day drag handle) dropped on a day zone
     if (activeId.startsWith("timeline-item-")) {
       const itemId = activeId.replace("timeline-item-", "")
       const draggedItem = items.find((i) => i.id === itemId)
@@ -432,19 +454,14 @@ export function ItineraryView({
           const dateStr = overId.replace("day-", "")
           const d = new Date(draggedItem.date)
           const currentDay = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`
+          const dropTime = calcDropTime(dateStr)
           if (currentDay !== dateStr) {
-            handleTimelineMoveToDay(itemId, dateStr, draggedItem.startTime || "09:00")
+            handleTimelineMoveToDay(itemId, dateStr, dropTime)
+          } else {
+            // Same day — update time based on drop position
+            handleTimelineMoveToDay(itemId, dateStr, dropTime)
           }
           return
-        }
-        // Dropped on a timeline slot
-        if (overId.startsWith("timeline-day-")) {
-          const match = overId.match(/^timeline-day-(\d{4}-\d{2}-\d{2})-(\d{2}:\d{2})$/)
-          if (match) {
-            const [, dayStr, time] = match
-            handleTimelineMoveToDay(itemId, dayStr, time)
-            return
-          }
         }
         // Dropped on wishlist
         if (overId === "wishlist-drop-zone") {
@@ -454,25 +471,13 @@ export function ItineraryView({
       }
     }
 
-    // Wishlist item dropped on a timeline slot
-    if (overId.startsWith("timeline-day-")) {
-      const isWishlistItem = wishlist.some((a) => a.id === activeId)
-      if (isWishlistItem) {
-        const match = overId.match(/^timeline-day-(\d{4}-\d{2}-\d{2})-(\d{2}:\d{2})$/)
-        if (match) {
-          const [, dayStr, time] = match
-          handleTimelineWishlistDrop(dayStr, time, activeId)
-          return
-        }
-      }
-    }
-
-    // Item dropped on a day zone
+    // Item dropped on a day zone (wishlist items and cross-day moves)
     if (overId.startsWith("day-")) {
       const dateStr = overId.replace("day-", "")
       const isWishlistItem = wishlist.some((a) => a.id === activeId)
       if (isWishlistItem) {
-        handleWishlistDrop(activeId, dateStr)
+        const dropTime = calcDropTime(dateStr)
+        handleTimelineWishlistDrop(dateStr, dropTime, activeId)
         return
       }
 
@@ -725,7 +730,12 @@ export function ItineraryView({
   return (
     <DndContext
       sensors={sensors}
-      collisionDetection={closestCenter}
+      collisionDetection={pointerWithin}
+      autoScroll={{
+        enabled: true,
+        threshold: { x: 0.1, y: 0.15 },
+        interval: 10,
+      }}
       onDragStart={handleGlobalDragStart}
       onDragEnd={handleGlobalDragEnd}
     >

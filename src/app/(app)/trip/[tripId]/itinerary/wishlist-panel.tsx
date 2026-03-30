@@ -88,9 +88,9 @@ function DraggableWishlistItem({
       {...attributes}
       {...listeners}
       className={cn(
-        "group relative bg-white border rounded-xl p-2.5 cursor-grab active:cursor-grabbing transition-all touch-none",
+        "group relative bg-white border rounded-xl p-2.5 cursor-grab active:cursor-grabbing transition-all",
         isMustDo ? "border-green-200 bg-green-50/30" : "border-gray-200",
-        isDragging && "shadow-lg"
+        isDragging && "shadow-lg ring-2 ring-indigo-400"
       )}
     >
       <div className="flex items-start gap-2">
@@ -134,23 +134,26 @@ function DraggableWishlistItem({
           <X className="w-3.5 h-3.5" />
         </button>
       </div>
-      {/* Priority toggle */}
-      <button
-        onClick={(e) => {
-          e.stopPropagation()
-          e.preventDefault()
-          onTogglePriority()
-        }}
-        onPointerDown={(e) => e.stopPropagation()}
-        className={cn(
-          "mt-1.5 text-[10px] font-medium px-2 py-0.5 rounded-full transition-colors",
-          isMustDo
-            ? "bg-green-100 text-green-700 hover:bg-green-200"
-            : "bg-amber-100 text-amber-700 hover:bg-amber-200"
-        )}
-      >
-        {isMustDo ? "Must Do" : "Maybe"}
-      </button>
+      {/* Priority toggle + mobile hint */}
+      <div className="flex items-center gap-2 mt-1.5">
+        <button
+          onClick={(e) => {
+            e.stopPropagation()
+            e.preventDefault()
+            onTogglePriority()
+          }}
+          onPointerDown={(e) => e.stopPropagation()}
+          className={cn(
+            "text-[10px] font-medium px-2 py-0.5 rounded-full transition-colors",
+            isMustDo
+              ? "bg-green-100 text-green-700 hover:bg-green-200"
+              : "bg-amber-100 text-amber-700 hover:bg-amber-200"
+          )}
+        >
+          {isMustDo ? "Must Do" : "Maybe"}
+        </button>
+        <span className="md:hidden text-[9px] text-gray-300 italic">Hold to drag</span>
+      </div>
     </div>
   )
 }

@@ -188,10 +188,13 @@ export function ItineraryView({
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
-      activationConstraint: { distance: 5 },
+      activationConstraint: { distance: 10 },
     }),
     useSensor(TouchSensor, {
-      activationConstraint: { delay: 200, tolerance: 5 },
+      activationConstraint: {
+        delay: 500,      // 500ms long press required to start drag
+        tolerance: 8,    // allow 8px of movement during the press (prevents scroll triggering drag)
+      },
     }),
     useSensor(KeyboardSensor)
   )

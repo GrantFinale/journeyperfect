@@ -7,7 +7,7 @@ import type { GroupedDay } from "@/lib/itinerary-utils"
 import { calculateTravel } from "./travel-connector"
 import { useDroppable, useDraggable } from "@dnd-kit/core"
 import type { WishlistActivity } from "./wishlist-panel"
-import { CalendarDays, ArrowRight, X, MapPin, Plus } from "lucide-react"
+import { CalendarDays, ArrowRight, X, MapPin, Plus, ChevronLeft, ChevronRight } from "lucide-react"
 
 type ItineraryItem = {
   id: string
@@ -457,30 +457,27 @@ function TimelineItem({
   column,
   totalColumns,
   hourHeight,
+  dayStr,
   onResize,
   onDragMove,
   onContextMenu,
   onMoveToWishlist,
   onPreviewChange,
-  onPreviewStartChange,
 }: {
   item: ItineraryItem
   column: number
   totalColumns: number
   hourHeight: number
+  dayStr: string
   onResize: (itemId: string, newDurationMins: number) => void
   onDragMove: (itemId: string, newStartTime: string, newDurationMins: number) => void
   onContextMenu: (e: React.MouseEvent, item: ItineraryItem) => void
   onMoveToWishlist?: (itemId: string) => void
   onPreviewChange?: (itemId: string, previewDuration: number | null) => void
-  onPreviewStartChange?: (itemId: string, previewStartMins: number | null) => void
 }) {
   const [resizing, setResizing] = useState(false)
-  const [dragging, setDragging] = useState(false)
   const [previewDuration, setPreviewDuration] = useState<number | null>(null)
-  const [previewStartMins, setPreviewStartMins] = useState<number | null>(null)
   const resizeRef = useRef<{ startY: number; startDuration: number } | null>(null)
-  const dragRef = useRef<{ startY: number; startMins: number } | null>(null)
 
   const isFixed = item.type === "FLIGHT" || item.type === "HOTEL_CHECK_IN" || item.type === "HOTEL_CHECK_OUT"
 
@@ -492,7 +489,7 @@ function TimelineItem({
   })
 
   if (!item.startTime) return null
-  const startMins = previewStartMins ?? timeToMinutes(item.startTime)
+  const startMins = timeToMinutes(item.startTime)
   const offsetMins = startMins - HOUR_START * 60
   if (offsetMins < 0) return null
 
@@ -544,42 +541,6 @@ function TimelineItem({
     setPreviewDuration(null)
     onPreviewChange?.(item.id, null)
     resizeRef.current = null
-  }
-
-  // Drag-move handlers
-  function handleDragPointerDown(e: React.PointerEvent) {
-    if (isFixed) return
-    if (e.button !== 0) return
-    e.preventDefault()
-    ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
-    dragRef.current = { startY: e.clientY, startMins: timeToMinutes(item.startTime!) }
-  }
-
-  function handleDragPointerMove(e: React.PointerEvent) {
-    if (!dragRef.current) return
-    const deltaY = e.clientY - dragRef.current.startY
-    if (!dragging && Math.abs(deltaY) < 5) return
-    if (!dragging) setDragging(true)
-    e.preventDefault()
-    const deltaMins = (deltaY / hourHeight) * 60
-    const newStart = snapToGrid(Math.max(HOUR_START * 60, Math.min(HOUR_END * 60 - item.durationMins, dragRef.current.startMins + deltaMins)))
-    setPreviewStartMins(newStart)
-    onPreviewStartChange?.(item.id, newStart)
-  }
-
-  function handleDragPointerUp(e: React.PointerEvent) {
-    if (!dragRef.current) return
-    ;(e.target as HTMLElement).releasePointerCapture(e.pointerId)
-    if (dragging && previewStartMins != null) {
-      const origStart = timeToMinutes(item.startTime!)
-      if (previewStartMins !== origStart) {
-        onDragMove(item.id, minutesToTime(previewStartMins), item.durationMins)
-      }
-    }
-    setDragging(false)
-    setPreviewStartMins(null)
-    onPreviewStartChange?.(item.id, null)
-    dragRef.current = null
   }
 
   function handleContextMenuEvent(e: React.MouseEvent) {
@@ -746,6 +707,19 @@ function TimelineItem({
     )
   }
 
+  // Issue 5: Past events greyed out
+  const isPast = (() => {
+    const now = new Date()
+    const today = now.toISOString().split("T")[0]
+    if (dayStr < today) return true
+    if (dayStr === today && item.endTime) {
+      const endMinsVal = timeToMinutes(item.endTime)
+      const nowMins = now.getHours() * 60 + now.getMinutes()
+      return endMinsVal < nowMins
+    }
+    return false
+  })()
+
   return (
     <div
       ref={setDragRef}
@@ -753,8 +727,9 @@ function TimelineItem({
         "absolute rounded-lg border overflow-hidden select-none transition-shadow group/timeline-item",
         typeColor(item.type),
         !isFixed && "cursor-grab active:cursor-grabbing",
-        (resizing || dragging) && "z-20 shadow-lg ring-2 ring-indigo-400/50",
-        isDndDragging && "opacity-50 z-30"
+        resizing && "z-20 shadow-lg ring-2 ring-indigo-400/50",
+        isDndDragging && "opacity-50 z-30",
+        isPast && "opacity-40 grayscale"
       )}
       style={{
         top,
@@ -763,38 +738,12 @@ function TimelineItem({
         width: `calc(${widthPercent}% - ${leftPx + rightPx + 8}px)`,
       }}
       title={`${item.title} (${formatTime(item.startTime!)}${item.endTime ? ` - ${formatTime(item.endTime)}` : ""}, ${formatDuration(currentDuration)})`}
-      onPointerDown={!isFixed ? handleDragPointerDown : undefined}
-      onPointerMove={!isFixed ? handleDragPointerMove : undefined}
-      onPointerUp={!isFixed ? handleDragPointerUp : undefined}
       onContextMenu={!isFixed ? handleContextMenuEvent : undefined}
+      {...(!isFixed ? { ...attributes, ...listeners } : {})}
     >
       <div className="px-2 py-1 h-full">
         {renderCardContent()}
       </div>
-
-      {/* Cross-day drag handle */}
-      {!isFixed && (
-        <div
-          className="absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white/80 hover:bg-indigo-100 text-gray-400 hover:text-indigo-600 opacity-0 group-hover/timeline-item:opacity-100 transition-all flex items-center justify-center z-10 shadow-sm cursor-grab active:cursor-grabbing"
-          title="Drag to another day"
-          {...attributes}
-          {...listeners}
-          onPointerDown={(e) => {
-            e.stopPropagation()
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            ;(listeners as any)?.onPointerDown?.(e)
-          }}
-        >
-          <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
-            <circle cx="3" cy="2" r="1" />
-            <circle cx="7" cy="2" r="1" />
-            <circle cx="3" cy="5" r="1" />
-            <circle cx="7" cy="5" r="1" />
-            <circle cx="3" cy="8" r="1" />
-            <circle cx="7" cy="8" r="1" />
-          </svg>
-        </div>
-      )}
 
       {/* Hover unschedule button for non-fixed items */}
       {!isFixed && onMoveToWishlist && (
@@ -819,13 +768,6 @@ function TimelineItem({
         </div>
       )}
 
-      {/* Drag move indicator */}
-      {dragging && previewStartMins != null && (
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-full bg-gray-900 text-white text-[10px] font-medium px-2 py-0.5 rounded-full whitespace-nowrap z-30 shadow-md mb-1">
-          {formatTime(minutesToTime(previewStartMins))}
-        </div>
-      )}
-
       {/* Resize handle at bottom edge */}
       {!isFixed && (
         <div
@@ -843,8 +785,10 @@ function TimelineItem({
 
 // ─── Current Time Indicator ─────────────────────────────────────────────
 
-function CurrentTimeIndicator({ hourHeight }: { hourHeight: number }) {
+function CurrentTimeIndicator({ hourHeight, dayStr }: { hourHeight: number; dayStr: string }) {
   const now = new Date()
+  const today = now.toISOString().split("T")[0]
+  if (dayStr !== today) return null
   const mins = now.getHours() * 60 + now.getMinutes()
   if (mins < HOUR_START * 60 || mins > HOUR_END * 60) return null
   const top = ((mins - HOUR_START * 60) / 60) * hourHeight
@@ -916,7 +860,6 @@ function TimelineDay({
   const dayLabel = dayDate.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })
 
   const [previewDurations, setPreviewDurations] = useState<Map<string, number>>(new Map())
-  const [previewStartTimes, setPreviewStartTimes] = useState<Map<string, number>>(new Map())
   const [addPopover, setAddPopover] = useState<{ startTime: string; position: { x: number; y: number } } | null>(null)
 
   const handlePreviewChange = useCallback((itemId: string, previewDuration: number | null) => {
@@ -928,22 +871,13 @@ function TimelineDay({
     })
   }, [])
 
-  const handlePreviewStartChange = useCallback((itemId: string, previewStartMins: number | null) => {
-    setPreviewStartTimes(prev => {
-      const next = new Map(prev)
-      if (previewStartMins == null) next.delete(itemId)
-      else next.set(itemId, previewStartMins)
-      return next
-    })
-  }, [])
-
   const layoutItems = useMemo(
     () => computeOverlapLayout(
       day.items,
       previewDurations.size > 0 ? previewDurations : undefined,
-      previewStartTimes.size > 0 ? previewStartTimes : undefined
+      undefined
     ),
-    [day.items, previewDurations, previewStartTimes]
+    [day.items, previewDurations]
   )
 
   const hourSlots = useMemo(
@@ -1006,8 +940,8 @@ function TimelineDay({
         {/* Wishlist drop preview overlay */}
         <WishlistDropPreview dayStr={day.dateStr} isOver={isDayOver} />
 
-        {/* Current time indicator */}
-        <CurrentTimeIndicator hourHeight={hourHeight} />
+        {/* Current time indicator - only on today's column */}
+        <CurrentTimeIndicator hourHeight={hourHeight} dayStr={day.dateStr} />
 
         {/* Items with overlap layout */}
         {layoutItems.map((layout) => {
@@ -1020,12 +954,12 @@ function TimelineDay({
               column={column}
               totalColumns={totalColumns}
               hourHeight={hourHeight}
+              dayStr={day.dateStr}
               onResize={onResize}
               onDragMove={onDragMove}
               onContextMenu={onContextMenu}
               onMoveToWishlist={onMoveToWishlist}
               onPreviewChange={handlePreviewChange}
-              onPreviewStartChange={handlePreviewStartChange}
             />
           )
         })}
@@ -1049,9 +983,8 @@ function TimelineDay({
             if (item.type === "FLIGHT") return null
 
             const activePreviews = previewDurations.size > 0 ? previewDurations : undefined
-            const activeStartPreviews = previewStartTimes.size > 0 ? previewStartTimes : undefined
-            const itemEnd = getItemEnd(item, activePreviews, activeStartPreviews)
-            const nextStart = activeStartPreviews?.get(nextItem.id) ?? timeToMinutes(nextItem.startTime!)
+            const itemEnd = getItemEnd(item, activePreviews, undefined)
+            const nextStart = timeToMinutes(nextItem.startTime!)
 
             if (nextStart < itemEnd) return null
 
@@ -1356,8 +1289,32 @@ export function TimelineView({
     dayStr: string
   } | null>(null)
   const [mobileSelectedDay, setMobileSelectedDay] = useState(0)
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const [canScrollLeft, setCanScrollLeft] = useState(false)
+  const [canScrollRight, setCanScrollRight] = useState(false)
 
   const mode = useResponsiveMode()
+
+  // Track scroll state for arrow buttons
+  const updateScrollState = useCallback(() => {
+    const el = scrollRef.current
+    if (!el) return
+    setCanScrollLeft(el.scrollLeft > 0)
+    setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 1)
+  }, [])
+
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    updateScrollState()
+    el.addEventListener("scroll", updateScrollState)
+    const observer = new ResizeObserver(updateScrollState)
+    observer.observe(el)
+    return () => {
+      el.removeEventListener("scroll", updateScrollState)
+      observer.disconnect()
+    }
+  }, [updateScrollState, days])
   const hourHeight = mode === "mobile" ? HOUR_HEIGHT_MOBILE : HOUR_HEIGHT_DESKTOP
 
   const handleResize = useCallback((itemId: string, newDurationMins: number) => {
@@ -1459,10 +1416,32 @@ export function TimelineView({
         </div>
       )}
 
-      <div className="overflow-x-auto">
+      {/* Scroll arrows for horizontal navigation (desktop/tablet only) */}
+      {mode !== "mobile" && (canScrollLeft || canScrollRight) && (
+        <div className="flex items-center justify-end gap-1.5 mb-2">
+          <button
+            disabled={!canScrollLeft}
+            onClick={() => scrollRef.current?.scrollBy({ left: -240, behavior: "smooth" })}
+            className="w-7 h-7 rounded-full border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center transition-colors shadow-sm"
+            aria-label="Scroll left"
+          >
+            <ChevronLeft className="w-4 h-4 text-gray-600" />
+          </button>
+          <button
+            disabled={!canScrollRight}
+            onClick={() => scrollRef.current?.scrollBy({ left: 240, behavior: "smooth" })}
+            className="w-7 h-7 rounded-full border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center transition-colors shadow-sm"
+            aria-label="Scroll right"
+          >
+            <ChevronRight className="w-4 h-4 text-gray-600" />
+          </button>
+        </div>
+      )}
+
+      <div className="overflow-x-auto" ref={scrollRef}>
         <div className="flex gap-0">
-          {/* Hour labels */}
-          <div className={cn("shrink-0", mode === "mobile" ? "w-10" : "w-12")}>
+          {/* Hour labels — sticky on left when scrolling horizontally */}
+          <div className={cn("shrink-0 sticky left-0 z-10 bg-white", mode === "mobile" ? "w-10" : "w-12")}>
             <div className="h-[42px] border-b border-gray-200" />
             <div className="relative" style={{ height: TOTAL_HOURS * hourHeight }}>
               {Array.from({ length: TOTAL_HOURS + 1 }, (_, i) => {

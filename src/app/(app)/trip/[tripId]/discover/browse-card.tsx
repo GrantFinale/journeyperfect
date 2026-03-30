@@ -182,8 +182,8 @@ export function BrowseCard({
               className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
             />
           ) : (
-            <div className="w-full h-full bg-gradient-to-br from-indigo-50 to-purple-50 flex items-center justify-center">
-              <Star className="w-8 h-8 text-indigo-200" />
+            <div className="w-full h-full bg-gradient-to-br from-indigo-400 to-purple-500 flex items-center justify-center">
+              <span className="text-4xl font-bold text-white/80">{place.name.charAt(0)}</span>
             </div>
           )}
           {/* Carousel arrows */}

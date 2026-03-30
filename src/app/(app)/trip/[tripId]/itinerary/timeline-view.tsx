@@ -7,7 +7,7 @@ import type { GroupedDay } from "@/lib/itinerary-utils"
 import { calculateTravel } from "./travel-connector"
 import { useDroppable, useDraggable } from "@dnd-kit/core"
 import type { WishlistActivity } from "./wishlist-panel"
-import { CalendarDays, ArrowRight, X, MapPin, Plus, ChevronLeft, ChevronRight, Copy, Check, ExternalLink, Ticket, Pencil, Trash2, Loader2 } from "lucide-react"
+import { CalendarDays, ArrowRight, X, MapPin, Plus, ChevronLeft, ChevronRight, Copy, Check, ExternalLink, Ticket, Pencil, Trash2, Loader2, Clock } from "lucide-react"
 import { createReservation, updateReservation, deleteReservation } from "@/lib/actions/reservations"
 import type { ReservationInput } from "@/lib/actions/reservations"
 
@@ -807,9 +807,9 @@ function ReservationForm({
   )
 }
 
-// ─── Reservation Expanded Panel ───────────────────────────────────────────
+// ─── Read-Only Event Detail Panel (replaces reservation form on timeline tap) ─
 
-function ReservationExpandedPanel({
+function EventDetailPanel({
   item,
   tripId,
   onClose,
@@ -818,8 +818,11 @@ function ReservationExpandedPanel({
   tripId: string
   onClose: () => void
 }) {
-  const [reservation, setReservation] = useState<Reservation | null>(item.reservation || null)
-  const [showForm, setShowForm] = useState(!reservation)
+  const startMins = item.startTime ? timeToMinutes(item.startTime) : null
+  const endMins = startMins != null ? startMins + getVisualDuration(item) : null
+  const endTimeStr = endMins != null ? minutesToTime(endMins) : null
+  const address = item.activity?.address || item.hotel?.address
+  const reservation = item.reservation
 
   return (
     <div
@@ -828,39 +831,91 @@ function ReservationExpandedPanel({
       onPointerDown={(e) => e.stopPropagation()}
     >
       <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-1.5">
-          <Ticket className="w-3.5 h-3.5 text-indigo-500" />
-          <span className="text-xs font-semibold text-gray-700">Reservation</span>
-        </div>
+        <p className="text-xs font-semibold text-gray-900 truncate flex-1">{item.title}</p>
         <button
           onClick={onClose}
-          className="p-0.5 rounded hover:bg-gray-100 transition-colors"
+          className="p-0.5 rounded hover:bg-gray-100 transition-colors shrink-0 ml-2"
         >
           <X className="w-3 h-3 text-gray-400" />
         </button>
       </div>
 
-      {reservation && !showForm ? (
-        <ReservationDetailPanel
-          reservation={reservation}
-          tripId={tripId}
-          onUpdate={(updated) => setReservation(updated)}
-          onDelete={() => {
-            setReservation(null)
-            setShowForm(true)
-          }}
-        />
-      ) : (
-        <ReservationForm
-          tripId={tripId}
-          itineraryItemId={item.id}
-          onSaved={(r) => {
-            setReservation(r)
-            setShowForm(false)
-          }}
-          onCancel={onClose}
-        />
-      )}
+      <div className="space-y-1.5">
+        {/* Time & duration */}
+        {item.startTime && (
+          <div className="flex items-center gap-1 text-xs text-gray-600">
+            <Clock className="w-3 h-3 text-gray-400 shrink-0" />
+            <span>{formatTime(item.startTime)}{endTimeStr ? ` - ${formatTime(endTimeStr)}` : ""}</span>
+            <span className="text-gray-400">&middot;</span>
+            <span>{formatDuration(getVisualDuration(item))}</span>
+          </div>
+        )}
+
+        {/* Location */}
+        {address && (
+          <div className="flex items-center gap-1 text-xs text-gray-600">
+            <MapPin className="w-3 h-3 text-gray-400 shrink-0" />
+            <span className="truncate">{address}</span>
+          </div>
+        )}
+
+        {/* Reservation info (read-only) */}
+        {reservation && (
+          <div className="mt-2 pt-2 border-t border-gray-100 space-y-1.5">
+            <div className="flex items-center gap-1">
+              <Ticket className="w-3 h-3 text-indigo-500 shrink-0" />
+              <span className="text-[10px] font-semibold text-gray-700 uppercase tracking-wide">Reservation</span>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <ReservationStatusBadge status={reservation.status} />
+              {reservation.confirmationNumber && (
+                <span className="text-[10px] font-mono text-gray-700 bg-gray-50 px-1.5 py-0.5 rounded">
+                  #{reservation.confirmationNumber}
+                </span>
+              )}
+            </div>
+            {reservation.provider && (
+              <p className="text-[10px] text-gray-500">via {reservation.provider}</p>
+            )}
+            {reservation.partySize && (
+              <p className="text-[10px] text-gray-500">Party of {reservation.partySize}</p>
+            )}
+            {reservation.price != null && (
+              <p className="text-[10px] text-gray-500">
+                {new Intl.NumberFormat("en-US", { style: "currency", currency: reservation.currency || "USD" }).format(reservation.price)}
+              </p>
+            )}
+            {reservation.specialRequests && (
+              <p className="text-[10px] text-gray-500 italic">{reservation.specialRequests}</p>
+            )}
+            {reservation.bookingUrl && (
+              <a
+                href={reservation.bookingUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-[10px] text-indigo-600 hover:text-indigo-800 font-medium"
+                onClick={(e) => e.stopPropagation()}
+                onPointerDown={(e) => e.stopPropagation()}
+              >
+                <ExternalLink className="w-3 h-3" />
+                View booking
+              </a>
+            )}
+          </div>
+        )}
+
+        {/* View in overview link */}
+        <div className="pt-1.5 mt-1.5 border-t border-gray-100">
+          <a
+            href={`/trip/${tripId}`}
+            className="text-[10px] text-indigo-600 hover:text-indigo-800 font-medium"
+            onClick={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
+          >
+            View in overview
+          </a>
+        </div>
+      </div>
     </div>
   )
 }
@@ -1222,7 +1277,7 @@ function TimelineItem({
         )}
       </div>
 
-      {/* Expanded reservation panel below the card */}
+      {/* Read-only event detail panel below the card */}
       {expanded && (
         <div
           className="absolute z-30"
@@ -1233,7 +1288,7 @@ function TimelineItem({
             minWidth: 220,
           }}
         >
-          <ReservationExpandedPanel
+          <EventDetailPanel
             item={item}
             tripId={tripId}
             onClose={() => setExpanded(false)}

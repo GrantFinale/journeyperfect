@@ -15,6 +15,7 @@ import { ForwardingEmail } from "@/components/forwarding-email"
 import { CalendarExportButton } from "@/components/calendar-export"
 import { WeatherReschedulePrompt } from "@/components/weather-reschedule-prompt"
 import { TripOverviewMap } from "./overview-map"
+import { ReservationsManager } from "@/components/reservations-manager"
 import {
   Plane,
   Hotel,
@@ -345,6 +346,49 @@ export default async function TripOverviewPage({ params }: { params: Promise<{ t
           )}
         </Link>
       </div>
+
+      {/* Reservations Manager */}
+      {(() => {
+        const itemsWithReservations = allItems
+          .filter((i) => i.reservation)
+          .map((i) => ({
+            id: i.id,
+            date: i.date,
+            startTime: i.startTime,
+            type: i.type,
+            title: i.title,
+            durationMins: i.durationMins,
+            reservation: i.reservation ? {
+              id: i.reservation.id,
+              confirmationNumber: i.reservation.confirmationNumber,
+              provider: i.reservation.provider,
+              bookingUrl: i.reservation.bookingUrl,
+              partySize: i.reservation.partySize,
+              specialRequests: i.reservation.specialRequests,
+              price: i.reservation.price ? Number(i.reservation.price) : null,
+              currency: i.reservation.currency,
+              status: i.reservation.status,
+              notes: i.reservation.notes,
+            } : null,
+          }))
+        const itemsWithoutReservations = allItems
+          .filter((i) => !i.reservation && (i.type === "ACTIVITY" || i.type === "MEAL" || i.type === "CUSTOM"))
+          .map((i) => ({
+            id: i.id,
+            date: i.date,
+            startTime: i.startTime,
+            type: i.type,
+            title: i.title,
+            durationMins: i.durationMins,
+          }))
+        return (
+          <ReservationsManager
+            tripId={tripId}
+            itemsWithReservations={itemsWithReservations}
+            itemsWithoutReservations={itemsWithoutReservations}
+          />
+        )
+      })()}
 
       {/* Trip Cost Summary — clickable to budget page */}
       {costSummary.grandTotal > 0 && (

@@ -406,6 +406,10 @@ export function ItineraryView({
 
   // Global drag handler for wishlist -> day drops
   function handleGlobalDragStart(event: DragStartEvent) {
+    // Haptic feedback on drag activation
+    if (typeof navigator !== "undefined" && navigator.vibrate) {
+      navigator.vibrate(50) // 50ms short vibration
+    }
     setActiveDragId(event.active.id as string)
   }
 

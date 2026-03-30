@@ -10,6 +10,7 @@ import {
   Sun,
   Home,
   Compass,
+  Plus,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -33,6 +34,7 @@ interface WishlistPanelProps {
   onTogglePriority: (activityId: string) => void
   collapsed: boolean
   onToggleCollapse: () => void
+  onAddCustom?: () => void
 }
 
 function IndoorOutdoorBadge({ value }: { value: string }) {
@@ -181,6 +183,7 @@ export function WishlistPanel({
   onTogglePriority,
   collapsed,
   onToggleCollapse,
+  onAddCustom,
 }: WishlistPanelProps) {
   const mustDo = activities.filter((a) => a.priority === "MUST_DO")
   const maybe = activities.filter((a) => a.priority !== "MUST_DO")
@@ -221,9 +224,20 @@ export function WishlistPanel({
 
       {!collapsed && (
         <div className="flex-1 overflow-y-auto p-3 space-y-3">
-          <h3 className="text-sm font-semibold text-gray-900 px-1">
-            Wishlist
-          </h3>
+          <div className="flex items-center justify-between px-1">
+            <h3 className="text-sm font-semibold text-gray-900">
+              Wishlist
+            </h3>
+            {onAddCustom && (
+              <button
+                onClick={onAddCustom}
+                className="flex items-center gap-1 text-xs font-medium text-indigo-600 hover:text-indigo-700 transition-colors"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Add Custom
+              </button>
+            )}
+          </div>
 
           {activities.length === 0 ? (
             <div className="text-center py-8 px-4">
@@ -232,13 +246,24 @@ export function WishlistPanel({
                 Browse activities, restaurants, and tours in Discover, then mark
                 the ones you like to add them here.
               </p>
-              <Link
-                href={`/trip/${tripId}/discover`}
-                className="inline-flex items-center gap-1.5 mt-4 text-sm font-medium text-indigo-600 hover:text-indigo-700 transition-colors"
-              >
-                Go to Discover
-                <ChevronRight className="w-4 h-4" />
-              </Link>
+              <div className="flex flex-col items-center gap-2 mt-4">
+                <Link
+                  href={`/trip/${tripId}/discover`}
+                  className="inline-flex items-center gap-1.5 text-sm font-medium text-indigo-600 hover:text-indigo-700 transition-colors"
+                >
+                  Go to Discover
+                  <ChevronRight className="w-4 h-4" />
+                </Link>
+                {onAddCustom && (
+                  <button
+                    onClick={onAddCustom}
+                    className="inline-flex items-center gap-1.5 text-sm font-medium text-gray-500 hover:text-gray-700 transition-colors"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Or add a custom event
+                  </button>
+                )}
+              </div>
             </div>
           ) : (
             <>

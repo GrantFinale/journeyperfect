@@ -71,6 +71,12 @@ export default async function ItineraryPage({ params }: { params: Promise<{ trip
     orderBy: { checkIn: "asc" },
   })
 
+  const destinations = (trip.destinations || []).map((d) => ({
+    name: d.name,
+    lat: d.lat,
+    lng: d.lng,
+  }))
+
   return (
     <ItineraryView
       tripId={tripId}
@@ -83,6 +89,7 @@ export default async function ItineraryPage({ params }: { params: Promise<{ trip
       hotels={hotels}
       showFreeTime={userPrefs?.showFreeTime ?? false}
       freeTimeMinGapHours={userPrefs?.freeTimeMinGapHours ?? 2}
+      destinations={destinations}
     />
   )
 }

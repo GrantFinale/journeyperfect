@@ -341,6 +341,7 @@ function AddEventPopover({
   wishlistItems,
   onAddFromWishlist,
   onAddCustom,
+  onOpenCustomModal,
   onClose,
 }: {
   dayStr: string
@@ -349,6 +350,7 @@ function AddEventPopover({
   wishlistItems: WishlistActivity[]
   onAddFromWishlist?: (activityId: string, dayStr: string, startTime: string) => void
   onAddCustom?: (dayStr: string, startTime: string, title: string, durationMins: number) => void
+  onOpenCustomModal?: (dayStr: string, startTime: string) => void
   onClose: () => void
 }) {
   const [mode, setMode] = useState<"menu" | "wishlist" | "custom">("menu")
@@ -387,7 +389,20 @@ function AddEventPopover({
                 className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors flex items-center gap-2"
               >
                 <Plus className="w-3.5 h-3.5 text-gray-500" />
-                <span>Custom event</span>
+                <span>Quick custom event</span>
+              </button>
+            )}
+            {onOpenCustomModal && (
+              <button
+                onClick={() => {
+                  onOpenCustomModal(dayStr, startTime)
+                  onClose()
+                }}
+                className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors flex items-center gap-2"
+              >
+                <MapPin className="w-3.5 h-3.5 text-gray-500" />
+                <span>Full custom event</span>
+                <span className="text-[10px] text-gray-400 ml-auto">place, notes...</span>
               </button>
             )}
           </div>
@@ -459,6 +474,17 @@ function AddEventPopover({
             >
               Add
             </button>
+            {onOpenCustomModal && (
+              <button
+                onClick={() => {
+                  onOpenCustomModal(dayStr, startTime)
+                  onClose()
+                }}
+                className="w-full py-1 text-[11px] text-gray-400 hover:text-indigo-600 transition-colors"
+              >
+                More options (address, place search, notes...)
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -1277,6 +1303,7 @@ function TimelineDay({
   wishlistItems,
   onAddFromWishlist,
   onAddCustom,
+  onOpenCustomModal,
   isMobileFullWidth,
 }: {
   tripId: string
@@ -1291,6 +1318,7 @@ function TimelineDay({
   wishlistItems?: WishlistActivity[]
   onAddFromWishlist?: (activityId: string, dayStr: string, startTime: string) => void
   onAddCustom?: (dayStr: string, startTime: string, title: string, durationMins: number) => void
+  onOpenCustomModal?: (dayStr: string, startTime: string) => void
   isMobileFullWidth?: boolean
 }) {
   const dayDate = new Date(day.date)
@@ -1621,6 +1649,7 @@ function TimelineDay({
           wishlistItems={wishlistItems || []}
           onAddFromWishlist={onAddFromWishlist}
           onAddCustom={onAddCustom}
+          onOpenCustomModal={onOpenCustomModal}
           onClose={() => setAddPopover(null)}
         />
       )}
@@ -1707,6 +1736,7 @@ interface TimelineViewProps {
   onMoveToDay?: (itemId: string, newDayStr: string, newStartTime: string) => void
   onAddFromWishlist?: (activityId: string, dayStr: string, startTime: string) => void
   onAddCustom?: (dayStr: string, startTime: string, title: string, durationMins: number) => void
+  onOpenCustomModal?: (dayStr: string, startTime: string) => void
   wishlistItems?: WishlistActivity[]
   hotels?: HotelInfo[]
 }
@@ -1720,6 +1750,7 @@ export function TimelineView({
   onMoveToDay,
   onAddFromWishlist,
   onAddCustom,
+  onOpenCustomModal,
   wishlistItems,
   hotels,
 }: TimelineViewProps) {
@@ -1923,6 +1954,7 @@ export function TimelineView({
                   wishlistItems={wishlistItems}
                   onAddFromWishlist={onAddFromWishlist}
                   onAddCustom={onAddCustom}
+                  onOpenCustomModal={onOpenCustomModal}
                   isMobileFullWidth={mode === "mobile"}
                 />
               </div>

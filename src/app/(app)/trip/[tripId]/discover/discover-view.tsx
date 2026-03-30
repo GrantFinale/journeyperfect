@@ -29,6 +29,8 @@ import { WishlistSidebar, type Activity } from "./wishlist-sidebar"
 import { DiscoverHeader } from "./discover-header"
 import { DiscoverTabs, CATEGORY_TABS, type CategoryTab } from "./discover-tabs"
 import { DiscoverFilters, type FilterChip } from "./discover-filters"
+import { AddCustomEvent } from "@/components/add-custom-event"
+import { Plus } from "lucide-react"
 
 /* ─── Types ────────────────────────────────────────────────────────────────── */
 
@@ -175,6 +177,9 @@ export function DiscoverView({
 
   // Initial results loaded on mount
   const initialLoaded = useRef(false)
+
+  // Custom event modal
+  const [showAddCustom, setShowAddCustom] = useState(false)
 
   // Mobile
   const [isMobile, setIsMobile] = useState(false)
@@ -607,8 +612,19 @@ export function DiscoverView({
             </button>
           </div>
 
-          {/* Category tabs */}
-          <DiscoverTabs activeTab={activeTab} onTabChange={handleTabChange} />
+          {/* Add your own + Category tabs row */}
+          <div className="flex items-start justify-between">
+            <div className="flex-1 min-w-0">
+              <DiscoverTabs activeTab={activeTab} onTabChange={handleTabChange} />
+            </div>
+            <button
+              onClick={() => setShowAddCustom(true)}
+              className="flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-indigo-600 transition-colors shrink-0 ml-2 mt-1"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Add your own
+            </button>
+          </div>
 
           {/* Filter chips */}
           <DiscoverFilters activeFilters={activeFilters} onToggleFilter={handleToggleFilter} />
@@ -823,6 +839,17 @@ export function DiscoverView({
         .scrollbar-hide::-webkit-scrollbar { display: none; }
         .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
       `}</style>
+
+      {/* Add Custom Event modal */}
+      {showAddCustom && (
+        <AddCustomEvent
+          tripId={tripId}
+          tripDates={{ start: trip.startDate, end: trip.endDate }}
+          destinations={destinations}
+          onCreated={() => router.refresh()}
+          onClose={() => setShowAddCustom(false)}
+        />
+      )}
     </div>
   )
 }

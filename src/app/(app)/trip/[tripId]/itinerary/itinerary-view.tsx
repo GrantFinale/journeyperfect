@@ -41,6 +41,7 @@ import { WishlistPanel } from "./wishlist-panel"
 import type { WishlistActivity } from "./wishlist-panel"
 import { TimelineView } from "./timeline-view"
 import { DragOnboarding, markOnboardingSeen } from "./drag-onboarding"
+import { AddCustomEvent } from "@/components/add-custom-event"
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -117,6 +118,8 @@ function minutesToTime(mins: number): string {
 
 // ─── Main Component ─────────────────────────────────────────────────────────
 
+type DestinationInfo = { name: string; lat?: number | null; lng?: number | null }
+
 interface Props {
   tripId: string
   initialItems: ItineraryItem[]
@@ -128,6 +131,7 @@ interface Props {
   hotels?: HotelInfo[]
   showFreeTime?: boolean
   freeTimeMinGapHours?: number
+  destinations?: DestinationInfo[]
 }
 
 export function ItineraryView({
@@ -139,6 +143,7 @@ export function ItineraryView({
   isPaid,
   wishlistActivities: initialWishlist = [],
   hotels = [],
+  destinations = [],
 }: Props) {
   const router = useRouter()
   const [items, setItems] = useState<ItineraryItem[]>(initialItems)
@@ -147,6 +152,19 @@ export function ItineraryView({
   const [showOnboarding, setShowOnboarding] = useState(false)
   const reorderingRef = useRef(false)
   const [, setActiveDragId] = useState<string | null>(null)
+  const [showAddCustom, setShowAddCustom] = useState(false)
+  const [customModalDefaults, setCustomModalDefaults] = useState<{ date?: string; time?: string }>({})
+
+  function handleOpenCustomModal(dayStr: string, startTime: string) {
+    setCustomModalDefaults({ date: dayStr, time: startTime })
+    setShowAddCustom(true)
+  }
+
+  // Format trip dates for AddCustomEvent
+  const tripDateRange = {
+    start: tripStartDate.toISOString().split("T")[0],
+    end: tripEndDate.toISOString().split("T")[0],
+  }
 
   useEffect(() => {
     if (!reorderingRef.current) {
@@ -761,6 +779,7 @@ export function ItineraryView({
                 onMoveToDay={handleTimelineMoveToDay}
                 onAddFromWishlist={handleAddFromWishlistViaPopover}
                 onAddCustom={handleAddCustomViaPopover}
+                onOpenCustomModal={handleOpenCustomModal}
                 wishlistItems={wishlist}
                 hotels={hotels}
               />
@@ -776,8 +795,25 @@ export function ItineraryView({
           onTogglePriority={handleTogglePriority}
           collapsed={sidebarCollapsed}
           onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+          onAddCustom={() => setShowAddCustom(true)}
         />
       </div>
+
+      {/* Add Custom Event modal */}
+      {showAddCustom && (
+        <AddCustomEvent
+          tripId={tripId}
+          tripDates={tripDateRange}
+          destinations={destinations}
+          defaultDate={customModalDefaults.date}
+          defaultTime={customModalDefaults.time}
+          onCreated={() => router.refresh()}
+          onClose={() => {
+            setShowAddCustom(false)
+            setCustomModalDefaults({})
+          }}
+        />
+      )}
     </DndContext>
   )
 }

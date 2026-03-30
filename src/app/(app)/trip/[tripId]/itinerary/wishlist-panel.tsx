@@ -71,13 +71,16 @@ function DraggableWishlistItem({
     data: { type: "wishlist-item", activity },
   })
 
-  const style = transform
-    ? {
-        transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`,
-        zIndex: isDragging ? 50 : undefined,
-        opacity: isDragging ? 0.5 : 1,
-      }
-    : undefined
+  const style: import("react").CSSProperties = {
+    ...(transform
+      ? {
+          transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`,
+          zIndex: isDragging ? 50 : undefined,
+          opacity: isDragging ? 0.5 : 1,
+        }
+      : {}),
+    WebkitTouchCallout: "none",
+  }
 
   const isMustDo = activity.priority === "MUST_DO"
 
@@ -87,8 +90,9 @@ function DraggableWishlistItem({
       style={style}
       {...attributes}
       {...listeners}
+      onContextMenu={(e) => e.preventDefault()}
       className={cn(
-        "group relative bg-white border rounded-xl p-2.5 cursor-grab active:cursor-grabbing transition-all",
+        "group relative bg-white border rounded-xl p-2.5 cursor-grab active:cursor-grabbing transition-all select-none",
         isMustDo ? "border-green-200 bg-green-50/30" : "border-gray-200",
         isDragging && "shadow-lg ring-2 ring-indigo-400"
       )}

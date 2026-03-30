@@ -952,6 +952,7 @@ function TimelineItem({
   const [previewDuration, setPreviewDuration] = useState<number | null>(null)
   const [expanded, setExpanded] = useState(false)
   const resizeRef = useRef<{ startY: number; startDuration: number } | null>(null)
+  const lastDragEndRef = useRef(0)
 
   const isFixed = item.type === "FLIGHT" || item.type === "HOTEL_CHECK_IN" || item.type === "HOTEL_CHECK_OUT"
   const hasReservation = !!item.reservation
@@ -1212,10 +1213,19 @@ function TimelineItem({
   function handleCardClick(e: React.MouseEvent) {
     // Don't expand if we're dragging, resizing, or clicking a link/button
     if (resizing || isDndDragging) return
+    // Skip if a drag just ended (within last 200ms) to prevent accidental tap after drag
+    if (Date.now() - lastDragEndRef.current < 200) return
     const target = e.target as HTMLElement
     if (target.closest("a") || target.closest("button")) return
     setExpanded(!expanded)
   }
+
+  // Track when DnD drag ends to prevent click-after-drag
+  useEffect(() => {
+    if (!isDndDragging) {
+      lastDragEndRef.current = Date.now()
+    }
+  }, [isDndDragging])
 
   return (
     <>
@@ -1236,9 +1246,13 @@ function TimelineItem({
           left: `calc(${leftPercent}% + ${leftPx + 4}px)`,
           width: `calc(${widthPercent}% - ${leftPx + rightPx + 8}px)`,
           touchAction: isDndDragging || resizing ? "none" : "auto",
+          WebkitTouchCallout: "none",
         }}
         title={`${item.title} (${formatTime(item.startTime!)}${item.endTime ? ` - ${formatTime(item.endTime)}` : ""}, ${formatDuration(currentDuration)})`}
-        onContextMenu={!isFixed ? handleContextMenuEvent : undefined}
+        onContextMenu={(e) => {
+          e.preventDefault()
+          if (!isFixed) onContextMenu(e, item)
+        }}
         onClick={handleCardClick}
         {...(!isFixed ? { ...attributes, ...listeners } : {})}
       >
@@ -1246,10 +1260,11 @@ function TimelineItem({
           {renderCardContent()}
         </div>
 
-        {/* Unschedule button: always visible on mobile, hover on desktop */}
-        {!isFixed && onMoveToWishlist && (
+        {/* Unschedule button: visible on tap (expanded) or hover on desktop */}
+        {(expanded || isDndDragging) && !isFixed && onMoveToWishlist && (
           <button
-            className="absolute top-0.5 right-0.5 w-5 h-5 rounded-full bg-white/90 hover:bg-red-100 text-gray-400 hover:text-red-600 opacity-100 md:opacity-0 md:group-hover/timeline-item:opacity-100 transition-all flex items-center justify-center z-10 shadow-sm"
+            className="absolute top-0.5 right-0.5 w-5 h-5 rounded-full bg-white/90 hover:bg-red-100 text-gray-400 hover:text-red-600 opacity-0 group-hover/timeline-item:opacity-100 transition-all flex items-center justify-center z-10 shadow-sm"
+            style={{ opacity: expanded ? 1 : undefined }}
             title="Remove from plan"
             onClick={(e) => {
               e.stopPropagation()

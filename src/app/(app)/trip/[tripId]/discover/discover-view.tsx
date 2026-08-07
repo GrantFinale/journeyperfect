@@ -24,11 +24,13 @@ import {
   Lock,
 } from "lucide-react"
 
+import { serializeMealSlots, type MealSlot } from "@/lib/meal-slots"
+
 import { BrowseCard, type Place } from "./browse-card"
 import { WishlistSidebar, type Activity } from "./wishlist-sidebar"
 import { DiscoverHeader } from "./discover-header"
-import { DiscoverTabs, CATEGORY_TABS, type CategoryTab } from "./discover-tabs"
-import { DiscoverFilters, type FilterChip } from "./discover-filters"
+import { DiscoverTabs, CATEGORY_TABS, DEFAULT_TAB_ID, type CategoryTab } from "./discover-tabs"
+import { DiscoverFilters } from "./discover-filters"
 import { AddCustomEvent } from "@/components/add-custom-event"
 import { Plus } from "lucide-react"
 
@@ -111,22 +113,37 @@ function getLocationBias(selected: string, opts: LocationOption[]): string | und
   return undefined
 }
 
-/** Apply client-side filters to places */
+/** Query for a category id, e.g. the default tab on mount. */
+function queryForTab(tabId: string): string | undefined {
+  return CATEGORY_TABS.find((t) => t.id === tabId)?.query
+}
+
+/** Merge pages without ever showing the same place twice. */
+function dedupeByPlaceId(places: Place[]): Place[] {
+  const seen = new Set<string>()
+  const out: Place[] = []
+  for (const p of places) {
+    if (!p?.googlePlaceId || seen.has(p.googlePlaceId)) continue
+    seen.add(p.googlePlaceId)
+    out.push(p)
+  }
+  return out
+}
+
+/** Highest rated first; break ties on review volume; unrated places sort last. */
+function byRatingDesc(a: Place, b: Place): number {
+  const ar = a.rating ?? -1
+  const br = b.rating ?? -1
+  if (br !== ar) return br - ar
+  return (b.ratingCount ?? 0) - (a.ratingCount ?? 0)
+}
+
+/** Apply the client-side refinements (see REFINEMENT_CHIPS) to places. */
 function applyFilters(places: Place[], filters: Set<string>): Place[] {
   if (filters.size === 0) return places
   return places.filter((p) => {
-    if (filters.has("kid_friendly") && !p.goodForChildren) return false
     if (filters.has("open_now") && !p.openNow) return false
-    if (filters.has("top_rated") && (p.rating == null || p.rating < 4.5)) return false
     if (filters.has("free") && p.priceLevel !== "PRICE_LEVEL_FREE") return false
-    if (filters.has("indoor")) {
-      const indoorTypes = ["museum", "restaurant", "cafe", "bar", "movie_theater", "bowling_alley", "library", "spa", "shopping_mall", "aquarium", "art_gallery"]
-      if (!p.types?.some((t) => indoorTypes.includes(t))) return false
-    }
-    if (filters.has("outdoor")) {
-      const outdoorTypes = ["park", "garden", "beach", "trail", "zoo", "amusement_park", "campground", "golf_course", "playground", "stadium", "hiking_area", "natural_feature"]
-      if (!p.types?.some((t) => outdoorTypes.includes(t))) return false
-    }
     return true
   })
 }
@@ -151,7 +168,7 @@ export function DiscoverView({
   // Core state
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
-  const [activeTab, setActiveTab] = useState("all")
+  const [activeTab, setActiveTab] = useState(DEFAULT_TAB_ID)
   const [activeFilters, setActiveFilters] = useState<Set<string>>(new Set())
   const [selectedLocation, setSelectedLocation] = useState(locationOptions[0]?.value ?? trip.destination)
   const [customLocation, setCustomLocation] = useState("")
@@ -202,11 +219,14 @@ export function DiscoverView({
   const maybeItems = wishlist.filter((a) => a.priority !== "MUST_DO")
   const wishlistCount = wishlist.length
 
-  // Filter out dismissed places from results, then apply user filters
+  // Filter out dismissed places from results, apply user filters, then always
+  // surface the highest-rated first (covers "Show more" appends too).
   const filteredResults = applyFilters(
     searchResults.filter((p) => !dismissedIds.has(p.googlePlaceId)),
     activeFilters
   )
+    .slice()
+    .sort(byRatingDesc)
   const filteredAiPicks = aiPicks.filter((p) => !dismissedIds.has(p.googlePlaceId))
 
   // Detect mobile
@@ -217,35 +237,17 @@ export function DiscoverView({
     return () => window.removeEventListener("resize", check)
   }, [])
 
-  // Load top-rated places on mount
+  // Load the default category (Attractions) on mount — one Places call.
   useEffect(() => {
     if (initialLoaded.current) return
     initialLoaded.current = true
-
-    const city = locationOptions[0]?.value || trip.destination
-    if (!city) return
-
-    const query = `things to do in ${city}`
-    const bias =
-      locationOptions[0]?.lat != null && locationOptions[0]?.lng != null
-        ? `${locationOptions[0].lat},${locationOptions[0].lng}`
-        : undefined
-
-    setLoading(true)
-    setLastSearchQuery(query)
-    setLastSearchBias(bias)
-    searchPlaces(query, bias, { limit: 12 })
-      .then((r) => {
-        if (r.results.length > 0) setSearchResults(r.results)
-        setNextPageToken(r.nextPageToken)
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false))
+    handleSearch(queryForTab(DEFAULT_TAB_ID))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // ─── Handlers ─────────────────────────────────────────────────────────────
 
+  /** Exactly one `searchPlaces` call per invocation. */
   async function handleSearch(filterQuery?: string, keyword?: string) {
     const city = effectiveLocation || trip.destination
     const parts = [filterQuery, keyword, city].filter(Boolean)
@@ -258,7 +260,7 @@ export function DiscoverView({
     setLastSearchBias(bias)
     try {
       const result = await searchPlaces(fullQuery, bias, { limit: 12 })
-      setSearchResults(result.results)
+      setSearchResults(dedupeByPlaceId(result.results))
       setNextPageToken(result.nextPageToken)
       if (result.error && result.results.length === 0) {
         toast.error(result.error || "No results found")
@@ -275,7 +277,9 @@ export function DiscoverView({
     setLoadingMore(true)
     try {
       const result = await searchPlaces(lastSearchQuery, lastSearchBias, { limit: 12, pageToken: nextPageToken })
-      setSearchResults((prev) => [...prev, ...result.results])
+      // Append + de-dupe; the rating sort in `filteredResults` re-ranks the
+      // combined list rather than resetting it.
+      setSearchResults((prev) => dedupeByPlaceId([...prev, ...result.results]))
       setNextPageToken(result.nextPageToken)
     } catch {
       toast.error("Failed to load more results")
@@ -285,28 +289,18 @@ export function DiscoverView({
   }
 
   function handleTabChange(tab: CategoryTab) {
-    const newTabId = activeTab === tab.id ? "all" : tab.id
-    setActiveTab(newTabId)
+    // A category is always selected, so re-clicking the active pill is a no-op
+    // rather than a toggle — that also keeps it to one Places call per change.
+    if (tab.id === activeTab) return
+    setActiveTab(tab.id)
 
     if (tab.isAI) {
-      if (newTabId === "ai_picks") {
-        loadAIPicks()
-      } else {
-        setAiPicks([])
-      }
+      loadAIPicks()
       return
     }
 
-    // For non-AI tabs, trigger a search with the tab's query
-    if (newTabId === "all") {
-      // Show suggestions or clear search
-      setSearchResults([])
-    } else {
-      const selectedTab = CATEGORY_TABS.find((t) => t.id === newTabId)
-      if (selectedTab) {
-        handleSearch(selectedTab.query, searchQuery || undefined)
-      }
-    }
+    setAiPicks([])
+    handleSearch(tab.query, searchQuery || undefined)
   }
 
   function handleToggleFilter(filterId: string) {
@@ -322,11 +316,9 @@ export function DiscoverView({
   }
 
   async function loadAIPicks() {
-    if (userPlan === "FREE") {
-      toast.error("For Your Group requires a paid plan. Upgrade to unlock!")
-      setActiveTab("all")
-      return
-    }
+    // Free users stay on the tab and get the locked upsell panel below
+    // instead of a wasted request.
+    if (userPlan === "FREE") return
     setAiPicksLoading(true)
     try {
       const picks = await getAIPicks(tripId, effectiveLocation || trip.destination)
@@ -352,16 +344,27 @@ export function DiscoverView({
   }
 
   function handleSearchSubmit() {
+    // A keyword search is always scoped to a real category; searching from the
+    // AI tab drops you back onto the default one.
+    let tabId = activeTab
     if (activeTab === "ai_picks") {
-      setActiveTab("all")
+      tabId = DEFAULT_TAB_ID
+      setActiveTab(DEFAULT_TAB_ID)
       setAiPicks([])
     }
-    const selectedTab = CATEGORY_TABS.find((t) => t.id === activeTab)
-    const tabQuery = activeTab !== "all" && selectedTab ? selectedTab.query : undefined
-    handleSearch(tabQuery, searchQuery || undefined)
+    handleSearch(queryForTab(tabId), searchQuery || undefined)
   }
 
-  function getPlaceData(place: Place) {
+  /** "Clear" returns to the default view rather than an empty screen. */
+  function handleClearSearch() {
+    setSearchQuery("")
+    setAiPicks([])
+    setNextPageToken(null)
+    setActiveTab(DEFAULT_TAB_ID)
+    handleSearch(queryForTab(DEFAULT_TAB_ID))
+  }
+
+  function getPlaceData(place: Place, mealSlots?: MealSlot[]) {
     return {
       googlePlaceId: place.googlePlaceId,
       name: place.name,
@@ -373,6 +376,7 @@ export function DiscoverView({
       category: place.types?.[0],
       types: place.types || [],
       durationMins: placeDurations.get(place.googlePlaceId) || undefined,
+      mealSlots: mealSlots?.length ? serializeMealSlots(mealSlots) ?? undefined : undefined,
     }
   }
 
@@ -421,8 +425,8 @@ export function DiscoverView({
     }, 300)
   }
 
-  async function handleMaybe(place: Place) {
-    const data = getPlaceData(place)
+  async function handleMaybe(place: Place, mealSlots?: MealSlot[]) {
+    const data = getPlaceData(place, mealSlots)
     try {
       const result = await addToWishlistMaybe(tripId, data)
       const existing = activities.find((a) => a.googlePlaceId === place.googlePlaceId)
@@ -463,8 +467,8 @@ export function DiscoverView({
     }
   }
 
-  async function handleMustDo(place: Place) {
-    const data = getPlaceData(place)
+  async function handleMustDo(place: Place, mealSlots?: MealSlot[]) {
+    const data = getPlaceData(place, mealSlots)
     try {
       const result = await addToWishlistMustDo(tripId, data)
       const existing = activities.find((a) => a.googlePlaceId === place.googlePlaceId)
@@ -708,11 +712,7 @@ export function DiscoverView({
                   {filteredResults.length} results
                 </h2>
                 <button
-                  onClick={() => {
-                    setSearchResults([])
-                    setActiveTab("all")
-                    setNextPageToken(null)
-                  }}
+                  onClick={handleClearSearch}
                   className="text-xs text-gray-400 hover:text-gray-600"
                 >
                   Clear

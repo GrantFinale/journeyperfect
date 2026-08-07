@@ -6,6 +6,7 @@ import { toast } from "sonner"
 import { createFlight, createFlightsBatch, deleteFlight, parseAndPreviewFlight } from "@/lib/actions/flights"
 import { createHotel, createHotelsBatch, deleteHotel, parseAndPreviewHotel } from "@/lib/actions/hotels"
 import { createRentalCar, deleteRentalCar, parseAndPreviewRentalCar } from "@/lib/actions/rental-cars"
+import { deleteTransportSegment } from "@/lib/actions/transport"
 import { getCompanyInfo, RENTAL_CAR_COMPANIES } from "@/lib/rental-car-logos"
 import { addTravelerToTrip, removeTravelerFromTrip } from "@/lib/actions/travelers"
 import { getAgeGroupLabel, getCustomTags, getDefaultAvatar } from "@/lib/utils"
@@ -41,13 +42,30 @@ import {
   Clock,
   Loader2,
   Lock,
+  Home,
 } from "lucide-react"
 import PlacesAutocomplete from "@/components/places-autocomplete"
 import { AffiliateBadge } from "@/components/affiliate-links"
 import { ForwardingEmail } from "@/components/forwarding-email"
 import { CalendarExportCard } from "@/components/calendar-export"
-import { getHotelAffiliate, getCarRentalAffiliate } from "@/lib/actions/affiliates"
+import { getHotelAffiliate, getCarRentalAffiliate, getParkingAffiliate } from "@/lib/actions/affiliates"
 import type { AffiliateLink } from "@/lib/affiliates"
+import {
+  DateTimeField,
+  DEFAULT_CHECK_IN_TIME,
+  DEFAULT_CHECK_OUT_TIME,
+  CHECK_IN_QUICK_TIMES,
+  CHECK_OUT_QUICK_TIMES,
+} from "./date-time-fields"
+import { HotelTile, type HotelRow } from "./hotel-tile"
+import {
+  LegTypePicker,
+  TransportLegForm,
+  TransportTile,
+  type LegType,
+  type TransportSegmentRow,
+} from "./transport-form"
+import { MyCarSection, type SavedVehicle } from "./my-car-section"
 
 type TripDestinationType = {
   id: string
@@ -67,6 +85,11 @@ type Trip = {
   notes: string | null
   isPublic: boolean
   shareSlug: string | null
+  originLabel?: string | null
+  originAddress?: string | null
+  originLat?: number | null
+  originLng?: number | null
+  vehicleId?: string | null
   flights: {
     id: string
     airline: string | null
@@ -83,15 +106,8 @@ type Trip = {
     cabin: string | null
     price: number | null
   }[]
-  hotels: {
-    id: string
-    name: string
-    address: string | null
-    checkIn: Date
-    checkOut: Date
-    confirmationNumber: string | null
-    isVacationRental: boolean
-  }[]
+  hotels: HotelRow[]
+  transportSegments: TransportSegmentRow[]
   rentalCars: {
     id: string
     company: string | null
@@ -134,16 +150,21 @@ interface Props {
   placesApiKey?: string
   userId?: string
   userPlan?: string
+  vehicles?: SavedVehicle[]
 }
 
-const TABS = ["Flights", "Hotels", "Cars", "Travelers", "Sharing", "General"] as const
+const TABS = ["Travel", "Hotels", "Cars", "Travelers", "Sharing", "General"] as const
 type Tab = (typeof TABS)[number]
 
+// "Flights" was renamed to "Travel" once trains/ferries/buses joined the tab.
+// Old links and bookmarks still say ?tab=flights, so keep it as an alias.
+const TAB_ALIASES: Record<string, Tab> = { flights: "Travel" }
+
 function tabFromParam(param?: string): Tab {
-  if (!param) return "Flights"
+  if (!param) return "Travel"
   const lower = param.toLowerCase()
   const match = TABS.find((t) => t.toLowerCase() === lower)
-  return match || "Flights"
+  return match || TAB_ALIASES[lower] || "Travel"
 }
 
 function TripTravelerAvatar({ profile, size = "sm" }: { profile: { name: string; photoUrl?: string | null; birthDate?: Date | string | null; sex?: string | null }; size?: "sm" | "md" }) {
@@ -372,7 +393,7 @@ function FlightStatusPanel({
   )
 }
 
-export function TripSettingsView({ tripId, trip: initialTrip, allProfiles, initialTab, isOwner = true, ownerName, ownerEmail, initialCollaborators = [], placesApiKey, userId, userPlan = "FREE" }: Props) {
+export function TripSettingsView({ tripId, trip: initialTrip, allProfiles, initialTab, isOwner = true, ownerName, ownerEmail, initialCollaborators = [], placesApiKey, userId, userPlan = "FREE", vehicles: initialVehicles = [] }: Props) {
   const router = useRouter()
   const [activeTab, setActiveTab] = useState<Tab>(tabFromParam(initialTab))
   const [trip, setTrip] = useState<Trip>(initialTrip)
@@ -383,8 +404,9 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles, initi
   const [inviteRole, setInviteRole] = useState<"VIEWER" | "EDITOR">("VIEWER")
   const [inviting, setInviting] = useState(false)
 
-  // Flight state
+  // Travel-leg state (one tab for flights + ferry/train/bus)
   const [showFlightForm, setShowFlightForm] = useState(false)
+  const [legType, setLegType] = useState<LegType>("FLIGHT")
   const [flightPasteText, setFlightPasteText] = useState("")
   const [parsedFlight, setParsedFlight] = useState<Record<string, string> | null>(null)
   const [parsingFlight, setParsingFlight] = useState(false)
@@ -418,6 +440,7 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles, initi
     checkOut: "",
     confirmationNumber: "",
     bookingLink: "",
+    notes: "",
     isVacationRental: false,
     price: "",
     roomCount: "1",
@@ -461,12 +484,20 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles, initi
     notes: "",
   })
 
+  // Owned-vehicle state (Cars tab -> "My car")
+  const [vehicles, setVehicles] = useState<SavedVehicle[]>(initialVehicles)
+  const [tripVehicleId, setTripVehicleId] = useState<string | null>(trip.vehicleId ?? null)
+
   // General state
   const [generalForm, setGeneralForm] = useState({
     title: trip.title,
     startDate: trip.startDate.toISOString().split("T")[0],
     endDate: trip.endDate.toISOString().split("T")[0],
     notes: trip.notes || "",
+    originLabel: trip.originLabel || "Home",
+    originAddress: trip.originAddress || "",
+    originLat: trip.originLat ?? null,
+    originLng: trip.originLng ?? null,
   })
   const [savingGeneral, setSavingGeneral] = useState(false)
   const [deletingTrip, setDeletingTrip] = useState(false)
@@ -479,6 +510,12 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles, initi
   // Affiliate link state
   const [hotelAffiliateLink, setHotelAffiliateLink] = useState<AffiliateLink | null>(null)
   const [carRentalLink, setCarRentalLink] = useState<AffiliateLink | null>(null)
+  const [parkingLink, setParkingLink] = useState<AffiliateLink | null>(null)
+
+  // Parking is only relevant once there's actually a car on this trip —
+  // either a rental booking or the user's own vehicle.
+  const hasCarOnTrip = trip.rentalCars.length > 0 || !!tripVehicleId
+  const firstHotel = trip.hotels[0] ?? null
 
   useEffect(() => {
     // Fetch hotel affiliate link
@@ -494,6 +531,49 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles, initi
       trip.endDate.toISOString().split("T")[0]
     ).then(setCarRentalLink)
   }, [trip.destination, trip.startDate, trip.endDate])
+
+  useEffect(() => {
+    if (!hasCarOnTrip) {
+      setParkingLink(null)
+      return
+    }
+    // Deep-link parking to the first hotel when we have one, otherwise the
+    // destination. Coords make SpotHero's search far more accurate.
+    getParkingAffiliate({
+      location: firstHotel?.address || firstHotel?.name || trip.destination,
+      lat: firstHotel?.lat ?? null,
+      lng: firstHotel?.lng ?? null,
+      startDate: trip.startDate.toISOString().split("T")[0],
+      endDate: trip.endDate.toISOString().split("T")[0],
+    })
+      .then(setParkingLink)
+      .catch(() => setParkingLink(null))
+  }, [
+    hasCarOnTrip,
+    firstHotel?.address,
+    firstHotel?.name,
+    firstHotel?.lat,
+    firstHotel?.lng,
+    trip.destination,
+    trip.startDate,
+    trip.endDate,
+  ])
+
+  // One chronologically sorted list mixing flights and ferry/train/bus legs.
+  const travelLegs = [
+    ...trip.flights.map((f) => ({
+      kind: "FLIGHT" as const,
+      id: f.id,
+      time: new Date(f.departureTime).getTime(),
+      flight: f,
+    })),
+    ...trip.transportSegments.map((s) => ({
+      kind: "TRANSPORT" as const,
+      id: s.id,
+      time: new Date(s.departureTime).getTime(),
+      segment: s,
+    })),
+  ].sort((a, b) => a.time - b.time)
 
   // Parse flight from text
   async function handleParseFlight() {
@@ -608,6 +688,7 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles, initi
 
   function clearFlightState() {
     setShowFlightForm(false)
+    setLegType("FLIGHT")
     setFlightPasteText("")
     setParsedFlight(null)
     setParsedFlights([])
@@ -680,6 +761,31 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles, initi
     }
   }
 
+  function handleTransportCreated(segments: TransportSegmentRow[]) {
+    setTrip((prev) => ({ ...prev, transportSegments: [...prev.transportSegments, ...segments] }))
+    setShowFlightForm(false)
+  }
+
+  async function handleDeleteSegment(segmentId: string) {
+    try {
+      await deleteTransportSegment(tripId, segmentId)
+      setTrip((prev) => ({
+        ...prev,
+        transportSegments: prev.transportSegments.filter((s) => s.id !== segmentId),
+      }))
+      toast.success("Leg removed")
+    } catch {
+      toast.error("Failed to remove leg")
+    }
+  }
+
+  function handleHotelUpdated(updated: HotelRow) {
+    setTrip((prev) => ({
+      ...prev,
+      hotels: prev.hotels.map((h) => (h.id === updated.id ? { ...h, ...updated } : h)),
+    }))
+  }
+
   async function handleAddHotel() {
     if (!hotelForm.name || !hotelForm.checkIn || !hotelForm.checkOut) {
       toast.error("Name, check-in, and check-out dates are required")
@@ -693,13 +799,14 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles, initi
         address: hotelForm.address || undefined,
         confirmationNumber: hotelForm.confirmationNumber || undefined,
         bookingLink: hotelForm.bookingLink || undefined,
+        notes: hotelForm.notes || undefined,
         price: hotelForm.price ? parseFloat(hotelForm.price) : undefined,
         roomCount: hotelForm.roomCount ? parseInt(hotelForm.roomCount) : 1,
         roomType: hotelForm.roomType || undefined,
       })
       setTrip((prev) => ({ ...prev, hotels: [...prev.hotels, hotel as unknown as Trip["hotels"][0]] }))
       setShowHotelForm(false)
-      setHotelForm({ name: "", address: "", checkIn: "", checkOut: "", confirmationNumber: "", bookingLink: "", isVacationRental: false, price: "", roomCount: "1", roomType: "" })
+      setHotelForm({ name: "", address: "", checkIn: "", checkOut: "", confirmationNumber: "", bookingLink: "", notes: "", isVacationRental: false, price: "", roomCount: "1", roomType: "" })
       toast.success("Hotel added!")
     } catch {
       toast.error("Failed to add hotel")
@@ -890,7 +997,25 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles, initi
   async function handleSaveGeneral() {
     setSavingGeneral(true)
     try {
-      await updateTrip(tripId, generalForm)
+      await updateTrip(tripId, {
+        title: generalForm.title,
+        startDate: generalForm.startDate,
+        endDate: generalForm.endDate,
+        notes: generalForm.notes,
+        originLabel: generalForm.originAddress ? generalForm.originLabel || "Home" : null,
+        originAddress: generalForm.originAddress || null,
+        originLat: generalForm.originAddress ? generalForm.originLat : null,
+        originLng: generalForm.originAddress ? generalForm.originLng : null,
+      })
+      setTrip((prev) => ({
+        ...prev,
+        title: generalForm.title,
+        notes: generalForm.notes,
+        originLabel: generalForm.originAddress ? generalForm.originLabel || "Home" : null,
+        originAddress: generalForm.originAddress || null,
+        originLat: generalForm.originAddress ? generalForm.originLat : null,
+        originLng: generalForm.originAddress ? generalForm.originLng : null,
+      }))
       toast.success("Trip updated")
     } catch {
       toast.error("Failed to update trip")
@@ -1004,67 +1129,84 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles, initi
         ))}
       </div>
 
-      {/* FLIGHTS TAB */}
-      {activeTab === "Flights" && (
+      {/* TRAVEL TAB — every point-to-point leg: flights, ferries, trains, buses */}
+      {activeTab === "Travel" && (
         <div>
-          {trip.flights.length === 0 && !showFlightForm && (
+          {travelLegs.length === 0 && !showFlightForm && (
             <div className="text-center py-12">
               <Plane className="w-10 h-10 text-gray-200 mx-auto mb-3" />
-              <p className="text-gray-500 text-sm">No flights added yet</p>
+              <p className="text-gray-500 text-sm">No travel legs added yet</p>
               <p className="text-gray-400 text-xs mt-1">
-                Paste a confirmation email to auto-import, or add manually
+                Flights, ferries, trains and buses — paste a confirmation email to auto-import, or add manually
               </p>
             </div>
           )}
 
-          {/* Flight list with expandable status */}
+          {/* Chronological list of every leg, whatever the mode */}
           <div className="space-y-2 mb-4">
-            {trip.flights.map((flight) => (
-              <div key={flight.id} className="relative">
-                <FlightStatusPanel
-                  flight={flight}
-                  tripId={tripId}
-                  isPaid={hasFeature(userPlan, "liveFlightTracking")}
-                />
-                <button
-                  onClick={() => handleDeleteFlight(flight.id)}
-                  className="absolute top-4 right-4 p-2 text-gray-400 hover:text-red-500 transition-colors sm:opacity-0 sm:group-hover:opacity-100 z-10"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            ))}
+            {travelLegs.map((leg) =>
+              leg.kind === "FLIGHT" ? (
+                <div key={`f-${leg.id}`} className="relative">
+                  <FlightStatusPanel
+                    flight={leg.flight}
+                    tripId={tripId}
+                    isPaid={hasFeature(userPlan, "liveFlightTracking")}
+                  />
+                  <button
+                    onClick={() => handleDeleteFlight(leg.id)}
+                    className="absolute top-4 right-4 p-2 text-gray-400 hover:text-red-500 transition-colors sm:opacity-0 sm:group-hover:opacity-100 z-10"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ) : (
+                <TransportTile key={`t-${leg.id}`} segment={leg.segment} onDelete={handleDeleteSegment} />
+              )
+            )}
           </div>
 
-          {/* Rental car affiliate link when flights exist */}
-          {trip.flights.length > 0 && carRentalLink && (
+          {/* Rental car affiliate link when travel legs exist */}
+          {travelLegs.length > 0 && carRentalLink && (
             <div className="mb-4 p-3 bg-blue-50 border border-blue-100 rounded-xl">
               <p className="text-xs text-gray-500 mb-2">Need a car at your destination?</p>
               <AffiliateBadge link={carRentalLink} />
             </div>
           )}
 
-          {/* Add flight button */}
+          {/* Add leg button */}
           {!showFlightForm && (
             <button
               onClick={() => setShowFlightForm(true)}
               className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-xl hover:bg-indigo-700 transition-colors"
             >
               <Plus className="w-4 h-4" />
-              Add flight
+              Add leg
             </button>
           )}
 
-          {/* Add flight form */}
+          {/* Add leg form */}
           {showFlightForm && (
             <div className="bg-white border border-indigo-200 rounded-2xl p-5">
               <div className="flex items-center justify-between mb-4">
-                <h3 className="font-semibold text-gray-900">Add Flight</h3>
+                <h3 className="font-semibold text-gray-900">Add Travel Leg</h3>
                 <button onClick={clearFlightState} className="p-2">
                   <X className="w-4 h-4 text-gray-400" />
                 </button>
               </div>
 
+              <LegTypePicker value={legType} onChange={setLegType} />
+
+              {legType !== "FLIGHT" ? (
+                <TransportLegForm
+                  key={legType}
+                  tripId={tripId}
+                  mode={legType}
+                  placesApiKey={placesApiKey}
+                  onCreated={handleTransportCreated}
+                  onCancel={clearFlightState}
+                />
+              ) : (
+              <>
               {/* Paste & parse */}
               <div className="mb-4">
                 <label className="block text-xs font-medium text-gray-500 mb-1.5">
@@ -1214,6 +1356,8 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles, initi
                   </button>
                 </div>
               </div>
+              </>
+              )}
             </div>
           )}
         </div>
@@ -1255,34 +1399,14 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles, initi
 
           <div className="space-y-2 mb-4">
             {trip.hotels.map((hotel) => (
-              <div key={hotel.id} className="bg-white border border-gray-100 rounded-2xl p-4 group">
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 bg-purple-50 rounded-xl flex items-center justify-center shrink-0">
-                    <Hotel className="w-4 h-4 text-purple-600" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="font-medium text-sm text-gray-900 truncate">
-                      {hotel.isVacationRental ? "\u{1F3E1} " : "\u{1F3E8} "}{hotel.name}
-                    </div>
-                    <div className="text-xs text-gray-500 truncate">
-                      {formatDate(hotel.checkIn, "MMM d")} &rarr; {formatDate(hotel.checkOut, "MMM d, yyyy")}
-                      {hotel.confirmationNumber && ` \u00B7 ${hotel.confirmationNumber}`}
-                      {hotel.address && ` \u00B7 ${hotel.address}`}
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => handleDeleteHotel(hotel.id)}
-                    className="p-2 text-gray-400 hover:text-red-500 transition-colors sm:opacity-0 sm:group-hover:opacity-100"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-                {hotelAffiliateLink && (
-                  <div className="mt-2 ml-12">
-                    <AffiliateBadge link={hotelAffiliateLink} />
-                  </div>
-                )}
-              </div>
+              <HotelTile
+                key={hotel.id}
+                tripId={tripId}
+                hotel={hotel}
+                placesApiKey={placesApiKey}
+                onUpdated={handleHotelUpdated}
+                onDelete={handleDeleteHotel}
+              />
             ))}
           </div>
 
@@ -1378,18 +1502,30 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles, initi
                   onChange={(e) => setHotelForm((f) => ({ ...f, address: e.target.value }))}
                   className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs text-gray-500 mb-1">Check-in *</label>
-                    <input type="datetime-local" value={hotelForm.checkIn}
-                      onChange={(e) => setHotelForm((f) => ({ ...f, checkIn: e.target.value }))}
-                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-gray-500 mb-1">Check-out *</label>
-                    <input type="datetime-local" value={hotelForm.checkOut}
-                      onChange={(e) => setHotelForm((f) => ({ ...f, checkOut: e.target.value }))}
-                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
-                  </div>
+                  <DateTimeField
+                    label="Check-in"
+                    required
+                    value={hotelForm.checkIn}
+                    onChange={(v) => setHotelForm((f) => ({ ...f, checkIn: v }))}
+                    defaultTime={DEFAULT_CHECK_IN_TIME}
+                    quickTimes={CHECK_IN_QUICK_TIMES}
+                  />
+                  <DateTimeField
+                    label="Check-out"
+                    required
+                    value={hotelForm.checkOut}
+                    onChange={(v) => setHotelForm((f) => ({ ...f, checkOut: v }))}
+                    defaultTime={DEFAULT_CHECK_OUT_TIME}
+                    quickTimes={CHECK_OUT_QUICK_TIMES}
+                    min={hotelForm.checkIn ? hotelForm.checkIn.split("T")[0] : undefined}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Notes</label>
+                  <textarea rows={2} value={hotelForm.notes}
+                    placeholder="Parking, breakfast, late arrival instructions..."
+                    onChange={(e) => setHotelForm((f) => ({ ...f, notes: e.target.value }))}
+                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none" />
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <input type="text" placeholder="Confirmation #" value={hotelForm.confirmationNumber}
@@ -1469,6 +1605,8 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles, initi
               </div>
             </div>
           )}
+
+          <h3 className="font-semibold text-gray-900 mb-3">Rental car</h3>
 
           {trip.rentalCars.length === 0 && !showCarForm && !showCarParse && (
             <div className="text-center py-12">
@@ -1699,6 +1837,47 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles, initi
                     className="flex-1 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-xl hover:bg-indigo-700">
                     Add rental car
                   </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* MY CAR — user-owned vehicle, reusable across trips */}
+          <div className="mt-6">
+            <MyCarSection
+              tripId={tripId}
+              vehicles={vehicles}
+              selectedVehicleId={tripVehicleId}
+              onVehiclesChange={setVehicles}
+              onSelectedChange={setTripVehicleId}
+            />
+          </div>
+
+          {/* Parking — only once there's actually a car on this trip */}
+          {hasCarOnTrip && parkingLink && (
+            <div className="mt-4 bg-amber-50 border border-amber-100 rounded-2xl p-4">
+              <div className="flex items-start gap-3">
+                <span className="text-xl">{parkingLink.icon}</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-amber-900">
+                    {firstHotel ? "Find parking near your hotel" : "Find parking at your destination"}
+                  </p>
+                  <p className="text-xs text-amber-700 mt-0.5">
+                    {firstHotel
+                      ? `Reserve a spot near ${firstHotel.name} for your stay`
+                      : `Reserve a spot in ${trip.destination}`}
+                  </p>
+                  <a
+                    href={parkingLink.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={() => {
+                      try { localStorage.setItem("jp_affiliate_click", JSON.stringify({ type: "car", tripId, timestamp: Date.now() })) } catch {}
+                    }}
+                    className="inline-flex items-center gap-1.5 mt-2 px-3 py-1.5 text-xs font-semibold text-white bg-amber-600 hover:bg-amber-700 rounded-lg transition-colors"
+                  >
+                    Search on {parkingLink.provider} →
+                  </a>
                 </div>
               </div>
             </div>
@@ -2030,6 +2209,49 @@ export function TripSettingsView({ tripId, trip: initialTrip, allProfiles, initi
                   </button>
                 </div>
               </div>
+
+              {/* Starting point — where the trip actually begins (usually home,
+                  not a hotel). Powers the "leave by" drive-time estimate. */}
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Starting from</label>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <input
+                    type="text"
+                    placeholder="Home"
+                    value={generalForm.originLabel}
+                    onChange={(e) => setGeneralForm((f) => ({ ...f, originLabel: e.target.value }))}
+                    className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                  <div className="relative sm:col-span-2">
+                    <Home className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 z-10" />
+                    <PlacesAutocomplete
+                      value={generalForm.originAddress}
+                      onChange={(val) =>
+                        setGeneralForm((f) => ({ ...f, originAddress: val, originLat: null, originLng: null }))
+                      }
+                      onSelect={(place) =>
+                        setGeneralForm((f) => ({
+                          ...f,
+                          originAddress: place.name,
+                          originLat: place.lat ?? null,
+                          originLng: place.lng ?? null,
+                        }))
+                      }
+                      placeholder="Where does this trip start?"
+                      className="w-full pl-8 pr-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      apiKey={placesApiKey}
+                    />
+                  </div>
+                </div>
+                <p className="text-[11px] text-gray-400 mt-1">
+                  Used to work out when you need to leave for your first flight, ferry or train.{" "}
+                  <a href="/settings" className="text-indigo-600 hover:text-indigo-700">
+                    Set a home address
+                  </a>{" "}
+                  to prefill this on every new trip.
+                </p>
+              </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs text-gray-500 mb-1">Start date</label>

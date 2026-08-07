@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db"
 import { getTrip } from "@/lib/actions/trips"
 import { getTravelerProfiles } from "@/lib/actions/travelers"
 import { getCollaborators } from "@/lib/actions/collaborators"
+import { listVehicles } from "@/lib/actions/vehicles"
 import { TripSettingsView } from "./trip-settings-view"
 
 export default async function TripSettingsPage({
@@ -18,10 +19,11 @@ export default async function TripSettingsPage({
 
   try {
     const session = await auth()
-    const [trip, allProfiles, collaborators] = await Promise.all([
+    const [trip, allProfiles, collaborators, vehicles] = await Promise.all([
       getTrip(tripId),
       getTravelerProfiles(),
       getCollaborators(tripId),
+      listVehicles().catch(() => []),
     ])
 
     // Get owner info
@@ -47,6 +49,17 @@ export default async function TripSettingsPage({
         placesApiKey={placesApiKey}
         userId={session?.user?.id || ""}
         userPlan={userPlan}
+        vehicles={vehicles.map((v) => ({
+          id: v.id,
+          make: v.make,
+          model: v.model,
+          year: v.year,
+          color: v.color,
+          licensePlate: v.licensePlate,
+          licensePlateState: v.licensePlateState,
+          nickname: v.nickname,
+          isDefault: v.isDefault,
+        }))}
       />
     )
   } catch {

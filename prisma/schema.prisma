@@ -17,20 +17,26 @@ model User {
   image         String?
 
   // SaaS billing (Stripe — schema ready, not yet wired)
-  stripeCustomerId String?  @unique
-  plan             Plan     @default(FREE)
-  planStatus       String?  // active | trialing | past_due | canceled
+  stripeCustomerId String?   @unique
+  plan             Plan      @default(FREE)
+  planStatus       String? // active | trialing | past_due | canceled
   trialEndsAt      DateTime?
-  isAdmin          Boolean  @default(false)
+  isAdmin          Boolean   @default(false)
 
   // Referrals
-  referralCode      String?    @unique // this user's referral code
-  referredBy        String?    // referral code they used to sign up
-  referralsMade     Referral[] @relation("referralsMade")
-  referralUsed      Referral?  @relation("referralUsed")
+  referralCode  String?    @unique // this user's referral code
+  referredBy    String? // referral code they used to sign up
+  referralsMade Referral[] @relation("referralsMade")
+  referralUsed  Referral?  @relation("referralUsed")
 
   // Timezone
-  timezone         String   @default("America/New_York")
+  timezone String @default("America/New_York")
+
+  // Home address — entered once, prefills each new trip's origin
+  homeAddress String?
+  homeCity    String?
+  homeLat     Float?
+  homeLng     Float?
 
   // Relations
   accounts         Account[]
@@ -44,6 +50,7 @@ model User {
   activityNotes    ActivityNote[]
   aiUsage          AIUsage[]
   pendingEmails    PendingEmail[]
+  vehicles         Vehicle[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -87,17 +94,17 @@ model VerificationToken {
 // ─── Traveler Profiles ────────────────────────────────────────────────────────
 
 model TravelerProfile {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   userId      String
   name        String
   birthDate   DateTime?
-  sex         String?  // "male", "female", "other"
-  photoUrl    String?  @db.Text
+  sex         String? // "male", "female", "other"
+  photoUrl    String?   @db.Text
   tags        String[] // ["child", "adult", "senior", "stroller-needed", "thrill-seeker"]
-  isDefault   Boolean  @default(false)
-  preferences Json?    // TravelerPreferences object stored as JSON
+  isDefault   Boolean   @default(false)
+  preferences Json? // TravelerPreferences object stored as JSON
 
-  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   tripTravelers TripTraveler[]
 
   createdAt DateTime @default(now())
@@ -124,10 +131,10 @@ model UserPreferences {
   bedTime    String @default("22:00")
 
   // Preferences (stored as JSON arrays)
-  mealStylePrefs String[] // ["quick", "sit-down", "local", "upscale"]
-  activityMix    String[] // ["sightseeing", "beach", "food", "adventure", "relaxation"]
-  mobilityNotes  String?
-  maxDailyTravelMins Int @default(60)
+  mealStylePrefs     String[] // ["quick", "sit-down", "local", "upscale"]
+  activityMix        String[] // ["sightseeing", "beach", "food", "adventure", "relaxation"]
+  mobilityNotes      String?
+  maxDailyTravelMins Int      @default(60)
 
   // Free time display
   showFreeTime        Boolean @default(false)
@@ -141,41 +148,53 @@ model UserPreferences {
 // ─── Trips ────────────────────────────────────────────────────────────────────
 
 model Trip {
-  id          String     @id @default(cuid())
-  userId      String
-  title       String
-  destination String
+  id             String     @id @default(cuid())
+  userId         String
+  title          String
+  destination    String
   destinationLat Float?
   destinationLng Float?
-  startDate   DateTime
-  endDate     DateTime
-  shareSlug   String?    @unique
-  isPublic    Boolean    @default(false)
-  coverImage  String?
-  notes       String?    @db.Text
-  status      TripStatus @default(PLANNING)
+  startDate      DateTime
+  endDate        DateTime
+  shareSlug      String?    @unique
+  isPublic       Boolean    @default(false)
+  coverImage     String?
+  notes          String?    @db.Text
+  status         TripStatus @default(PLANNING)
+
+  // Starting point for the trip (prefilled from the user's home address)
+  originLabel   String? // "Home", "Office" — display name for the trip's starting point
+  originAddress String?
+  originLat     Float?
+  originLng     Float?
+
+  // Own vehicle being driven on this trip (optional)
+  vehicleId String?
 
   // Relations
-  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  destinations   TripDestination[]
-  travelers      TripTraveler[]
-  hotels         Hotel[]
-  rentalCars     RentalCar[]
-  flights        Flight[]
-  activities     Activity[]
-  itineraryItems ItineraryItem[]
-  documents      TravelDocument[]
-  budgetItems    BudgetItem[]
-  packingItems   PackingItem[]
-  collaborators  TripCollaborator[]
-  activityNotes  ActivityNote[]
-  dismissedPlaces DismissedPlace[]
+  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  vehicle           Vehicle?           @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
+  destinations      TripDestination[]
+  travelers         TripTraveler[]
+  hotels            Hotel[]
+  rentalCars        RentalCar[]
+  flights           Flight[]
+  transportSegments TransportSegment[]
+  activities        Activity[]
+  itineraryItems    ItineraryItem[]
+  documents         TravelDocument[]
+  budgetItems       BudgetItem[]
+  packingItems      PackingItem[]
+  collaborators     TripCollaborator[]
+  activityNotes     ActivityNote[]
+  dismissedPlaces   DismissedPlace[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([userId])
   @@index([shareSlug])
+  @@index([vehicleId])
 }
 
 model TripDestination {
@@ -192,7 +211,7 @@ model TripDestination {
 }
 
 model TripTraveler {
-  id                String @id @default(cuid())
+  id                String  @id @default(cuid())
   tripId            String
   travelerProfileId String
   isPrimary         Boolean @default(false)
@@ -210,6 +229,7 @@ model Hotel {
   tripId             String
   name               String
   address            String?
+  city               String? // parsed from address; used for per-day auto-plan geo-fencing
   lat                Float?
   lng                Float?
   checkIn            DateTime
@@ -221,7 +241,9 @@ model Hotel {
   price              Float?
   priceCurrency      String?  @default("USD")
   roomCount          Int      @default(1)
-  roomType           String?  // e.g. "2 Queen Beds", "King Suite"
+  roomType           String? // e.g. "2 Queen Beds", "King Suite"
+  googlePlaceId      String?
+  photoRef           String? // Google Places photo resource name, proxied via /api/places/photo
 
   trip           Trip             @relation(fields: [tripId], references: [id], onDelete: Cascade)
   itineraryItems ItineraryItem[]
@@ -238,9 +260,9 @@ model Hotel {
 model RentalCar {
   id                 String   @id @default(cuid())
   tripId             String
-  company            String?  // e.g. "Enterprise", "Hertz", "Turo"
+  company            String? // e.g. "Enterprise", "Hertz", "Turo"
   confirmationNumber String?
-  vehicleType        String?  // e.g. "Midsize SUV", "Tesla Model 3"
+  vehicleType        String? // e.g. "Midsize SUV", "Tesla Model 3"
   pickupLocation     String?
   pickupAddress      String?
   pickupTime         DateTime
@@ -254,13 +276,36 @@ model RentalCar {
   bookingLink        String?
   notes              String?
 
-  trip               Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
-  itineraryItems     ItineraryItem[]
+  trip           Trip            @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  itineraryItems ItineraryItem[]
 
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([tripId])
+}
+
+// ─── Vehicles (user-owned cars, reused across trips) ─────────────────────────
+
+model Vehicle {
+  id                String  @id @default(cuid())
+  userId            String
+  make              String
+  model             String
+  year              Int?
+  color             String?
+  licensePlate      String?
+  licensePlateState String?
+  nickname          String? // e.g. "The Wagon"
+  isDefault         Boolean @default(false)
+
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  trips Trip[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
 }
 
 // ─── Flights ──────────────────────────────────────────────────────────────────
@@ -281,6 +326,7 @@ model Flight {
   confirmationNumber String?
   bookingLink        String?
   cabin              String?
+  checkInMinsBefore  Int? // minutes to arrive before departure; null = mode default
   notes              String?  @db.Text
   price              Float?
   priceCurrency      String?  @default("USD")
@@ -296,35 +342,77 @@ model Flight {
   @@index([tripId])
 }
 
+// ─── Transport Segments (ferry / train / bus) ────────────────────────────────
+
+model TransportSegment {
+  id                 String        @id @default(cuid())
+  tripId             String
+  mode               TransportMode
+  operator           String // e.g. "Lake Express", "Amtrak"
+  serviceNumber      String? // train / sailing number
+  departureLocation  String // e.g. "Muskegon, MI"
+  departureTerminal  String? // e.g. "Lake Express Terminal"
+  departureAddress   String?
+  departureLat       Float?
+  departureLng       Float?
+  departureTime      DateTime
+  departureTimezone  String        @default("UTC")
+  arrivalLocation    String?
+  arrivalTerminal    String?
+  arrivalAddress     String?
+  arrivalLat         Float?
+  arrivalLng         Float?
+  arrivalTime        DateTime?
+  arrivalTimezone    String        @default("UTC")
+  confirmationNumber String?
+  bookingLink        String?
+  seatInfo           String? // cabin / car+seat / deck
+  vehicleOnBoard     Boolean       @default(false) // ferry: bringing a car aboard
+  passengerCount     Int?
+  checkInMinsBefore  Int? // minutes to arrive before departure; null = mode default
+  price              Float?
+  priceCurrency      String?       @default("USD")
+  notes              String?       @db.Text
+
+  trip           Trip            @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  itineraryItems ItineraryItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tripId])
+}
+
 // ─── Activities ───────────────────────────────────────────────────────────────
 
 model Activity {
-  id                String         @id @default(cuid())
-  tripId            String
-  name              String
-  description       String?        @db.Text
-  address           String?
-  lat               Float?
-  lng               Float?
-  googlePlaceId     String?
-  category          String?        // "museum", "beach", "restaurant", "attraction", etc.
-  durationMins      Int            @default(120)
-  costPerAdult      Float          @default(0)
-  costPerChild      Float          @default(0)
-  priority          ActivityPriority @default(MEDIUM)
-  isFixed           Boolean        @default(false)
-  fixedDateTime     DateTime?
-  indoorOutdoor     IndoorOutdoor  @default(BOTH)
+  id                 String           @id @default(cuid())
+  tripId             String
+  name               String
+  description        String?          @db.Text
+  address            String?
+  lat                Float?
+  lng                Float?
+  googlePlaceId      String?
+  category           String? // "museum", "beach", "restaurant", "attraction", etc.
+  durationMins       Int              @default(120)
+  costPerAdult       Float            @default(0)
+  costPerChild       Float            @default(0)
+  priority           ActivityPriority @default(MEDIUM)
+  isFixed            Boolean          @default(false)
+  fixedDateTime      DateTime?
+  indoorOutdoor      IndoorOutdoor    @default(BOTH)
   confirmationNumber String?
-  reservationNeeded Boolean        @default(false)
-  bookingLink       String?
-  websiteUrl        String?
-  imageUrl          String?
-  rating            Float?
-  hoursJson         String?        @db.Text // JSON: { "monday": "9:00-17:00", ... }
-  bestTimeOfDay     String?        // "morning", "afternoon", "evening", "any"
-  notes             String?        @db.Text
-  status            ActivityStatus @default(WISHLIST)
+  reservationNeeded  Boolean          @default(false)
+  bookingLink        String?
+  websiteUrl         String?
+  imageUrl           String?
+  rating             Float?
+  hoursJson          String?          @db.Text // JSON: { "monday": "9:00-17:00", ... }
+  bestTimeOfDay      String? // "morning", "afternoon", "evening", "any"
+  mealSlots          String? // JSON array: ["breakfast","lunch","dinner","drinks"]
+  notes              String?          @db.Text
+  status             ActivityStatus   @default(WISHLIST)
 
   trip           Trip            @relation(fields: [tripId], references: [id], onDelete: Cascade)
   itineraryItems ItineraryItem[]
@@ -340,21 +428,22 @@ model Activity {
 // ─── Itinerary ────────────────────────────────────────────────────────────────
 
 model ItineraryItem {
-  id          String            @id @default(cuid())
-  tripId      String
-  date        DateTime          @db.Date
-  startTime   String?           // "HH:MM" local time
-  endTime     String?
-  type        ItineraryItemType
-  title       String
-  notes       String?           @db.Text
-  userNotes   String?           // personal notes/stories for this event
+  id        String            @id @default(cuid())
+  tripId    String
+  date      DateTime          @db.Date
+  startTime String? // "HH:MM" local time
+  endTime   String?
+  type      ItineraryItemType
+  title     String
+  notes     String?           @db.Text
+  userNotes String? // personal notes/stories for this event
 
   // Linked source entities (at most one will be set)
-  activityId   String?
-  flightId     String?
-  hotelId      String?
-  rentalCarId  String?
+  activityId         String?
+  flightId           String?
+  hotelId            String?
+  rentalCarId        String?
+  transportSegmentId String?
 
   durationMins         Int     @default(60)
   travelTimeToNextMins Int     @default(0)
@@ -362,12 +451,13 @@ model ItineraryItem {
   position             Int     @default(0)
   isConfirmed          Boolean @default(false)
 
-  trip     Trip      @relation(fields: [tripId], references: [id], onDelete: Cascade)
-  activity  Activity?  @relation(fields: [activityId], references: [id], onDelete: SetNull)
-  flight    Flight?    @relation(fields: [flightId], references: [id], onDelete: SetNull)
-  hotel     Hotel?     @relation(fields: [hotelId], references: [id], onDelete: SetNull)
-  rentalCar RentalCar? @relation(fields: [rentalCarId], references: [id], onDelete: SetNull)
-  reservation Reservation?
+  trip             Trip              @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  activity         Activity?         @relation(fields: [activityId], references: [id], onDelete: SetNull)
+  flight           Flight?           @relation(fields: [flightId], references: [id], onDelete: SetNull)
+  hotel            Hotel?            @relation(fields: [hotelId], references: [id], onDelete: SetNull)
+  rentalCar        RentalCar?        @relation(fields: [rentalCarId], references: [id], onDelete: SetNull)
+  transportSegment TransportSegment? @relation(fields: [transportSegmentId], references: [id], onDelete: SetNull)
+  reservation      Reservation?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -376,6 +466,7 @@ model ItineraryItem {
   @@index([activityId])
   @@index([flightId])
   @@index([hotelId])
+  @@index([transportSegmentId])
 }
 
 // ─── Travel Documents ─────────────────────────────────────────────────────────
@@ -414,8 +505,8 @@ model BudgetItem {
   isEstimate Boolean        @default(true)
   paidAt     DateTime?
   notes      String?
-  paidBy     String?        // userId or traveler name who paid
-  splitAmong String[]       // userIds or traveler names to split between
+  paidBy     String? // userId or traveler name who paid
+  splitAmong String[] // userIds or traveler names to split between
 
   trip Trip @relation(fields: [tripId], references: [id], onDelete: Cascade)
 
@@ -428,14 +519,14 @@ model BudgetItem {
 // ─── Subscription (Stripe-ready) ─────────────────────────────────────────────
 
 model Subscription {
-  id                   String  @id @default(cuid())
-  userId               String  @unique
-  stripeSubscriptionId String? @unique
+  id                   String    @id @default(cuid())
+  userId               String    @unique
+  stripeSubscriptionId String?   @unique
   stripePriceId        String?
-  status               String  @default("active") // active | trialing | past_due | canceled
+  status               String    @default("active") // active | trialing | past_due | canceled
   currentPeriodStart   DateTime?
   currentPeriodEnd     DateTime?
-  cancelAtPeriodEnd    Boolean @default(false)
+  cancelAtPeriodEnd    Boolean   @default(false)
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -455,16 +546,16 @@ model AppConfig {
 
 model Referral {
   id          String         @id @default(cuid())
-  referrerId  String         // user who shared the code
+  referrerId  String // user who shared the code
   refereeId   String?        @unique // user who signed up (null until they sign up)
   code        String         @unique // referral code
   status      ReferralStatus @default(PENDING)
   rewardGiven Boolean        @default(false)
 
-  referrer    User           @relation("referralsMade", fields: [referrerId], references: [id], onDelete: Cascade)
-  referee     User?          @relation("referralUsed", fields: [refereeId], references: [id])
+  referrer User  @relation("referralsMade", fields: [referrerId], references: [id], onDelete: Cascade)
+  referee  User? @relation("referralUsed", fields: [refereeId], references: [id])
 
-  createdAt   DateTime       @default(now())
+  createdAt   DateTime  @default(now())
   convertedAt DateTime?
 
   @@index([referrerId])
@@ -472,24 +563,24 @@ model Referral {
 }
 
 enum ReferralStatus {
-  PENDING     // code created, not yet used
-  SIGNED_UP   // referee created account
-  CONVERTED   // referee purchased qualifying plan
-  REWARDED    // referrer received reward
-  EXPIRED     // code expired
+  PENDING // code created, not yet used
+  SIGNED_UP // referee created account
+  CONVERTED // referee purchased qualifying plan
+  REWARDED // referrer received reward
+  EXPIRED // code expired
 }
 
 // ─── Packing Lists ──────────────────────────────────────────────────────
 
 model PackingItem {
-  id        String  @id @default(cuid())
-  tripId    String
-  text      String
-  category  String  @default("General") // Clothing, Toiletries, Electronics, Documents, etc.
-  isPacked  Boolean @default(false)
-  position  Int     @default(0)
+  id       String  @id @default(cuid())
+  tripId   String
+  text     String
+  category String  @default("General") // Clothing, Toiletries, Electronics, Documents, etc.
+  isPacked Boolean @default(false)
+  position Int     @default(0)
 
-  trip      Trip    @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  trip Trip @relation(fields: [tripId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
 
@@ -499,16 +590,16 @@ model PackingItem {
 // ─── Trip Collaborators ──────────────────────────────────────────────────────
 
 model TripCollaborator {
-  id        String              @id @default(cuid())
+  id        String             @id @default(cuid())
   tripId    String
-  userId    String?             // null until they accept (invited by email)
-  email     String              // email they were invited with
-  role      CollaboratorRole    @default(VIEWER)
-  status    CollaboratorStatus  @default(PENDING)
-  invitedBy String              // userId who sent invite
+  userId    String? // null until they accept (invited by email)
+  email     String // email they were invited with
+  role      CollaboratorRole   @default(VIEWER)
+  status    CollaboratorStatus @default(PENDING)
+  invitedBy String // userId who sent invite
 
-  trip      Trip    @relation(fields: [tripId], references: [id], onDelete: Cascade)
-  user      User?   @relation("userCollaborations", fields: [userId], references: [id])
+  trip Trip  @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  user User? @relation("userCollaborations", fields: [userId], references: [id])
 
   createdAt DateTime @default(now())
 
@@ -524,8 +615,8 @@ enum CollaboratorRole {
 }
 
 enum CollaboratorStatus {
-  PENDING   // invited, hasn't signed up or accepted
-  ACCEPTED  // active collaborator
+  PENDING // invited, hasn't signed up or accepted
+  ACCEPTED // active collaborator
   DECLINED
 }
 
@@ -582,8 +673,15 @@ enum ItineraryItemType {
   ACTIVITY
   MEAL
   TRANSIT
+  TRANSPORT
   BUFFER
   CUSTOM
+}
+
+enum TransportMode {
+  FERRY
+  TRAIN
+  BUS
 }
 
 enum DocumentType {
@@ -599,15 +697,15 @@ enum DocumentType {
 // ─── Notifications ──────────────────────────────────────────────────────────
 
 model Notification {
-  id        String   @id @default(cuid())
-  userId    String
-  type      String   // "collab_invite", "flight_alert", "weather_warning", "referral_reward"
-  title     String
-  message   String
-  link      String?  // URL to navigate to
-  read      Boolean  @default(false)
+  id      String  @id @default(cuid())
+  userId  String
+  type    String // "collab_invite", "flight_alert", "weather_warning", "referral_reward"
+  title   String
+  message String
+  link    String? // URL to navigate to
+  read    Boolean @default(false)
 
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
 
@@ -624,9 +722,9 @@ model ActivityNote {
   text       String
   createdAt  DateTime @default(now())
 
-  activity   Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
-  trip       Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
-  user       User     @relation(fields: [userId], references: [id])
+  activity Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  trip     Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id])
 
   @@index([activityId])
 }
@@ -640,8 +738,8 @@ model PendingEmail {
   from       String
   subject    String
   body       String   @db.Text
-  parsedData Json?    // Parsed flight/hotel/car data
-  type       String?  // "flight", "hotel", "rental_car", "restaurant", "event"
+  parsedData Json? // Parsed flight/hotel/car data
+  type       String? // "flight", "hotel", "rental_car", "restaurant", "event"
   processed  Boolean  @default(false)
   createdAt  DateTime @default(now())
 
@@ -654,13 +752,13 @@ model PendingEmail {
 model AIUsage {
   id        String   @id @default(cuid())
   userId    String
-  feature   String   // "flight_parser", "hotel_parser", "rental_car_parser", "optimizer", "dining_recs", "packing"
-  model     String   // model ID used
+  feature   String // "flight_parser", "hotel_parser", "rental_car_parser", "optimizer", "dining_recs", "packing"
+  model     String // model ID used
   tokens    Int      @default(0) // total tokens (prompt + completion)
   costUsd   Float    @default(0) // estimated cost in USD
   createdAt DateTime @default(now())
 
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([feature])
@@ -695,10 +793,10 @@ model Reservation {
   status             ReservationStatus @default(CONFIRMED)
   notes              String?
 
-  itineraryItem      ItineraryItem     @relation(fields: [itineraryItemId], references: [id], onDelete: Cascade)
+  itineraryItem ItineraryItem @relation(fields: [itineraryItemId], references: [id], onDelete: Cascade)
 
-  createdAt          DateTime          @default(now())
-  updatedAt          DateTime          @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([itineraryItemId])
 }

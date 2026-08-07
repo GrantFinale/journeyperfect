@@ -2,6 +2,9 @@ import type { Plan } from "./plans"
 
 export const PAID_FEATURES = {
   aiFlightParsing: { name: "AI Flight Parsing", minPlan: "PERSONAL" as Plan },
+  // Ferry / train / bus booking parsing. Same plans as flight parsing so the
+  // split off `aiFlightParsing` takes nothing away from existing subscribers.
+  aiTransportParsing: { name: "AI Transport Parsing", minPlan: "PERSONAL" as Plan },
   aiItineraryOptimizer: { name: "AI Itinerary Optimizer", minPlan: "PERSONAL" as Plan },
   aiDiningRecommendations: { name: "AI Dining Recommendations", minPlan: "PERSONAL" as Plan },
   placesSearch: { name: "Activity Discovery", minPlan: "PERSONAL" as Plan },

@@ -28,6 +28,8 @@ const activitySchema = z.object({
   rating: z.number().optional(),
   hoursJson: z.string().optional(),
   bestTimeOfDay: z.string().optional(),
+  // JSON array of MealSlot values, e.g. '["lunch","dinner"]' — see src/lib/meal-slots.ts
+  mealSlots: z.string().optional(),
   notes: z.string().optional(),
 })
 
@@ -134,6 +136,7 @@ export async function cycleActivityInterest(tripId: string, data: {
   category?: string
   durationMins?: number
   types?: string[]
+  mealSlots?: string // serialized MealSlot[] — see src/lib/meal-slots.ts
   currentPriority?: string | null // current state, null if not saved
 }) {
   await requireTripAccess(tripId, "EDITOR")
@@ -158,6 +161,7 @@ export async function cycleActivityInterest(tripId: string, data: {
         imageUrl: data.imageUrl,
         category: data.category,
         durationMins: smartDuration,
+        mealSlots: data.mealSlots,
         costPerAdult: 0,
         costPerChild: 0,
         priority: "LOW",
@@ -365,6 +369,7 @@ export async function addToWishlistMaybe(tripId: string, data: {
   googlePlaceId: string; name: string; address?: string;
   lat?: number; lng?: number; rating?: number; imageUrl?: string;
   category?: string; durationMins?: number; types?: string[];
+  mealSlots?: string; // serialized MealSlot[] — see src/lib/meal-slots.ts
 }) {
   await requireTripAccess(tripId, "EDITOR")
   const existing = await prisma.activity.findFirst({
@@ -373,7 +378,11 @@ export async function addToWishlistMaybe(tripId: string, data: {
   if (existing) {
     const updated = await prisma.activity.update({
       where: { id: existing.id },
-      data: { priority: "LOW", status: "WISHLIST" },
+      data: {
+        priority: "LOW",
+        status: "WISHLIST",
+        ...(data.mealSlots ? { mealSlots: data.mealSlots } : {}),
+      },
     })
     revalidatePath(`/trip/${tripId}/explore`)
     return updated
@@ -396,6 +405,7 @@ export async function addToWishlistMustDo(tripId: string, data: {
   googlePlaceId: string; name: string; address?: string;
   lat?: number; lng?: number; rating?: number; imageUrl?: string;
   category?: string; durationMins?: number; types?: string[];
+  mealSlots?: string; // serialized MealSlot[] — see src/lib/meal-slots.ts
 }) {
   await requireTripAccess(tripId, "EDITOR")
   const existing = await prisma.activity.findFirst({
@@ -404,7 +414,11 @@ export async function addToWishlistMustDo(tripId: string, data: {
   if (existing) {
     const updated = await prisma.activity.update({
       where: { id: existing.id },
-      data: { priority: "MUST_DO", status: "WISHLIST" },
+      data: {
+        priority: "MUST_DO",
+        status: "WISHLIST",
+        ...(data.mealSlots ? { mealSlots: data.mealSlots } : {}),
+      },
     })
     revalidatePath(`/trip/${tripId}/explore`)
     return updated
@@ -471,7 +485,10 @@ export async function searchPlaces(query: string, locationBias?: string, options
       headers: {
         "Content-Type": "application/json",
         "X-Goog-Api-Key": apiKey,
-        "X-Goog-FieldMask": "nextPageToken,places.id,places.displayName,places.formattedAddress,places.location,places.rating,places.userRatingCount,places.types,places.photos,places.priceLevel,places.currentOpeningHours,places.servesVegetarianFood,places.goodForChildren,places.servesBeer,places.servesWine,places.dineIn,places.delivery,places.takeout,places.primaryType",
+        // `places.regularOpeningHours` gives the stable weekly schedule that
+        // deriveMealSlotsFromHours() parses; currentOpeningHours only covers the
+        // current week and is kept for the openNow indicator.
+        "X-Goog-FieldMask": "nextPageToken,places.id,places.displayName,places.formattedAddress,places.location,places.rating,places.userRatingCount,places.types,places.photos,places.priceLevel,places.currentOpeningHours,places.regularOpeningHours,places.servesVegetarianFood,places.goodForChildren,places.servesBeer,places.servesWine,places.dineIn,places.delivery,places.takeout,places.primaryType",
       },
       body: JSON.stringify(body),
       // Prevent sending Referer header — server-side calls with HTTP referrer
@@ -517,7 +534,9 @@ export async function searchPlaces(query: string, locationBias?: string, options
       servesBeer: place.servesBeer,
       servesWine: place.servesWine,
       openNow: place.currentOpeningHours?.openNow,
-      weekdayHours: place.currentOpeningHours?.weekdayDescriptions,
+      weekdayHours:
+        place.regularOpeningHours?.weekdayDescriptions ||
+        place.currentOpeningHours?.weekdayDescriptions,
     }))
 
     // Cache results

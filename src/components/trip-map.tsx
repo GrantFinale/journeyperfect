@@ -32,6 +32,18 @@ export interface DayRoute {
   totalDuration: string
 }
 
+/**
+ * A ferry / train / bus leg. These are drawn as their own geodesic polyline and
+ * are deliberately kept out of the Directions API — there is no drivable route
+ * across Lake Michigan, and asking for one either fails or invents a 6-hour detour.
+ */
+export interface TransportLeg {
+  mode: "FERRY" | "TRAIN" | "BUS" | string
+  from: { lat: number; lng: number; label: string }
+  to: { lat: number; lng: number; label: string }
+  day?: number
+}
+
 interface TripMapProps {
   markers: MapMarker[]
   center?: { lat: number; lng: number }
@@ -39,7 +51,14 @@ interface TripMapProps {
   height?: string
   selectedDay?: number | null
   hotels?: HotelForDay[]
+  transportLegs?: TransportLeg[]
   onRoutesComputed?: (routes: DayRoute[]) => void
+}
+
+const TRANSPORT_LEG_COLOR: Record<string, string> = {
+  FERRY: "#0891B2", // cyan — water
+  TRAIN: "#7C3AED", // violet — rail
+  BUS: "#EA580C", // orange — coach
 }
 
 const DAY_COLORS = [
@@ -89,12 +108,15 @@ export function TripMap({
   height = "400px",
   selectedDay,
   hotels = [],
+  transportLegs = [],
   onRoutesComputed,
 }: TripMapProps) {
   const mapRef = useRef<HTMLDivElement>(null)
   const mapInstanceRef = useRef<google.maps.Map | null>(null)
   const markersRef = useRef<google.maps.marker.AdvancedMarkerElement[]>([])
   const polylinesRef = useRef<google.maps.Polyline[]>([])
+  // Kept separate from polylinesRef so the Directions fallback can't wipe them.
+  const transportPolylinesRef = useRef<google.maps.Polyline[]>([])
   const directionsRenderersRef = useRef<google.maps.DirectionsRenderer[]>([])
   const infoWindowRef = useRef<google.maps.InfoWindow | null>(null)
   const [loaded, setLoaded] = useState(false)
@@ -134,8 +156,10 @@ export function TripMap({
   const buildDayWaypoints = useCallback(
     (day: number, visibleMarkers: MapMarker[]): { lat: number; lng: number; label: string }[] => {
       const hotel = getHotelForDay(day)
+      // "transit" markers are ferry/train/bus terminals — their legs are drawn
+      // separately and must never become Directions waypoints.
       const dayActivities = visibleMarkers.filter(
-        (m) => m.day === day && m.type !== "hotel" && m.type !== "flight"
+        (m) => m.day === day && m.type !== "hotel" && m.type !== "flight" && m.type !== "transit"
       )
       // Get airport markers for this day (arrival or departure)
       const dayFlights = visibleMarkers.filter(
@@ -440,6 +464,8 @@ export function TripMap({
       markersRef.current = []
       polylinesRef.current.forEach((p) => { try { p.setMap(null) } catch { /* ignore */ } })
       polylinesRef.current = []
+      transportPolylinesRef.current.forEach((p) => { try { p.setMap(null) } catch { /* ignore */ } })
+      transportPolylinesRef.current = []
       directionsRenderersRef.current.forEach((r) => { try { r.setMap(null) } catch { /* ignore */ } })
       directionsRenderersRef.current = []
 
@@ -496,6 +522,13 @@ export function TripMap({
           markerEl.style.backgroundColor = "#2563EB"
           markerEl.style.color = "white"
           markerEl.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M17.8 19.2L16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg>`
+        } else if (marker.type === "transit") {
+          markerEl.style.width = "28px"
+          markerEl.style.height = "28px"
+          markerEl.style.borderRadius = "6px"
+          markerEl.style.backgroundColor = "#0891B2"
+          markerEl.style.color = "white"
+          markerEl.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M2 21c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2s2.5 2 5 2 2.5-2 5-2c1.3 0 1.9.5 2.5 1"/><path d="M19.38 20A11.6 11.6 0 0021 14l-9-4-9 4c0 2.9.94 5.34 2.81 7.76"/><path d="M12 10V2"/><path d="M8 6h8"/></svg>`
         } else {
           const color = marker.day != null ? getDayColor(marker.day) : "#4F46E5"
           markerEl.style.width = "26px"
@@ -503,7 +536,7 @@ export function TripMap({
           markerEl.style.backgroundColor = color
           markerEl.style.color = "white"
           const dayActivities = visibleMarkers.filter(
-            (m) => m.day === marker.day && m.type !== "hotel" && m.type !== "flight"
+            (m) => m.day === marker.day && m.type !== "hotel" && m.type !== "flight" && m.type !== "transit"
           )
           const actIdx = dayActivities.indexOf(marker)
           markerEl.textContent = String(actIdx + 1)
@@ -535,6 +568,47 @@ export function TripMap({
         }
       })
 
+      // Ferry / train / bus legs — straight geodesic lines, never Directions.
+      const visibleLegs =
+        selectedDay != null ? transportLegs.filter((l) => l.day == null || l.day === selectedDay) : transportLegs
+      for (const leg of visibleLegs) {
+        try {
+          const color = TRANSPORT_LEG_COLOR[leg.mode] || "#0891B2"
+          const polyline = new google.maps.Polyline({
+            path: [
+              { lat: leg.from.lat, lng: leg.from.lng },
+              { lat: leg.to.lat, lng: leg.to.lng },
+            ],
+            geodesic: true,
+            // Dashed: the line is the crossing, not a road you can drive.
+            strokeOpacity: 0,
+            icons: [
+              {
+                icon: {
+                  path: "M 0,-1 0,1",
+                  strokeOpacity: 0.9,
+                  strokeColor: color,
+                  strokeWeight: 3,
+                  scale: 3,
+                },
+                offset: "0",
+                repeat: "14px",
+              },
+              {
+                icon: { path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW, scale: 3, strokeColor: color },
+                offset: "50%",
+              },
+            ],
+            map,
+          })
+          transportPolylinesRef.current.push(polyline)
+          bounds.extend({ lat: leg.from.lat, lng: leg.from.lng })
+          bounds.extend({ lat: leg.to.lat, lng: leg.to.lng })
+        } catch {
+          // Polyline creation failed, skip this leg
+        }
+      }
+
       // Fit bounds
       if (visibleMarkers.length > 1) {
         map.fitBounds(bounds, { top: 40, bottom: 40, left: 40, right: 40 })
@@ -554,7 +628,7 @@ export function TripMap({
       // Filter to only days that actually have routable activities
       const routableDays = daysToRoute.filter((day) => {
         const dayActivities = (selectedDay != null ? visibleMarkers : markers).filter(
-          (m) => m.day === day && m.type !== "hotel" && m.type !== "flight"
+          (m) => m.day === day && m.type !== "hotel" && m.type !== "flight" && m.type !== "transit"
         )
         return dayActivities.length > 0
       })
@@ -568,7 +642,7 @@ export function TripMap({
       console.error("[TripMap] renderMap error:", err)
       setError("Failed to render map. Please try refreshing the page.")
     }
-  }, [loaded, markers, center, selectedDay, computeAndRenderRoutes, onRoutesComputed])
+  }, [loaded, markers, center, selectedDay, transportLegs, computeAndRenderRoutes, onRoutesComputed])
 
   useEffect(() => {
     renderMap()

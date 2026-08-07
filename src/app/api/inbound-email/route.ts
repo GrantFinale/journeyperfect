@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db"
 import { parseFlightTextWithAI } from "@/lib/flight-parser-ai"
 import { parseHotelTextWithAI } from "@/lib/hotel-parser-ai"
 import { parseRentalCarTextWithAI } from "@/lib/rental-car-parser-ai"
+import { parseTransportTextWithAI } from "@/lib/transport-parser-ai"
 import { sendInboundConfirmation } from "@/lib/email"
 import { getConfig } from "@/lib/config"
 import { logAIUsage } from "@/lib/ai-usage"
@@ -11,7 +12,13 @@ import { formatDateInTimezone } from "@/lib/utils"
 export const dynamic = "force-dynamic"
 
 // Detect email type from content keywords
-type EmailType = "flight" | "hotel" | "rental_car" | "restaurant" | "event"
+type EmailType = "flight" | "hotel" | "rental_car" | "restaurant" | "event" | "transport"
+
+// Ferry wording an airline confirmation would essentially never contain.
+const FERRY_SIGNALS = /lake express|steamship authority|bc ferries|washington state ferries|alaska marine highway|brittany ferries|stena line|interislander|\bferry\b|\bferries\b|\bsailing\b|\bvessel\b|vehicle deck|car deck/i
+// Rail / coach operators and generic rail wording. These overlap with air travel
+// (air+rail codeshares mention Amtrak), so flight detection wins over these.
+const RAIL_BUS_SIGNALS = /amtrak|via rail|eurostar|\bsncf\b|\btgv\b|trenitalia|\brenfe\b|deutsche bahn|greyhound|flixbus|megabus|peter pan bus|national express|coach usa|brightline|\brail\b|train\s*(number|no\.?|service|ticket)/i
 
 function detectEmailTypes(content: string): EmailType[] {
   const lower = content.toLowerCase()
@@ -19,6 +26,9 @@ function detectEmailTypes(content: string): EmailType[] {
 
   if (/flight|boarding|airline|departure gate|arrival gate|terminal|seat\s?\d|itinerary.*air/i.test(lower)) {
     types.push("flight")
+  }
+  if (FERRY_SIGNALS.test(lower) || RAIL_BUS_SIGNALS.test(lower)) {
+    types.push("transport")
   }
   if (/hotel|check.?in|check.?out|room\s*(type|rate|number)|accommodation|booking\s*confirmation.*stay|nights?\s*stay/i.test(lower)) {
     types.push("hotel")
@@ -31,6 +41,17 @@ function detectEmailTypes(content: string): EmailType[] {
   }
   if (/ticket\s*(confirmation|number)|event\s*ticket|admission|venue.*seat|section.*row|concert|show\s*ticket|general\s*admission|e-?ticket|ticketmaster|stubhub|axs|eventbrite/i.test(lower)) {
     types.push("event")
+  }
+
+  // A ferry confirmation says "terminal" and "seat 12" too, so the flight regex
+  // often fires on one. Explicit ferry wording settles it in transport's favour;
+  // for the fuzzier rail/coach signals, flight detection wins.
+  if (types.includes("flight") && types.includes("transport")) {
+    if (FERRY_SIGNALS.test(lower)) {
+      types.splice(types.indexOf("flight"), 1)
+    } else {
+      types.splice(types.indexOf("transport"), 1)
+    }
   }
 
   // If nothing detected, try broader flight/hotel patterns
@@ -380,6 +401,11 @@ export async function POST(request: NextRequest) {
             const result = await parseRentalCarTextWithAI(fullContent, userId)
             if (result?.rentalCars?.length) parsedData = { rentalCars: result.rentalCars }
           } catch { /* ignore */ }
+        } else if (emailType === "transport") {
+          try {
+            const result = await parseTransportTextWithAI(fullContent, userId)
+            if (result?.segments?.length) parsedData = { transportSegments: result.segments }
+          } catch { /* ignore */ }
         }
 
         await prisma.pendingEmail.create({
@@ -458,6 +484,75 @@ export async function POST(request: NextRequest) {
         }
       } catch (err) {
         console.error("[inbound-email] Flight parsing failed:", err)
+      }
+    }
+
+    // Process ferry / train / bus legs
+    if (detectedTypes.includes("transport")) {
+      try {
+        const transportResult = await parseTransportTextWithAI(fullContent, userId)
+        if (transportResult && transportResult.segments.length > 0) {
+          for (const s of transportResult.segments) {
+            if (!s.departureTime || !s.operator) continue
+            const depTime = new Date(s.departureTime)
+            const arrTime = s.arrivalTime ? new Date(s.arrivalTime) : null
+            // Bucket by the departure timezone — this crossing can change zone.
+            const depTz = s.departureTimezone || "UTC"
+            const arrTz = s.arrivalTimezone || depTz
+            const localDate = formatDateInTimezone(depTime, "yyyy-MM-dd", depTz)
+            const localTime = formatDateInTimezone(depTime, "HH:mm", depTz)
+            const localEndTime = arrTime ? formatDateInTimezone(arrTime, "HH:mm", arrTz) : null
+            const durationMins = arrTime
+              ? Math.max(Math.round((arrTime.getTime() - depTime.getTime()) / 60000), 1)
+              : 60
+            const service = [s.operator, s.serviceNumber].filter(Boolean).join(" ").trim()
+            const route = [s.departureLocation, s.arrivalLocation].filter(Boolean).join(" → ")
+            const title = route ? `${service} · ${route}` : service
+
+            await prisma.transportSegment.create({
+              data: {
+                tripId: trip.id,
+                mode: s.mode,
+                operator: s.operator,
+                serviceNumber: s.serviceNumber ?? null,
+                departureLocation: s.departureLocation,
+                departureTerminal: s.departureTerminal ?? null,
+                departureAddress: s.departureAddress ?? null,
+                departureTime: depTime,
+                departureTimezone: depTz,
+                arrivalLocation: s.arrivalLocation ?? null,
+                arrivalTerminal: s.arrivalTerminal ?? null,
+                arrivalAddress: s.arrivalAddress ?? null,
+                arrivalTime: arrTime,
+                arrivalTimezone: arrTz,
+                confirmationNumber: s.confirmationNumber ?? null,
+                seatInfo: s.seatInfo ?? null,
+                vehicleOnBoard: s.vehicleOnBoard ?? false,
+                passengerCount: s.passengerCount ?? null,
+                checkInMinsBefore: s.checkInMinsBefore ?? null,
+                price: s.price ?? null,
+                priceCurrency: s.priceCurrency ?? "USD",
+                notes: s.notes ?? null,
+                itineraryItems: {
+                  create: {
+                    tripId: trip.id,
+                    date: new Date(localDate + "T00:00:00Z"),
+                    startTime: localTime,
+                    endTime: localEndTime,
+                    type: "TRANSPORT",
+                    title,
+                    durationMins,
+                    position: 0,
+                    isConfirmed: true,
+                  },
+                },
+              },
+            })
+            results.push(`${s.mode.charAt(0)}${s.mode.slice(1).toLowerCase()}: ${service}`)
+          }
+        }
+      } catch (err) {
+        console.error("[inbound-email] Transport parsing failed:", err)
       }
     }
 

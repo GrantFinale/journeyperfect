@@ -3,16 +3,104 @@
 import { prisma } from "@/lib/db"
 import { requireTripAccess } from "@/lib/auth-trip"
 import { revalidatePath } from "next/cache"
-import { optimizeItinerary } from "@/lib/optimizer"
+import { optimizeItinerary, parseCityFromAddress, type DayBase } from "@/lib/optimizer"
 import { optimizeItineraryWithAI } from "@/lib/optimizer-ai"
 import { hasFeature } from "@/lib/features"
 import { getWeatherForecast } from "@/lib/weather"
+import { isDiningCategory, resolveMealSlots } from "@/lib/meal-slots"
 import { z } from "zod"
 import { formatDateInTimezone } from "@/lib/utils"
 
 function timeToMins(t: string): number {
   const [h, m] = t.split(":").map(Number)
   return h * 60 + m
+}
+
+function toDateStr(d: Date): string {
+  return d.toISOString().split("T")[0]
+}
+
+/**
+ * Maps every date of the trip to the lodging the travellers are based at, so the
+ * optimizer can geo-fence each day to the right city. On a checkout day the
+ * hotel being checked *into* wins; otherwise the one being checked out of holds
+ * the day. Days before the first check-in fall back to the trip origin, then to
+ * the destination.
+ */
+function buildDayBases(
+  trip: {
+    startDate: Date
+    endDate: Date
+    destination: string
+    destinationLat: number | null
+    destinationLng: number | null
+    originLabel: string | null
+    originAddress: string | null
+    originLat: number | null
+    originLng: number | null
+  },
+  hotels: {
+    name: string
+    address: string | null
+    city: string | null
+    lat: number | null
+    lng: number | null
+    checkIn: Date
+    checkOut: Date
+  }[]
+): Record<string, DayBase> {
+  const hotelBase = (h: (typeof hotels)[number]): DayBase => ({
+    lat: h.lat,
+    lng: h.lng,
+    city: h.city ?? parseCityFromAddress(h.address),
+    name: h.name,
+  })
+
+  const originBase: DayBase | null =
+    trip.originLat != null && trip.originLng != null
+      ? {
+          lat: trip.originLat,
+          lng: trip.originLng,
+          city: parseCityFromAddress(trip.originAddress),
+          name: trip.originLabel || "Home",
+        }
+      : null
+
+  const destinationBase: DayBase = {
+    lat: trip.destinationLat,
+    lng: trip.destinationLng,
+    city: parseCityFromAddress(trip.destination) ?? trip.destination ?? null,
+    name: trip.destination || "Destination",
+  }
+
+  const sortedHotels = [...hotels].sort((a, b) => a.checkIn.getTime() - b.checkIn.getTime())
+  const firstCheckIn = sortedHotels[0] ? toDateStr(sortedHotels[0].checkIn) : null
+
+  const bases: Record<string, DayBase> = {}
+  const cur = new Date(trip.startDate)
+  cur.setUTCHours(0, 0, 0, 0)
+  const end = new Date(trip.endDate)
+  end.setUTCHours(0, 0, 0, 0)
+
+  while (cur <= end) {
+    const dayStr = toDateStr(cur)
+
+    // Checked in for the night: checkIn <= day < checkOut.
+    const stayingAt = sortedHotels.find(
+      (h) => toDateStr(h.checkIn) <= dayStr && dayStr < toDateStr(h.checkOut)
+    )
+    // Otherwise the hotel being checked out of still owns the morning.
+    const checkingOut = sortedHotels.find((h) => toDateStr(h.checkOut) === dayStr)
+
+    if (stayingAt) bases[dayStr] = hotelBase(stayingAt)
+    else if (checkingOut) bases[dayStr] = hotelBase(checkingOut)
+    else if (firstCheckIn && dayStr < firstCheckIn && originBase) bases[dayStr] = originBase
+    else bases[dayStr] = destinationBase
+
+    cur.setUTCDate(cur.getUTCDate() + 1)
+  }
+
+  return bases
 }
 
 const itemSchema = z.object({
@@ -41,6 +129,7 @@ export async function getItinerary(tripId: string) {
       hotel: true,
       rentalCar: true,
       reservation: true,
+      transportSegment: true,
     },
     orderBy: [{ date: "asc" }, { position: "asc" }, { startTime: "asc" }],
   })
@@ -117,7 +206,6 @@ export async function runOptimizer(tripId: string) {
   })
 
   const prefs = trip.user.preferences
-  const primaryHotel = trip.hotels[0]
 
   // Build fixed items from flights and hotels
   // Use timezone-aware date/time to avoid UTC date mismatch
@@ -236,11 +324,18 @@ export async function runOptimizer(tripId: string) {
   const adultCount = trip.travelers.filter(t => !t.traveler.tags.includes("child")).length || 1
   const childCount = trip.travelers.filter(t => t.traveler.tags.includes("child")).length
 
+  const dayBases = buildDayBases(trip, trip.hotels)
+
   const result = optimizeItinerary(trip.activities, fixedItems, {
     startDate: trip.startDate,
     endDate: trip.endDate,
-    hotelLat: primaryHotel?.lat,
-    hotelLng: primaryHotel?.lng,
+    dayBases,
+    fallbackBase: {
+      lat: trip.destinationLat,
+      lng: trip.destinationLng,
+      city: parseCityFromAddress(trip.destination) ?? trip.destination ?? null,
+      name: trip.destination || "Destination",
+    },
     dailyBudget: prefs?.avgDailyBudget,
     pacingStyle: (prefs?.pacingStyle as "CHILL" | "LEISURELY" | "MODERATE" | "ACTIVE" | "PACKED") || "MODERATE",
     wakeUpTime: prefs?.wakeUpTime || "08:00",
@@ -262,7 +357,7 @@ export async function runOptimizer(tripId: string) {
         date: item.date,
         startTime: item.startTime,
         endTime: item.endTime,
-        type: "ACTIVITY" as const,
+        type: item.type ?? ("ACTIVITY" as const),
         title: trip.activities.find(a => a.id === item.activityId)?.name || "Activity",
         durationMins: item.durationMins,
         travelTimeToNextMins: item.travelTimeToNextMins,
@@ -328,23 +423,33 @@ export async function runAIOptimizer(tripId: string) {
     }
   }
 
+  const dayBases = buildDayBases(trip, trip.hotels)
+
   const aiResult = await optimizeItineraryWithAI({
     userId,
     destination: trip.destination,
     startDate: trip.startDate.toISOString().split("T")[0],
     endDate: trip.endDate.toISOString().split("T")[0],
-    activities: trip.activities.map((a) => ({
-      id: a.id,
-      name: a.name,
-      durationMins: a.durationMins,
-      lat: a.lat,
-      lng: a.lng,
-      priority: a.priority,
-      indoorOutdoor: a.indoorOutdoor,
-      isFixed: a.isFixed,
-      fixedDateTime: a.fixedDateTime?.toISOString() ?? null,
-      category: a.category,
-    })),
+    activities: trip.activities.map((a) => {
+      const isDining = isDiningCategory(a.category) || !!a.mealSlots
+      return {
+        id: a.id,
+        name: a.name,
+        durationMins: a.durationMins,
+        lat: a.lat,
+        lng: a.lng,
+        priority: a.priority,
+        indoorOutdoor: a.indoorOutdoor,
+        isFixed: a.isFixed,
+        fixedDateTime: a.fixedDateTime?.toISOString() ?? null,
+        category: a.category,
+        address: a.address,
+        city: parseCityFromAddress(a.address),
+        rating: a.rating,
+        isDining,
+        mealSlots: isDining ? resolveMealSlots(a.mealSlots, a.hoursJson) : null,
+      }
+    }),
     flights: trip.flights.map((f) => ({
       departureTime: f.departureTime.toISOString(),
       arrivalTime: f.arrivalTime.toISOString(),
@@ -353,10 +458,18 @@ export async function runAIOptimizer(tripId: string) {
     })),
     hotels: trip.hotels.map((h) => ({
       name: h.name,
+      city: h.city ?? parseCityFromAddress(h.address),
       lat: h.lat,
       lng: h.lng,
       checkIn: h.checkIn.toISOString(),
       checkOut: h.checkOut.toISOString(),
+    })),
+    dayBases: Object.entries(dayBases).map(([date, b]) => ({
+      date,
+      name: b.name,
+      city: b.city,
+      lat: b.lat,
+      lng: b.lng,
     })),
     travelers: trip.travelers.map((t) => ({
       name: t.traveler.name,
@@ -381,7 +494,7 @@ export async function runAIOptimizer(tripId: string) {
     date: Date
     startTime: string
     endTime: string
-    type: "ACTIVITY"
+    type: "ACTIVITY" | "MEAL"
     title: string
     notes?: string
     durationMins: number
@@ -393,8 +506,8 @@ export async function runAIOptimizer(tripId: string) {
   let position = 0
   for (const day of aiResult) {
     for (const item of day.items) {
-      // Only create ACTIVITY items — skip any MEAL, TRANSIT, or BUFFER the AI may return
-      if (item.type !== "ACTIVITY") continue
+      // Only ACTIVITY and MEAL are ours to create — drop any TRANSIT/BUFFER drift
+      if (item.type !== "ACTIVITY" && item.type !== "MEAL") continue
       // Skip items without a valid activityId
       if (!item.activityId) continue
       itemsToCreate.push({
@@ -403,7 +516,7 @@ export async function runAIOptimizer(tripId: string) {
         date: new Date(day.date),
         startTime: item.startTime,
         endTime: item.endTime,
-        type: "ACTIVITY",
+        type: item.type,
         title: item.title,
         notes: item.notes || undefined,
         durationMins: timeDiffMins(item.startTime, item.endTime),
@@ -432,7 +545,7 @@ export async function runAIOptimizer(tripId: string) {
   revalidatePath(`/trip/${tripId}/itinerary`)
 
   return {
-    scheduledItems: itemsToCreate.filter((i) => i.type === "ACTIVITY"),
+    scheduledItems: itemsToCreate,
     unscheduled: [] as { activityId: string; reason: string }[],
     totalCost: 0,
     reasoning: aiResult.map((d) => `${d.date}: ${d.reasoning}`),

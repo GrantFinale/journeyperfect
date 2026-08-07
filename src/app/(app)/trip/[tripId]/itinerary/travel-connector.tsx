@@ -1,35 +1,27 @@
 "use client"
 
 import { ExternalLink } from "lucide-react"
+import { haversineDistance } from "@/lib/haversine"
+import {
+  estimateTravelMins,
+  formatDurationMins,
+  travelModeIcon,
+  formatTravelMode,
+  WALKING_SPEED_KMH,
+  DRIVING_SPEED_KMH,
+  MAX_WALK_MINS,
+  type TravelMode,
+} from "@/lib/departure-planner"
 
-// Haversine distance in kilometers
-function haversineDistance(
-  lat1: number,
-  lng1: number,
-  lat2: number,
-  lng2: number
-): number {
-  const R = 6371 // Earth radius in km
-  const dLat = ((lat2 - lat1) * Math.PI) / 180
-  const dLng = ((lng2 - lng1) * Math.PI) / 180
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLng / 2) ** 2
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
-  return R * c
-}
-
-const WALKING_SPEED_KMH = 5
-const DRIVING_SPEED_KMH = 30
-const MAX_WALK_MINS = 20
+// Speed math lives in @/lib/departure-planner so the timeline's "leave by"
+// engine and this connector can never disagree.
+export type { TravelMode }
 
 export type TravelInfo = {
   distanceKm: number
   walkMins: number
   driveMins: number
-  mode: "walk" | "drive"
+  mode: TravelMode
   travelMins: number
 }
 
@@ -46,17 +38,10 @@ export function calculateTravel(
   const dist = haversineDistance(fromLat, fromLng, toLat, toLng)
   const walkMins = Math.round((dist / WALKING_SPEED_KMH) * 60)
   const driveMins = Math.max(Math.round((dist / DRIVING_SPEED_KMH) * 60), 1)
-  const mode = walkMins <= maxWalkMins ? ("walk" as const) : ("drive" as const)
-  const travelMins = mode === "walk" ? walkMins : driveMins
+  const mode: TravelMode = walkMins <= maxWalkMins ? "walk" : "drive"
+  const travelMins = mode === "walk" ? walkMins : estimateTravelMins(dist, mode)
 
   return { distanceKm: dist, walkMins, driveMins, mode, travelMins }
-}
-
-function formatTravelDuration(mins: number): string {
-  if (mins < 60) return `${mins} min`
-  const h = Math.floor(mins / 60)
-  const m = mins % 60
-  return m > 0 ? `${h}h ${m}m` : `${h}h`
 }
 
 function buildMapsUrl(
@@ -66,9 +51,10 @@ function buildMapsUrl(
   toLng: number | null | undefined,
   fromName: string,
   toName: string,
-  mode: "walk" | "drive"
+  mode: TravelMode
 ): string | null {
-  const travelMode = mode === "walk" ? "walking" : "driving"
+  const travelMode =
+    mode === "walk" ? "walking" : mode === "transit" ? "transit" : "driving"
   if (fromLat && fromLng && toLat && toLng) {
     return `https://www.google.com/maps/dir/?api=1&origin=${fromLat},${fromLng}&destination=${toLat},${toLng}&travelmode=${travelMode}`
   }
@@ -105,8 +91,8 @@ export function TravelConnector({
   if (travel.distanceKm < 0.05) return null
 
   const mapsUrl = buildMapsUrl(fromLat, fromLng, toLat, toLng, fromName, toName, travel.mode)
-  const modeIcon = travel.mode === "walk" ? "🚶" : "🚗"
-  const text = label || `${formatTravelDuration(travel.travelMins)} ${travel.mode === "walk" ? "walk" : "drive"}`
+  const modeIcon = travelModeIcon(travel.mode)
+  const text = label || `${formatDurationMins(travel.travelMins)} ${formatTravelMode(travel.mode)}`
 
   const inner = (
     <div className="flex items-center gap-2 py-1.5">

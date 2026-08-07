@@ -17,6 +17,10 @@ const createTripSchema = z.object({
   startDate: z.string(),
   endDate: z.string(),
   notes: z.string().optional(),
+  originLabel: z.string().nullable().optional(),
+  originAddress: z.string().nullable().optional(),
+  originLat: z.number().nullable().optional(),
+  originLng: z.number().nullable().optional(),
 })
 
 export async function createTrip(data: z.infer<typeof createTripSchema>) {
@@ -27,13 +31,38 @@ export async function createTrip(data: z.infer<typeof createTripSchema>) {
 
   // Plan limit check
   const tripCount = await prisma.trip.count({ where: { userId: session.user.id } })
-  const user = await prisma.user.findUnique({ where: { id: session.user.id }, select: { plan: true } })
+  const user = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { plan: true, homeAddress: true, homeCity: true, homeLat: true, homeLng: true },
+  })
   const limits = getPlanLimits((user?.plan as Plan) ?? "FREE")
   if (tripCount >= limits.maxTrips) {
     throw new Error(`PLAN_LIMIT: You've reached your ${limits.maxTrips} trip limit. Upgrade to add more.`)
   }
 
   const destinationSummary = parsed.destinations.map((d) => d.name).join(", ")
+
+  // Prefill origin from the user's saved home address when the caller supplied none
+  const hasOrigin =
+    parsed.originLabel != null ||
+    parsed.originAddress != null ||
+    parsed.originLat != null ||
+    parsed.originLng != null
+
+  const origin = hasOrigin
+    ? {
+        originLabel: parsed.originLabel ?? null,
+        originAddress: parsed.originAddress ?? null,
+        originLat: parsed.originLat ?? null,
+        originLng: parsed.originLng ?? null,
+      }
+    : {
+        originLabel: user?.homeAddress || user?.homeCity ? "Home" : null,
+        // Trip has no originCity column — fall back to homeCity when no street address is saved
+        originAddress: user?.homeAddress ?? user?.homeCity ?? null,
+        originLat: user?.homeLat ?? null,
+        originLng: user?.homeLng ?? null,
+      }
 
   const trip = await prisma.trip.create({
     data: {
@@ -45,6 +74,7 @@ export async function createTrip(data: z.infer<typeof createTripSchema>) {
       startDate: new Date(parsed.startDate),
       endDate: new Date(parsed.endDate),
       notes: parsed.notes,
+      ...origin,
       destinations: {
         create: parsed.destinations.map((d, i) => ({
           name: d.name,
@@ -88,6 +118,8 @@ export async function getTrip(tripId: string) {
       hotels: { orderBy: { checkIn: "asc" } },
       rentalCars: { orderBy: { pickupTime: "asc" } },
       flights: { orderBy: { departureTime: "asc" } },
+      transportSegments: { orderBy: { departureTime: "asc" } },
+      vehicle: true,
       _count: { select: { activities: true, budgetItems: true, itineraryItems: true } },
     },
   })
@@ -107,6 +139,10 @@ export async function updateTrip(tripId: string, data: Partial<z.infer<typeof cr
       ...(data.startDate && { startDate: new Date(data.startDate) }),
       ...(data.endDate && { endDate: new Date(data.endDate) }),
       ...(data.notes !== undefined && { notes: data.notes }),
+      ...(data.originLabel !== undefined && { originLabel: data.originLabel }),
+      ...(data.originAddress !== undefined && { originAddress: data.originAddress }),
+      ...(data.originLat !== undefined && { originLat: data.originLat }),
+      ...(data.originLng !== undefined && { originLng: data.originLng }),
     },
   })
 
@@ -157,6 +193,7 @@ export async function getTripBySlug(slug: string) {
       hotels: { orderBy: { checkIn: "asc" } },
       rentalCars: { orderBy: { pickupTime: "asc" } },
       flights: { orderBy: { departureTime: "asc" } },
+      transportSegments: { orderBy: { departureTime: "asc" } },
       itineraryItems: { orderBy: [{ date: "asc" }, { position: "asc" }] },
       activities: { where: { status: "SCHEDULED" } },
     },

@@ -90,6 +90,11 @@ export default async function ItineraryPage({ params }: { params: Promise<{ trip
       showFreeTime={userPrefs?.showFreeTime ?? false}
       freeTimeMinGapHours={userPrefs?.freeTimeMinGapHours ?? 2}
       destinations={destinations}
+      origin={{
+        label: trip.originLabel || "Home",
+        lat: trip.originLat,
+        lng: trip.originLng,
+      }}
     />
   )
 }

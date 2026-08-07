@@ -11,13 +11,26 @@ export type CategoryTab = {
   isAI?: boolean
 }
 
+/**
+ * One category is always selected — there is no "All". Attractions is the
+ * default, and it sits first so the selected pill is also the first pill.
+ * "For Your Group" (AI) is second so it lands inside the first visible
+ * screenful on mobile instead of behind a horizontal scroll.
+ */
+export const DEFAULT_TAB_ID = "attractions"
+
 export const CATEGORY_TABS: CategoryTab[] = [
-  { id: "all", label: "All", query: "" },
   {
     id: "attractions",
     label: "Attractions",
     query: "tourist attraction museum art gallery",
     types: ["tourist_attraction", "museum", "art_gallery", "amusement_park"],
+  },
+  {
+    id: "ai_picks",
+    label: "For Your Group",
+    query: "__ai_picks__",
+    isAI: true,
   },
   {
     id: "dining",
@@ -54,12 +67,6 @@ export const CATEGORY_TABS: CategoryTab[] = [
     label: "Family",
     query: "family friendly kids children amusement",
   },
-  {
-    id: "ai_picks",
-    label: "For Your Group",
-    query: "__ai_picks__",
-    isAI: true,
-  },
 ]
 
 interface DiscoverTabsProps {
@@ -70,26 +77,33 @@ interface DiscoverTabsProps {
 export function DiscoverTabs({ activeTab, onTabChange }: DiscoverTabsProps) {
   return (
     <div className="flex gap-1 overflow-x-auto pb-2 mb-3 -mx-4 px-4 sm:mx-0 sm:px-0 sm:flex-wrap scrollbar-hide">
-      {CATEGORY_TABS.map((tab) => (
-        <button
-          key={tab.id}
-          onClick={() => onTabChange(tab)}
-          className={cn(
-            "px-3.5 py-2 text-xs font-medium rounded-full border transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5",
-            activeTab === tab.id
-              ? tab.isAI
-                ? "bg-purple-600 text-white border-purple-600"
-                : "bg-gray-900 text-white border-gray-900"
-              : "bg-white text-gray-600 border-gray-200 hover:border-gray-300 hover:text-gray-900"
-          )}
-        >
-          {tab.isAI && <Sparkles className="w-3 h-3" />}
-          {tab.label}
-          {tab.isAI && !activeTab && (
-            <span className="text-[9px] font-bold bg-purple-100 text-purple-700 px-1 py-0.5 rounded-sm leading-none">AI</span>
-          )}
-        </button>
-      ))}
+      {CATEGORY_TABS.map((tab) => {
+        const isActive = activeTab === tab.id
+        return (
+          <button
+            key={tab.id}
+            onClick={() => onTabChange(tab)}
+            className={cn(
+              "px-3.5 py-2 text-xs font-medium rounded-full border transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5",
+              isActive
+                ? tab.isAI
+                  ? "bg-purple-600 text-white border-purple-600"
+                  : "bg-gray-900 text-white border-gray-900"
+                : tab.isAI
+                  ? "bg-white text-purple-700 border-purple-200 hover:border-purple-400"
+                  : "bg-white text-gray-600 border-gray-200 hover:border-gray-300 hover:text-gray-900"
+            )}
+          >
+            {tab.isAI && <Sparkles className="w-3 h-3" />}
+            {tab.label}
+            {/* Badge advertises the AI tab only while it isn't selected —
+                once selected the solid purple fill already says it. */}
+            {tab.isAI && !isActive && (
+              <span className="text-[9px] font-bold bg-purple-100 text-purple-700 px-1 py-0.5 rounded-sm leading-none">AI</span>
+            )}
+          </button>
+        )
+      })}
     </div>
   )
 }

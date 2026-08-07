@@ -1,10 +1,17 @@
 "use client"
 
 import { useState, useMemo } from "react"
-import { Star, MapPin, X, Bookmark, CloudSun, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Phone, Clock, ExternalLink, Loader2, Hotel, Ticket } from "lucide-react"
+import { Star, MapPin, X, Bookmark, CloudSun, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Phone, Clock, ExternalLink, Loader2, Hotel, Ticket, Utensils } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { getPlaceDetails } from "@/lib/actions/places-detail"
 import { haversineDistance } from "@/lib/haversine"
+import {
+  MEAL_SLOTS,
+  MEAL_WINDOWS,
+  deriveMealSlotsFromHours,
+  isDiningCategory,
+  type MealSlot,
+} from "@/lib/meal-slots"
 
 export type Place = {
   googlePlaceId: string
@@ -24,6 +31,7 @@ export type Place = {
   delivery?: boolean
   takeout?: boolean
   openNow?: boolean
+  weekdayHours?: string[]
 }
 
 type HotelInfo = { name: string; lat: number | null; lng: number | null }
@@ -52,8 +60,8 @@ interface BrowseCardProps {
   place: Place
   wishlistState: "MUST_DO" | "LOW" | null // null = not on wishlist
   onNope: (place: Place) => void
-  onMaybe: (place: Place) => void
-  onMustDo: (place: Place) => void
+  onMaybe: (place: Place, mealSlots?: MealSlot[]) => void
+  onMustDo: (place: Place, mealSlots?: MealSlot[]) => void
   onDurationChange?: (place: Place, durationMins: number) => void
   isDismissing?: boolean
   hotels?: HotelInfo[]
@@ -62,6 +70,7 @@ interface BrowseCardProps {
 
 type PlaceDetails = {
   name?: string
+  description?: string
   address?: string
   phone?: string
   hours?: string[]
@@ -82,6 +91,16 @@ function isBookablePlace(types: string[]): boolean {
   const nonBookable = ["restaurant", "cafe", "bar", "bakery", "food", "meal_delivery", "meal_takeaway"]
   if (types.some((t) => nonBookable.includes(t))) return false
   return true
+}
+
+/**
+ * Is this somewhere a meal happens? The generic "food" type is ignored because
+ * grocery stores and markets carry it too — primaryType and the specific
+ * restaurant/cafe/bar types are the reliable signals.
+ */
+function isDiningPlace(place: Place): boolean {
+  if (isDiningCategory(place.primaryType)) return true
+  return (place.types || []).some((t) => t !== "food" && isDiningCategory(t))
 }
 
 const DURATION_PRESETS = [30, 60, 90, 120, 180, 240]
@@ -111,6 +130,12 @@ export function BrowseCard({
   const [durationMins, setDurationMins] = useState(90)
   const [showCustomDuration, setShowCustomDuration] = useState(false)
   const [customDurationValue, setCustomDurationValue] = useState("")
+  const [showHours, setShowHours] = useState(false)
+
+  // Meal-slot capture: only shown when the venue's hours can't tell us when
+  // people eat there.
+  const [pendingSave, setPendingSave] = useState<"maybe" | "mustDo" | null>(null)
+  const [pickedSlots, setPickedSlots] = useState<MealSlot[]>([])
 
   const photos = place.photoUrls && place.photoUrls.length > 0
     ? place.photoUrls
@@ -158,6 +183,40 @@ export function BrowseCard({
   const mapsUrl = place.lat && place.lng
     ? `https://www.google.com/maps/search/?api=1&query=${place.lat},${place.lng}&query_place_id=${place.googlePlaceId}`
     : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place.name + " " + place.address)}`
+
+  /**
+   * Save handler for Maybe / Must Do. Dining venues need meal slots so the
+   * planner stops routing dinner→dinner; we derive them from the posted hours
+   * whenever we can and only ask the user when we genuinely can't.
+   */
+  function requestSave(kind: "maybe" | "mustDo") {
+    const commit = kind === "maybe" ? onMaybe : onMustDo
+
+    if (!isDiningPlace(place)) {
+      setPendingSave(null)
+      commit(place)
+      return
+    }
+
+    const hours = details?.hours || place.weekdayHours
+    const derived = deriveMealSlotsFromHours(hours ? JSON.stringify(hours) : null)
+    if (derived && derived.length > 0) {
+      setPendingSave(null)
+      commit(place, derived)
+      return
+    }
+
+    // Hours were missing or too ambiguous — ask, inline.
+    setPickedSlots([])
+    setPendingSave(kind)
+  }
+
+  function confirmMealSlots() {
+    if (!pendingSave || pickedSlots.length === 0) return
+    const commit = pendingSave === "maybe" ? onMaybe : onMustDo
+    setPendingSave(null)
+    commit(place, pickedSlots)
+  }
 
   return (
     <div
@@ -322,11 +381,26 @@ export function BrowseCard({
 
           {details && !detailsLoading && (
             <div className="space-y-2 text-xs">
-              {/* Full address */}
+              {/* Editorial description */}
+              {details.description && (
+                <p className="text-gray-500 leading-relaxed line-clamp-3">
+                  {details.description}
+                </p>
+              )}
+
+              {/* Full address — doubles as the Google Maps link */}
               {details.address && (
                 <div className="flex items-start gap-1.5 text-gray-600">
                   <MapPin className="w-3.5 h-3.5 shrink-0 mt-0.5 text-gray-400" />
-                  <span>{details.address}</span>
+                  <a
+                    href={mapsUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    className="hover:text-indigo-600 hover:underline transition-colors"
+                  >
+                    {details.address}
+                  </a>
                 </div>
               )}
 
@@ -351,12 +425,11 @@ export function BrowseCard({
                 </div>
               )}
 
-              {/* Opening hours */}
+              {/* Opening hours — open/closed stays visible, the 7-line list collapses */}
               {details.hours && details.hours.length > 0 && (
                 <div className="space-y-0.5">
                   <div className="flex items-center gap-1.5 text-gray-600 font-medium">
                     <Clock className="w-3.5 h-3.5 shrink-0 text-gray-400" />
-                    <span>Hours</span>
                     {details.openNow != null && (
                       <span className={cn(
                         "text-[10px] font-semibold px-1.5 py-0.5 rounded-full",
@@ -365,26 +438,22 @@ export function BrowseCard({
                         {details.openNow ? "Open now" : "Closed"}
                       </span>
                     )}
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setShowHours((v) => !v) }}
+                      className="text-gray-500 hover:text-gray-700 font-medium transition-colors"
+                    >
+                      {showHours ? "Hide hours" : "Show hours"}
+                    </button>
                   </div>
-                  <div className="ml-5 text-gray-500 space-y-0.5">
-                    {details.hours.map((h, i) => (
-                      <div key={i}>{h}</div>
-                    ))}
-                  </div>
+                  {showHours && (
+                    <div className="ml-5 text-gray-500 space-y-0.5 pt-0.5">
+                      {details.hours.map((h, i) => (
+                        <div key={i}>{h}</div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
-
-              {/* View on Google Maps */}
-              <a
-                href={mapsUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={(e) => e.stopPropagation()}
-                className="inline-flex items-center gap-1 text-indigo-600 hover:text-indigo-700 font-medium mt-1"
-              >
-                <ExternalLink className="w-3.5 h-3.5" />
-                View on Google Maps
-              </a>
 
               {/* Booking links for activities/tours/attractions */}
               {isBookablePlace(place.types) && (
@@ -511,11 +580,63 @@ export function BrowseCard({
         </div>
       )}
 
+      {/* Meal-slot capture — only when the hours couldn't tell us */}
+      {pendingSave && (
+        <div className="px-3.5 pt-2">
+          <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-2.5 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <span className="flex items-center gap-1.5 text-[11px] font-semibold text-indigo-900">
+                <Utensils className="w-3 h-3" />
+                When would you go?
+              </span>
+              <button
+                onClick={(e) => { e.stopPropagation(); setPendingSave(null) }}
+                className="text-indigo-300 hover:text-indigo-600 transition-colors"
+                aria-label="Cancel"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {MEAL_SLOTS.map((slot) => {
+                const active = pickedSlots.includes(slot)
+                return (
+                  <button
+                    key={slot}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setPickedSlots((prev) =>
+                        prev.includes(slot) ? prev.filter((s) => s !== slot) : [...prev, slot]
+                      )
+                    }}
+                    className={cn(
+                      "px-2 py-1 text-[11px] font-medium rounded-md border transition-colors",
+                      active
+                        ? "bg-indigo-600 border-indigo-600 text-white"
+                        : "bg-white border-indigo-200 text-indigo-700 hover:bg-indigo-100"
+                    )}
+                  >
+                    {MEAL_WINDOWS[slot].label}
+                  </button>
+                )
+              })}
+            </div>
+            <button
+              onClick={(e) => { e.stopPropagation(); confirmMealSlots() }}
+              disabled={pickedSlots.length === 0}
+              className="w-full py-1.5 text-[11px] font-semibold rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              {pendingSave === "mustDo" ? "Save as Must Do" : "Save as Maybe"}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Triage buttons */}
       <div className="px-3.5 pb-3.5">
         <div className="flex items-center gap-2 pt-2 border-t border-gray-100">
           <button
-            onClick={(e) => { e.stopPropagation(); onNope(place) }}
+            onClick={(e) => { e.stopPropagation(); setPendingSave(null); onNope(place) }}
             className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 text-xs font-medium rounded-lg border border-gray-200 text-gray-500 hover:bg-red-50 hover:border-red-200 hover:text-red-600 transition-colors"
             title="Nope"
           >
@@ -523,7 +644,7 @@ export function BrowseCard({
             <span className="hidden sm:inline">Nope</span>
           </button>
           <button
-            onClick={(e) => { e.stopPropagation(); onMaybe(place) }}
+            onClick={(e) => { e.stopPropagation(); requestSave("maybe") }}
             className={cn(
               "flex-1 flex items-center justify-center gap-1 px-2 py-1.5 text-xs font-medium rounded-lg border transition-colors",
               wishlistState === "LOW"
@@ -536,7 +657,7 @@ export function BrowseCard({
             <span className="hidden sm:inline">Maybe</span>
           </button>
           <button
-            onClick={(e) => { e.stopPropagation(); onMustDo(place) }}
+            onClick={(e) => { e.stopPropagation(); requestSave("mustDo") }}
             className={cn(
               "flex-1 flex items-center justify-center gap-1 px-2 py-1.5 text-xs font-medium rounded-lg border transition-colors",
               wishlistState === "MUST_DO"

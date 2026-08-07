@@ -40,6 +40,7 @@ import type { GroupedDay } from "@/lib/itinerary-utils"
 import { WishlistPanel } from "./wishlist-panel"
 import type { WishlistActivity } from "./wishlist-panel"
 import { TimelineView } from "./timeline-view"
+import type { TransportSegmentInfo, OriginInfo } from "./timeline-view"
 import { DragOnboarding, markOnboardingSeen } from "./drag-onboarding"
 import { AddCustomEvent } from "@/components/add-custom-event"
 
@@ -59,6 +60,7 @@ type ItineraryItem = {
   costEstimate: number
   position: number
   isConfirmed: boolean
+  transportSegment?: TransportSegmentInfo | null
   flight?: {
     airline: string | null
     flightNumber: string | null
@@ -132,6 +134,8 @@ interface Props {
   showFreeTime?: boolean
   freeTimeMinGapHours?: number
   destinations?: DestinationInfo[]
+  /** Trip starting point (home) — fallback origin for the "leave by" lead-in. */
+  origin?: OriginInfo | null
 }
 
 export function ItineraryView({
@@ -144,6 +148,7 @@ export function ItineraryView({
   wishlistActivities: initialWishlist = [],
   hotels = [],
   destinations = [],
+  origin,
 }: Props) {
   const router = useRouter()
   const [items, setItems] = useState<ItineraryItem[]>(initialItems)
@@ -487,7 +492,7 @@ export function ItineraryView({
         const d = new Date(draggedItem.date)
         const currentDay = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`
         if (currentDay !== dateStr) {
-          const isFixed = draggedItem.type === "FLIGHT" || draggedItem.type === "HOTEL_CHECK_IN" || draggedItem.type === "HOTEL_CHECK_OUT"
+          const isFixed = draggedItem.type === "FLIGHT" || draggedItem.type === "TRANSPORT" || draggedItem.type === "HOTEL_CHECK_IN" || draggedItem.type === "HOTEL_CHECK_OUT"
           if (!isFixed) {
             handleMoveToDay(activeId, dateStr)
             return
@@ -813,6 +818,7 @@ export function ItineraryView({
                 wishlistItems={wishlist}
                 hotels={hotels}
                 forecasts={weather?.forecasts}
+                origin={origin}
               />
             </div>
           </div>

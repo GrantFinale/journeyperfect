@@ -165,6 +165,78 @@ export async function getAmazonPackingLink(
   }
 }
 
+// Parking near a hotel/venue (SpotHero by default)
+export interface ParkingLinkParams {
+  location: string
+  lat?: number | null
+  lng?: number | null
+  startDate?: string
+  endDate?: string
+  startTime?: string
+  endTime?: string
+  provider?: "spothero"
+}
+
+// SpotHero search deep link. Falls back to a plain (un-affiliated) search URL
+// when no affiliate ID is configured, so the link is never broken or empty.
+async function buildSpotHeroParkingLink(
+  params: ParkingLinkParams
+): Promise<AffiliateLink> {
+  const affiliateId = await getConfig("affiliate.spothero.id", "")
+
+  const hasCoords =
+    typeof params.lat === "number" &&
+    Number.isFinite(params.lat) &&
+    typeof params.lng === "number" &&
+    Number.isFinite(params.lng)
+
+  // SpotHero accepts local ISO-ish timestamps: YYYY-MM-DDTHH:MM
+  const starts = params.startDate
+    ? `${params.startDate}T${params.startTime ?? "15:00"}`
+    : ""
+  const ends =
+    params.startDate && params.endDate
+      ? `${params.endDate}T${params.endTime ?? "11:00"}`
+      : ""
+
+  const searchParams = new URLSearchParams({
+    ...(hasCoords && {
+      latitude: String(params.lat),
+      longitude: String(params.lng),
+    }),
+    q: params.location,
+    ...(starts && { starts }),
+    ...(ends && { ends }),
+    ...(affiliateId && {
+      affiliate: affiliateId,
+      utm_source: "journeyperfect",
+      utm_medium: "affiliate",
+    }),
+  })
+
+  return {
+    provider: "SpotHero",
+    url: `https://spothero.com/search?${searchParams}`,
+    label: "Find parking",
+    icon: "\u{1F17F}️",
+    commission: "10%",
+  }
+}
+
+export async function buildParkingLink(
+  params: ParkingLinkParams
+): Promise<AffiliateLink> {
+  // Provider is configurable so an admin can swap providers without a code change
+  const provider =
+    params.provider ?? (await getConfig("affiliate.parking.provider", "spothero"))
+
+  switch (provider) {
+    case "spothero":
+    default:
+      return buildSpotHeroParkingLink(params)
+  }
+}
+
 // Get all relevant affiliate links for a trip context
 export async function getTripAffiliateLinks(context: {
   destination: string

@@ -9,8 +9,11 @@ import {
   updateTravelerPreferences,
 } from "@/lib/actions/travelers"
 import { updatePreferences, updateTimezone } from "@/lib/actions/preferences"
+import { updateHomeAddress } from "@/lib/actions/user"
+import { createVehicle, deleteVehicle, updateVehicle } from "@/lib/actions/vehicles"
+import PlacesAutocomplete from "@/components/places-autocomplete"
 import { cn, getAgeGroupLabel, getCustomTags, getDefaultAvatar } from "@/lib/utils"
-import { User, Users, Plus, Trash2, X, Save, Mail, Copy, Check, Globe, ChevronDown, ChevronRight, Camera, Clock } from "lucide-react"
+import { User, Users, Plus, Trash2, X, Save, Mail, Copy, Check, Globe, ChevronDown, ChevronRight, Camera, Clock, Home, Car, Pencil } from "lucide-react"
 import type { Prisma } from "@prisma/client"
 
 type TravelerProfile = {
@@ -38,11 +41,61 @@ type Preferences = {
   freeTimeMinGapHours?: number
 } | null
 
+export type SavedVehicle = {
+  id: string
+  make: string
+  model: string
+  year: number | null
+  color: string | null
+  licensePlate: string | null
+  licensePlateState: string | null
+  nickname: string | null
+  isDefault: boolean
+}
+
+export type HomeAddressData = {
+  homeAddress: string | null
+  homeCity: string | null
+  homeLat: number | null
+  homeLng: number | null
+}
+
 interface Props {
   user: { name?: string | null; email?: string | null; image?: string | null; id?: string } | null
   initialProfiles: TravelerProfile[]
   initialPrefs: Preferences
   initialTimezone: string
+  initialHome?: HomeAddressData | null
+  initialVehicles?: SavedVehicle[]
+  placesApiKey?: string
+}
+
+const EMPTY_VEHICLE_FORM = {
+  make: "",
+  model: "",
+  year: "",
+  color: "",
+  licensePlate: "",
+  licensePlateState: "",
+  nickname: "",
+}
+
+type VehicleForm = typeof EMPTY_VEHICLE_FORM
+
+/** Best-effort city extraction from a formatted address like "Grand Rapids, MI 49546, USA". */
+function deriveCity(placeName: string): string | null {
+  const first = placeName.split(",")[0]?.trim()
+  return first || null
+}
+
+function vehicleLabel(v: SavedVehicle): string {
+  return v.nickname?.trim() || [v.year, v.make, v.model].filter(Boolean).join(" ")
+}
+
+function vehicleSubtitle(v: SavedVehicle): string {
+  return [v.color, [v.year, v.make, v.model].filter(Boolean).join(" ")]
+    .filter((s) => s && String(s).trim())
+    .join(" · ")
 }
 
 const TIMEZONE_OPTIONS = [
@@ -190,6 +243,102 @@ function getPreferenceSummary(prefs: TravelerPreferencesData): string[] {
   return summary
 }
 
+// ─── Vehicle Form Fields ─────────────────────────────────────────────────────
+
+function VehicleFields({
+  form,
+  onChange,
+}: {
+  form: VehicleForm
+  onChange: (updater: (f: VehicleForm) => VehicleForm) => void
+}) {
+  const inputClass =
+    "w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="block text-xs text-gray-500 mb-1">Make *</label>
+          <input
+            type="text"
+            placeholder="e.g. Toyota"
+            value={form.make}
+            onChange={(e) => onChange((f) => ({ ...f, make: e.target.value }))}
+            className={inputClass}
+          />
+        </div>
+        <div>
+          <label className="block text-xs text-gray-500 mb-1">Model *</label>
+          <input
+            type="text"
+            placeholder="e.g. Highlander"
+            value={form.model}
+            onChange={(e) => onChange((f) => ({ ...f, model: e.target.value }))}
+            className={inputClass}
+          />
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="block text-xs text-gray-500 mb-1">Year</label>
+          <input
+            type="number"
+            min={1900}
+            max={2100}
+            placeholder="e.g. 2021"
+            value={form.year}
+            onChange={(e) => onChange((f) => ({ ...f, year: e.target.value }))}
+            className={inputClass}
+          />
+        </div>
+        <div>
+          <label className="block text-xs text-gray-500 mb-1">Colour</label>
+          <input
+            type="text"
+            placeholder="e.g. Silver"
+            value={form.color}
+            onChange={(e) => onChange((f) => ({ ...f, color: e.target.value }))}
+            className={inputClass}
+          />
+        </div>
+      </div>
+      <div className="grid grid-cols-3 gap-3">
+        <div className="col-span-2">
+          <label className="block text-xs text-gray-500 mb-1">Licence plate</label>
+          <input
+            type="text"
+            placeholder="e.g. ABC 1234"
+            value={form.licensePlate}
+            onChange={(e) => onChange((f) => ({ ...f, licensePlate: e.target.value }))}
+            className={cn(inputClass, "uppercase font-mono")}
+          />
+        </div>
+        <div>
+          <label className="block text-xs text-gray-500 mb-1">State</label>
+          <input
+            type="text"
+            maxLength={3}
+            placeholder="MI"
+            value={form.licensePlateState}
+            onChange={(e) => onChange((f) => ({ ...f, licensePlateState: e.target.value }))}
+            className={cn(inputClass, "uppercase font-mono")}
+          />
+        </div>
+      </div>
+      <div>
+        <label className="block text-xs text-gray-500 mb-1">Nickname</label>
+        <input
+          type="text"
+          placeholder="e.g. The family hauler"
+          value={form.nickname}
+          onChange={(e) => onChange((f) => ({ ...f, nickname: e.target.value }))}
+          className={inputClass}
+        />
+      </div>
+    </div>
+  )
+}
+
 // ─── Collapsible Section ─────────────────────────────────────────────────────
 
 function Section({ title, defaultOpen = false, children }: { title: string; defaultOpen?: boolean; children: React.ReactNode }) {
@@ -263,7 +412,15 @@ function TravelerAvatar({ profile, size = "md" }: { profile: TravelerProfile; si
 
 // ─── Main Component ──────────────────────────────────────────────────────────
 
-export function GlobalSettingsView({ user, initialProfiles, initialPrefs, initialTimezone }: Props) {
+export function GlobalSettingsView({
+  user,
+  initialProfiles,
+  initialPrefs,
+  initialTimezone,
+  initialHome = null,
+  initialVehicles = [],
+  placesApiKey = "",
+}: Props) {
   const [activeTab, setActiveTab] = useState<Tab>("Travelers")
   const [profiles, setProfiles] = useState<TravelerProfile[]>(initialProfiles)
   const [prefs, setPrefs] = useState<Preferences>(
@@ -285,6 +442,23 @@ export function GlobalSettingsView({ user, initialProfiles, initialPrefs, initia
   const [savingPrefs, setSavingPrefs] = useState(false)
   const [copiedEmail, setCopiedEmail] = useState(false)
   const [expandedProfileId, setExpandedProfileId] = useState<string | null>(null)
+
+  // ─── Home address state ────────────────────────────────────────────────────
+  const [homeAddress, setHomeAddress] = useState(initialHome?.homeAddress ?? "")
+  const [homeCity, setHomeCity] = useState<string | null>(initialHome?.homeCity ?? null)
+  const [homeLat, setHomeLat] = useState<number | null>(initialHome?.homeLat ?? null)
+  const [homeLng, setHomeLng] = useState<number | null>(initialHome?.homeLng ?? null)
+  const [savingHome, setSavingHome] = useState(false)
+
+  // ─── Vehicle state ─────────────────────────────────────────────────────────
+  const [vehicles, setVehicles] = useState<SavedVehicle[]>(initialVehicles)
+  const [showAddVehicle, setShowAddVehicle] = useState(false)
+  const [vehicleForm, setVehicleForm] = useState<VehicleForm>(EMPTY_VEHICLE_FORM)
+  const [savingVehicle, setSavingVehicle] = useState(false)
+  const [editingVehicleId, setEditingVehicleId] = useState<string | null>(null)
+  const [vehicleEditForm, setVehicleEditForm] = useState<VehicleForm | null>(null)
+  const [copiedPlateId, setCopiedPlateId] = useState<string | null>(null)
+
   const [profileForm, setProfileForm] = useState({
     name: "",
     birthDate: "",
@@ -508,6 +682,169 @@ export function GlobalSettingsView({ user, initialProfiles, initialPrefs, initia
     } finally {
       setSavingTimezone(false)
     }
+  }
+
+  // ─── Home address handlers ─────────────────────────────────────────────────
+
+  async function handleSaveHome() {
+    setSavingHome(true)
+    try {
+      const saved = await updateHomeAddress({
+        homeAddress: homeAddress.trim() || null,
+        homeCity,
+        homeLat,
+        homeLng,
+      })
+      setHomeAddress(saved.homeAddress ?? "")
+      setHomeCity(saved.homeCity)
+      setHomeLat(saved.homeLat)
+      setHomeLng(saved.homeLng)
+      toast.success("Home address saved")
+    } catch {
+      toast.error("Failed to save home address")
+    } finally {
+      setSavingHome(false)
+    }
+  }
+
+  async function handleClearHome() {
+    setSavingHome(true)
+    try {
+      await updateHomeAddress({ homeAddress: null, homeCity: null, homeLat: null, homeLng: null })
+      setHomeAddress("")
+      setHomeCity(null)
+      setHomeLat(null)
+      setHomeLng(null)
+      toast.success("Home address saved")
+    } catch {
+      toast.error("Failed to save home address")
+    } finally {
+      setSavingHome(false)
+    }
+  }
+
+  // ─── Vehicle handlers ──────────────────────────────────────────────────────
+
+  function vehicleFormToInput(form: VehicleForm) {
+    const parsedYear = parseInt(form.year, 10)
+    return {
+      make: form.make.trim(),
+      model: form.model.trim(),
+      year: Number.isFinite(parsedYear) ? parsedYear : null,
+      color: form.color.trim() || null,
+      licensePlate: form.licensePlate.trim().toUpperCase() || null,
+      licensePlateState: form.licensePlateState.trim().toUpperCase() || null,
+      nickname: form.nickname.trim() || null,
+    }
+  }
+
+  function toVehicleForm(v: SavedVehicle): VehicleForm {
+    return {
+      make: v.make,
+      model: v.model,
+      year: v.year != null ? String(v.year) : "",
+      color: v.color ?? "",
+      licensePlate: v.licensePlate ?? "",
+      licensePlateState: v.licensePlateState ?? "",
+      nickname: v.nickname ?? "",
+    }
+  }
+
+  async function handleAddVehicle() {
+    if (!vehicleForm.make.trim() || !vehicleForm.model.trim()) {
+      toast.error("Make and model are required")
+      return
+    }
+    setSavingVehicle(true)
+    try {
+      const input = vehicleFormToInput(vehicleForm)
+      const created = await createVehicle({ ...input, isDefault: vehicles.length === 0 })
+      setVehicles((prev) => [
+        ...prev,
+        {
+          id: created.id,
+          make: created.make,
+          model: created.model,
+          year: created.year,
+          color: created.color,
+          licensePlate: created.licensePlate,
+          licensePlateState: created.licensePlateState,
+          nickname: created.nickname,
+          isDefault: created.isDefault,
+        },
+      ])
+      setVehicleForm(EMPTY_VEHICLE_FORM)
+      setShowAddVehicle(false)
+      toast.success("Vehicle added")
+    } catch {
+      toast.error("Failed to add vehicle")
+    } finally {
+      setSavingVehicle(false)
+    }
+  }
+
+  function handleExpandVehicle(vehicleId: string) {
+    if (editingVehicleId === vehicleId) {
+      setEditingVehicleId(null)
+      setVehicleEditForm(null)
+      return
+    }
+    const v = vehicles.find((x) => x.id === vehicleId)
+    if (!v) return
+    setEditingVehicleId(vehicleId)
+    setVehicleEditForm(toVehicleForm(v))
+  }
+
+  async function handleSaveVehicle(vehicleId: string) {
+    if (!vehicleEditForm) return
+    if (!vehicleEditForm.make.trim() || !vehicleEditForm.model.trim()) {
+      toast.error("Make and model are required")
+      return
+    }
+    setSavingVehicle(true)
+    try {
+      const input = vehicleFormToInput(vehicleEditForm)
+      await updateVehicle(vehicleId, input)
+      setVehicles((prev) => prev.map((v) => (v.id === vehicleId ? { ...v, ...input } : v)))
+      setEditingVehicleId(null)
+      setVehicleEditForm(null)
+      toast.success("Vehicle updated")
+    } catch {
+      toast.error("Failed to update vehicle")
+    } finally {
+      setSavingVehicle(false)
+    }
+  }
+
+  async function handleMakeDefaultVehicle(vehicleId: string) {
+    try {
+      await updateVehicle(vehicleId, { isDefault: true })
+      setVehicles((prev) => prev.map((v) => ({ ...v, isDefault: v.id === vehicleId })))
+      toast.success("Default vehicle updated")
+    } catch {
+      toast.error("Failed to update vehicle")
+    }
+  }
+
+  async function handleDeleteVehicle(vehicleId: string) {
+    if (!confirm("Delete this vehicle? This cannot be undone.")) return
+    try {
+      await deleteVehicle(vehicleId)
+      setVehicles((prev) => prev.filter((v) => v.id !== vehicleId))
+      if (editingVehicleId === vehicleId) {
+        setEditingVehicleId(null)
+        setVehicleEditForm(null)
+      }
+      toast.success("Vehicle removed")
+    } catch {
+      toast.error("Failed to remove vehicle")
+    }
+  }
+
+  function handleCopyPlate(vehicleId: string, plate: string) {
+    navigator.clipboard.writeText(plate)
+    setCopiedPlateId(vehicleId)
+    setTimeout(() => setCopiedPlateId(null), 2000)
   }
 
   async function handleSavePrefs() {
@@ -1116,6 +1453,224 @@ export function GlobalSettingsView({ user, initialProfiles, initialPrefs, initia
       {/* PREFERENCES */}
       {activeTab === "Preferences" && prefs && (
         <div className="space-y-6">
+          {/* Home address */}
+          <div className="bg-white border border-gray-100 rounded-2xl p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <Home className="w-4 h-4 text-indigo-500" />
+              <h3 className="font-semibold text-gray-900">Home address</h3>
+            </div>
+            <p className="text-sm text-gray-500 mb-3">
+              Used as the default starting point for new trips, so we can tell you when to leave.
+            </p>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Address or city</label>
+              <PlacesAutocomplete
+                value={homeAddress}
+                onChange={(v) => setHomeAddress(v)}
+                onSelect={(place) => {
+                  setHomeAddress(place.name)
+                  setHomeCity(deriveCity(place.name))
+                  setHomeLat(place.lat ?? null)
+                  setHomeLng(place.lng ?? null)
+                }}
+                placeholder="Start typing your home address..."
+                apiKey={placesApiKey}
+                disabled={savingHome}
+                className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+            {homeLat != null && homeLng != null && (
+              <p className="text-xs text-gray-400 mt-2">
+                {homeCity ? `${homeCity} · ` : ""}
+                {homeLat.toFixed(4)}, {homeLng.toFixed(4)}
+              </p>
+            )}
+            <div className="flex items-center gap-3 mt-4">
+              <button
+                onClick={handleSaveHome}
+                disabled={savingHome}
+                className="px-4 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+              >
+                {savingHome ? "Saving…" : "Save home address"}
+              </button>
+              {(homeAddress || homeLat != null) && (
+                <button
+                  onClick={handleClearHome}
+                  disabled={savingHome}
+                  className="text-sm text-gray-500 hover:text-gray-700 disabled:opacity-50 transition-colors"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* My vehicles */}
+          <div className="bg-white border border-gray-100 rounded-2xl p-5">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <Car className="w-4 h-4 text-indigo-500" />
+                <h3 className="font-semibold text-gray-900">My vehicles</h3>
+              </div>
+              {!showAddVehicle && (
+                <button
+                  onClick={() => setShowAddVehicle(true)}
+                  className="flex items-center gap-2 px-3 py-2 bg-indigo-600 text-white text-sm font-medium rounded-xl hover:bg-indigo-700 transition-colors"
+                >
+                  <Plus className="w-4 h-4" />
+                  Add vehicle
+                </button>
+              )}
+            </div>
+            <p className="text-sm text-gray-500 mb-3">
+              Saved cars you can attach to any trip &mdash; handy when a hotel asks for your licence plate.
+            </p>
+
+            {vehicles.length === 0 && !showAddVehicle && (
+              <div className="text-center py-8">
+                <Car className="w-10 h-10 text-gray-200 mx-auto mb-3" />
+                <p className="text-gray-500 text-sm">No vehicles saved yet</p>
+                <p className="text-gray-400 text-xs mt-1">Add the car you usually road-trip in.</p>
+              </div>
+            )}
+
+            {vehicles.length > 0 && (
+              <div className="space-y-3">
+                {vehicles.map((v) => {
+                  const isEditing = editingVehicleId === v.id
+                  return (
+                    <div key={v.id} className="border border-gray-100 rounded-xl overflow-hidden">
+                      <div className="p-4">
+                        <div className="flex items-start gap-3">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-medium text-sm text-gray-900">{vehicleLabel(v)}</span>
+                              {v.isDefault && (
+                                <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 text-[10px] font-semibold rounded-full">
+                                  Default
+                                </span>
+                              )}
+                            </div>
+                            {vehicleSubtitle(v) && (
+                              <p className="text-xs text-gray-500 mt-0.5">{vehicleSubtitle(v)}</p>
+                            )}
+                            {v.licensePlate && (
+                              <div className="flex items-center gap-2 mt-2">
+                                <span className="font-mono text-base font-semibold tracking-wider text-gray-900">
+                                  {v.licensePlate}
+                                </span>
+                                {v.licensePlateState && (
+                                  <span className="text-xs text-gray-400">{v.licensePlateState}</span>
+                                )}
+                                <button
+                                  onClick={() => handleCopyPlate(v.id, v.licensePlate!)}
+                                  className="p-1.5 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+                                  title="Copy licence plate"
+                                >
+                                  {copiedPlateId === v.id ? (
+                                    <Check className="w-3.5 h-3.5 text-green-600" />
+                                  ) : (
+                                    <Copy className="w-3.5 h-3.5 text-gray-500" />
+                                  )}
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              onClick={() => handleExpandVehicle(v.id)}
+                              className="p-2 text-gray-400 hover:text-indigo-600 transition-colors"
+                              title="Edit vehicle"
+                            >
+                              {isEditing ? <X className="w-4 h-4" /> : <Pencil className="w-4 h-4" />}
+                            </button>
+                            <button
+                              onClick={() => handleDeleteVehicle(v.id)}
+                              className="p-2 text-gray-400 hover:text-red-500 transition-colors"
+                              title="Delete vehicle"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                        {!v.isDefault && (
+                          <button
+                            onClick={() => handleMakeDefaultVehicle(v.id)}
+                            className="mt-2 text-xs text-indigo-600 hover:text-indigo-800 transition-colors"
+                          >
+                            Make default
+                          </button>
+                        )}
+                      </div>
+
+                      {isEditing && vehicleEditForm && (
+                        <div className="border-t border-gray-100 p-4 bg-gray-50/50">
+                          <VehicleFields
+                            form={vehicleEditForm}
+                            onChange={(updater) => setVehicleEditForm((f) => (f ? updater(f) : f))}
+                          />
+                          <div className="flex gap-2 mt-4">
+                            <button
+                              onClick={() => {
+                                setEditingVehicleId(null)
+                                setVehicleEditForm(null)
+                              }}
+                              className="flex-1 py-2.5 border border-gray-200 text-gray-600 text-sm font-medium rounded-xl hover:bg-gray-100 transition-colors"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              onClick={() => handleSaveVehicle(v.id)}
+                              disabled={savingVehicle}
+                              className="px-4 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                            >
+                              {savingVehicle ? "Saving…" : "Save vehicle"}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+
+            {showAddVehicle && (
+              <div className="mt-3 border border-indigo-200 rounded-xl p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="font-medium text-sm text-gray-900">Add vehicle</h4>
+                  <button
+                    onClick={() => {
+                      setShowAddVehicle(false)
+                      setVehicleForm(EMPTY_VEHICLE_FORM)
+                    }}
+                  >
+                    <X className="w-4 h-4 text-gray-400" />
+                  </button>
+                </div>
+                <VehicleFields form={vehicleForm} onChange={(updater) => setVehicleForm(updater)} />
+                <div className="flex gap-2 mt-4">
+                  <button
+                    onClick={() => {
+                      setShowAddVehicle(false)
+                      setVehicleForm(EMPTY_VEHICLE_FORM)
+                    }}
+                    className="flex-1 py-2.5 border border-gray-200 text-gray-600 text-sm font-medium rounded-xl hover:bg-gray-100 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleAddVehicle}
+                    disabled={savingVehicle}
+                    className="px-4 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+                  >
+                    {savingVehicle ? "Saving…" : "Add vehicle"}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
           <div className="bg-white border border-gray-100 rounded-2xl p-5">
             <div className="flex items-center gap-2 mb-4">
               <Globe className="w-4 h-4 text-indigo-500" />

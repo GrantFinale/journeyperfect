@@ -49,6 +49,16 @@ const AFFILIATE_PROGRAMS = [
       { label: "Link Checker", url: "https://affiliate-program.amazon.com/home/tools/linkchecker" },
     ],
   },
+  {
+    key: "affiliate.spothero.id", name: "SpotHero", icon: "🅿️",
+    description: "Parking near hotels & venues — ~10% commission",
+    links: [
+      { label: "Affiliate Program", url: "https://spothero.com/affiliates" },
+      { label: "Dashboard", url: "https://spothero.com/affiliates/dashboard" },
+      { label: "Reporting", url: "https://spothero.com/affiliates/reporting" },
+      { label: "Account", url: "https://spothero.com/affiliates/account" },
+    ],
+  },
 ]
 
 export default async function AffiliateAdminPage() {

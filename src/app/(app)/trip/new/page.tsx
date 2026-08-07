@@ -6,13 +6,14 @@ import { createTrip } from "@/lib/actions/trips"
 import { parseAndPreviewFlight, createFlightsBatch } from "@/lib/actions/flights"
 import { createHotel } from "@/lib/actions/hotels"
 import { createRentalCar } from "@/lib/actions/rental-cars"
+import { createTransportSegmentsBatch, type TransportInput, type TransportModeValue } from "@/lib/actions/transport"
 import { getUserPlan, getPlacesApiKey, getUserId } from "@/lib/actions/user"
 import { checkPendingEmails, markEmailsProcessed, type PendingEmailItem } from "@/lib/actions/inbound-emails"
 import { hasFeature } from "@/lib/features"
 import { toast } from "sonner"
 import {
   MapPin, Calendar, ArrowRight, ArrowLeft, Plus, X, Plane, ChevronDown, ChevronUp,
-  Loader2, Sparkles, Mail, Copy, Check, Hotel, Car, UtensilsCrossed, Ticket, RefreshCw,
+  Loader2, Sparkles, Mail, Copy, Check, Hotel, Car, UtensilsCrossed, Ticket, RefreshCw, Ship,
 } from "lucide-react"
 import PlacesAutocomplete from "@/components/places-autocomplete"
 
@@ -82,6 +83,7 @@ function TypeIcon({ type, className }: { type: string | null; className?: string
     case "flight": return <Plane className={cn} />
     case "hotel": return <Hotel className={cn} />
     case "rental_car": return <Car className={cn} />
+    case "transport": return <Ship className={cn} />
     case "restaurant": return <UtensilsCrossed className={cn} />
     case "event": return <Ticket className={cn} />
     default: return <Mail className={cn} />
@@ -93,6 +95,7 @@ function typeLabel(type: string | null): string {
     case "flight": return "Flight"
     case "hotel": return "Hotel"
     case "rental_car": return "Rental Car"
+    case "transport": return "Ferry / Train / Bus"
     case "restaurant": return "Restaurant"
     case "event": return "Event"
     default: return "Email"
@@ -104,6 +107,7 @@ function typeColor(type: string | null): string {
     case "flight": return "bg-blue-50 border-blue-200 text-blue-700"
     case "hotel": return "bg-purple-50 border-purple-200 text-purple-700"
     case "rental_car": return "bg-green-50 border-green-200 text-green-700"
+    case "transport": return "bg-teal-50 border-teal-200 text-teal-700"
     case "restaurant": return "bg-orange-50 border-orange-200 text-orange-700"
     case "event": return "bg-pink-50 border-pink-200 text-pink-700"
     default: return "bg-gray-50 border-gray-200 text-gray-700"
@@ -111,6 +115,22 @@ function typeColor(type: string | null): string {
 }
 
 // ─── Parse summary from parsedData ──────────────────────────────────────────
+
+/**
+ * Shape of one entry in `parsedData.transportSegments`, as written by the
+ * inbound-email route. It is `ParsedTransportSegment` after a JSON round-trip,
+ * so every field is optional from this side of the wire.
+ */
+type ParsedTransportEmailSegment = Partial<Omit<TransportInput, "mode" | "departureTime">> & {
+  mode?: string
+  departureTime?: string | null
+}
+
+const TRANSPORT_MODES: TransportModeValue[] = ["FERRY", "TRAIN", "BUS"]
+
+function isTransportMode(mode: string | undefined): mode is TransportModeValue {
+  return !!mode && (TRANSPORT_MODES as string[]).includes(mode)
+}
 
 function emailSummary(email: PendingEmailItem): string {
   const data = email.parsedData
@@ -134,6 +154,15 @@ function emailSummary(email: PendingEmailItem): string {
     const cars = data.rentalCars as Array<Record<string, string>>
     if (cars.length > 0) {
       return [cars[0].company, cars[0].vehicleType].filter(Boolean).join(" ") || email.subject
+    }
+  }
+  if (email.type === "transport" && data.transportSegments) {
+    const segments = data.transportSegments as ParsedTransportEmailSegment[]
+    if (segments.length > 0) {
+      const s = segments[0]
+      const route = [s.departureLocation, s.arrivalLocation].filter(Boolean).join(" -> ")
+      const label = [s.operator, s.serviceNumber].filter(Boolean).join(" ")
+      return label && route ? `${label} (${route})` : label || route || email.subject
     }
   }
   return email.subject || "Confirmation email"
@@ -254,6 +283,13 @@ function extractAutoFillData(emails: PendingEmailItem[]) {
       for (const c of cars) {
         if (c.pickupTime) dates.push(new Date(c.pickupTime))
         if (c.dropoffTime) dates.push(new Date(c.dropoffTime))
+      }
+    }
+    if (email.type === "transport" && data.transportSegments) {
+      const segments = data.transportSegments as ParsedTransportEmailSegment[]
+      for (const s of segments) {
+        if (s.departureTime) dates.push(new Date(s.departureTime))
+        if (s.arrivalTime) dates.push(new Date(s.arrivalTime))
       }
     }
   }
@@ -605,6 +641,45 @@ export default function NewTripPage() {
                     priceCurrency: c.priceCurrency,
                   })
                 }
+              }
+            }
+            if (email.type === "transport" && data.transportSegments) {
+              const segments = data.transportSegments as ParsedTransportEmailSegment[]
+              const toCreate: TransportInput[] = segments
+                // departureTime and operator/location are the only fields the
+                // batch action requires; anything missing them cannot be placed
+                // on the timeline, so drop it rather than fail the whole trip.
+                .filter((s) => s.departureTime && s.operator && s.departureLocation && isTransportMode(s.mode))
+                .map((s) => ({
+                  mode: s.mode as TransportModeValue,
+                  operator: s.operator!,
+                  serviceNumber: s.serviceNumber,
+                  departureLocation: s.departureLocation!,
+                  departureTerminal: s.departureTerminal,
+                  departureAddress: s.departureAddress,
+                  departureLat: s.departureLat,
+                  departureLng: s.departureLng,
+                  departureTime: s.departureTime!,
+                  departureTimezone: s.departureTimezone || "UTC",
+                  arrivalLocation: s.arrivalLocation,
+                  arrivalTerminal: s.arrivalTerminal,
+                  arrivalAddress: s.arrivalAddress,
+                  arrivalLat: s.arrivalLat,
+                  arrivalLng: s.arrivalLng,
+                  arrivalTime: s.arrivalTime,
+                  arrivalTimezone: s.arrivalTimezone || "UTC",
+                  confirmationNumber: s.confirmationNumber,
+                  bookingLink: s.bookingLink,
+                  seatInfo: s.seatInfo,
+                  vehicleOnBoard: s.vehicleOnBoard ?? false,
+                  passengerCount: s.passengerCount,
+                  price: s.price != null ? Number(s.price) : undefined,
+                  priceCurrency: s.priceCurrency,
+                  checkInMinsBefore: s.checkInMinsBefore,
+                  notes: s.notes,
+                }))
+              if (toCreate.length > 0) {
+                await createTransportSegmentsBatch(trip.id, toCreate)
               }
             }
           } catch (err) {

@@ -15,6 +15,15 @@ function cacheSet<K, V>(cache: Map<K, V>, key: K, value: V) {
   cache.set(key, value)
 }
 
+// Places API (New) `v1/places/{placeId}` field mask.
+// `editorialSummary` and `generativeSummary` are both valid Place resource fields
+// (Place Details Enterprise + Atmosphere SKU). If the mask is ever rejected we
+// retry with BASE_FIELD_MASK so a summary field can never take Discover down.
+const BASE_FIELD_MASK =
+  "id,displayName,formattedAddress,location,rating,userRatingCount,types,photos,priceLevel,currentOpeningHours,regularOpeningHours,websiteUri,nationalPhoneNumber,goodForChildren,servesVegetarianFood,dineIn,delivery,takeout"
+
+const DETAIL_FIELD_MASK = `${BASE_FIELD_MASK},editorialSummary,generativeSummary`
+
 export async function getPlaceDetails(placeId: string) {
   const session = await auth()
   if (!session?.user?.id) throw new Error("Unauthorized")
@@ -29,20 +38,36 @@ export async function getPlaceDetails(placeId: string) {
   if (!apiKey || apiKey === "build-placeholder") return null
 
   try {
-    const res = await fetch(`https://places.googleapis.com/v1/places/${placeId}`, {
-      headers: {
-        "X-Goog-Api-Key": apiKey,
-        "X-Goog-FieldMask":
-          "id,displayName,formattedAddress,location,rating,userRatingCount,types,photos,priceLevel,currentOpeningHours,regularOpeningHours,websiteUri,nationalPhoneNumber,goodForChildren,servesVegetarianFood,dineIn,delivery,takeout",
-      },
-      referrer: "",
-      referrerPolicy: "no-referrer",
-    })
+    const fetchWithMask = (fieldMask: string) =>
+      fetch(`https://places.googleapis.com/v1/places/${placeId}`, {
+        headers: {
+          "X-Goog-Api-Key": apiKey,
+          "X-Goog-FieldMask": fieldMask,
+        },
+        referrer: "",
+        referrerPolicy: "no-referrer",
+      })
+
+    let res = await fetchWithMask(DETAIL_FIELD_MASK)
+    if (!res.ok) {
+      // A rejected mask (400) must not break the card — fall back to the
+      // long-standing field set that we know the API accepts.
+      res = await fetchWithMask(BASE_FIELD_MASK)
+    }
     if (!res.ok) return null
     const data = await res.json()
 
+    // Editorial blurb, falling back to the AI-generated overview. Both are
+    // optional and region-gated, so every hop is guarded.
+    const description: string | undefined =
+      data.editorialSummary?.text ||
+      data.generativeSummary?.overview?.text ||
+      data.generativeSummary?.description?.text ||
+      undefined
+
     const result = {
       name: data.displayName?.text,
+      description,
       address: data.formattedAddress,
       lat: data.location?.latitude,
       lng: data.location?.longitude,

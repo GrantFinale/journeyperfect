@@ -5,6 +5,13 @@ import { toast } from "sonner"
 import { searchPlaces, createActivity } from "@/lib/actions/activities"
 import { getPlaceDetails } from "@/lib/actions/places-detail"
 import { getAIDiningRecommendations, type DiningRecommendation } from "@/lib/actions/dining-ai"
+import {
+  MEAL_SLOTS,
+  MEAL_WINDOWS,
+  deriveMealSlotsFromHours,
+  serializeMealSlots,
+  type MealSlot,
+} from "@/lib/meal-slots"
 import { cn } from "@/lib/utils"
 import Link from "next/link"
 import {
@@ -98,6 +105,10 @@ export function DiningView({ tripId, destination, destinations, arrivalCities, i
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set())
   const [savingIds, setSavingIds] = useState<Set<string>>(new Set())
   const [expandedHours, setExpandedHours] = useState<string | null>(null)
+
+  // Meal-slot capture — only asked when the venue's hours can't settle it
+  const [pendingMeal, setPendingMeal] = useState<{ key: string; place: Place; category: string } | null>(null)
+  const [pendingSlots, setPendingSlots] = useState<MealSlot[]>([])
 
   // AI recommendations state
   const [aiRecommendations, setAiRecommendations] = useState<DiningRecommendation[]>([])
@@ -204,7 +215,7 @@ export function DiningView({ tripId, destination, destinations, arrivalCities, i
     }
   }
 
-  async function handleSave(place: Place, category: string) {
+  async function handleSave(place: Place, category: string, mealSlots?: MealSlot[]) {
     const key = `${place.googlePlaceId}-${category}`
     if (savedIds.has(key) || savingIds.has(key)) return
 
@@ -212,6 +223,22 @@ export function DiningView({ tripId, destination, destinations, arrivalCities, i
     try {
       // Fetch additional details from Google Places
       const details = await getPlaceDetails(place.googlePlaceId)
+      const hours: string[] | undefined = details?.hours || place.weekdayHours
+      const hoursJson = hours && hours.length > 0 ? JSON.stringify(hours) : undefined
+
+      // The planner needs to know which meal this is for. Derive it from the
+      // posted hours when we can, and only ask the user when we can't.
+      let slots = mealSlots
+      if (!slots && category === "restaurant") {
+        const derived = deriveMealSlotsFromHours(hoursJson ?? null)
+        if (derived && derived.length > 0) {
+          slots = derived
+        } else {
+          setPendingMeal({ key, place, category })
+          setPendingSlots([])
+          return
+        }
+      }
 
       await createActivity(tripId, {
         name: place.name,
@@ -231,8 +258,10 @@ export function DiningView({ tripId, destination, destinations, arrivalCities, i
         isFixed: false,
         // Include details from Places Detail API
         websiteUrl: details?.website || undefined,
-        hoursJson: details?.hours ? JSON.stringify(details.hours) : undefined,
+        hoursJson,
+        mealSlots: slots?.length ? serializeMealSlots(slots) ?? undefined : undefined,
       })
+      setPendingMeal((prev) => (prev?.key === key ? null : prev))
       setSavedIds((prev) => new Set([...prev, key]))
       toast.success(`${place.name} added to ${category === "restaurant" ? "dining" : "activities"}!`)
     } catch {
@@ -244,6 +273,19 @@ export function DiningView({ tripId, destination, destinations, arrivalCities, i
         return next
       })
     }
+  }
+
+  function togglePendingSlot(slot: MealSlot) {
+    setPendingSlots((prev) =>
+      prev.includes(slot) ? prev.filter((s) => s !== slot) : [...prev, slot]
+    )
+  }
+
+  function confirmPendingMeal() {
+    if (!pendingMeal || pendingSlots.length === 0) return
+    const { place, category } = pendingMeal
+    setPendingMeal(null)
+    handleSave(place, category, pendingSlots)
   }
 
   return (
@@ -526,6 +568,16 @@ export function DiningView({ tripId, destination, destinations, arrivalCities, i
                       {place.delivery && <Tag text="Delivery" />}
                     </div>
 
+                    {/* Meal-slot capture (only when hours were inconclusive) */}
+                    {pendingMeal?.key === `${place.googlePlaceId}-restaurant` && (
+                      <MealSlotPicker
+                        selected={pendingSlots}
+                        onToggle={togglePendingSlot}
+                        onCancel={() => setPendingMeal(null)}
+                        onConfirm={confirmPendingMeal}
+                      />
+                    )}
+
                     {/* Save buttons */}
                     <div className="flex gap-2 pt-1">
                       <SaveButton
@@ -692,6 +744,16 @@ export function DiningView({ tripId, destination, destinations, arrivalCities, i
                   </div>
                 )}
 
+                {/* Meal-slot capture (only when hours were inconclusive) */}
+                {pendingMeal?.key === `${place.googlePlaceId}-restaurant` && (
+                  <MealSlotPicker
+                    selected={pendingSlots}
+                    onToggle={togglePendingSlot}
+                    onCancel={() => setPendingMeal(null)}
+                    onConfirm={confirmPendingMeal}
+                  />
+                )}
+
                 {/* Action buttons */}
                 <div className="flex gap-2 pt-1">
                   <SaveButton
@@ -718,6 +780,62 @@ export function DiningView({ tripId, destination, destinations, arrivalCities, i
 }
 
 /* ─── Helper components ────────────────────────────────────────────────────── */
+
+function MealSlotPicker({
+  selected,
+  onToggle,
+  onCancel,
+  onConfirm,
+}: {
+  selected: MealSlot[]
+  onToggle: (slot: MealSlot) => void
+  onCancel: () => void
+  onConfirm: () => void
+}) {
+  return (
+    <div className="rounded-xl border border-orange-200 bg-orange-50/70 p-2.5 space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <span className="flex items-center gap-1.5 text-[11px] font-semibold text-orange-900">
+          <Utensils className="w-3 h-3" />
+          When would you go?
+        </span>
+        <button
+          onClick={onCancel}
+          className="text-orange-300 hover:text-orange-600 transition-colors"
+          aria-label="Cancel"
+        >
+          <X className="w-3.5 h-3.5" />
+        </button>
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {MEAL_SLOTS.map((slot) => {
+          const active = selected.includes(slot)
+          return (
+            <button
+              key={slot}
+              onClick={() => onToggle(slot)}
+              className={cn(
+                "px-2 py-1 text-[11px] font-medium rounded-md border transition-colors",
+                active
+                  ? "bg-orange-500 border-orange-500 text-white"
+                  : "bg-white border-orange-200 text-orange-700 hover:bg-orange-100"
+              )}
+            >
+              {MEAL_WINDOWS[slot].label}
+            </button>
+          )
+        })}
+      </div>
+      <button
+        onClick={onConfirm}
+        disabled={selected.length === 0}
+        className="w-full py-1.5 text-[11px] font-semibold rounded-lg bg-orange-500 text-white hover:bg-orange-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+      >
+        Save to dining
+      </button>
+    </div>
+  )
+}
 
 function Tag({ text }: { text: string }) {
   return (

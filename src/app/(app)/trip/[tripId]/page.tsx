@@ -32,6 +32,9 @@ import {
   ArrowRight,
   Package,
   Navigation,
+  Ship,
+  TrainFront,
+  Bus,
 } from "lucide-react"
 
 export default async function TripOverviewPage({ params }: { params: Promise<{ tripId: string }> }) {
@@ -88,6 +91,46 @@ export default async function TripOverviewPage({ params }: { params: Promise<{ t
   for (const hotel of trip.hotels) {
     if (hotel.lat && hotel.lng) {
       mapMarkers.push({ lat: hotel.lat, lng: hotel.lng, label: hotel.name, type: "hotel" })
+    }
+  }
+
+  // Ferry / train / bus terminals. The leg itself is drawn as a straight
+  // geodesic line — there is no drivable route across a lake.
+  const transportSegments = trip.transportSegments ?? []
+  const travelLegCount = trip.flights.length + transportSegments.length
+  const transportLegs: {
+    mode: string
+    from: { lat: number; lng: number; label: string }
+    to: { lat: number; lng: number; label: string }
+  }[] = []
+  for (const seg of transportSegments) {
+    if (
+      seg.departureLat != null && seg.departureLng != null &&
+      seg.arrivalLat != null && seg.arrivalLng != null
+    ) {
+      transportLegs.push({
+        mode: seg.mode,
+        from: { lat: seg.departureLat, lng: seg.departureLng, label: seg.departureTerminal || seg.departureLocation },
+        to: { lat: seg.arrivalLat, lng: seg.arrivalLng, label: seg.arrivalTerminal || seg.arrivalLocation || seg.operator },
+      })
+    }
+  }
+  for (const seg of transportSegments) {
+    if (seg.departureLat != null && seg.departureLng != null) {
+      mapMarkers.push({
+        lat: seg.departureLat,
+        lng: seg.departureLng,
+        label: seg.departureTerminal || seg.departureLocation,
+        type: "transit",
+      })
+    }
+    if (seg.arrivalLat != null && seg.arrivalLng != null) {
+      mapMarkers.push({
+        lat: seg.arrivalLat,
+        lng: seg.arrivalLng,
+        label: seg.arrivalTerminal || seg.arrivalLocation || seg.operator,
+        type: "transit",
+      })
     }
   }
 
@@ -247,15 +290,19 @@ export default async function TripOverviewPage({ params }: { params: Promise<{ t
       {/* Flight/Hotel/Car summary cards - each tile is fully clickable */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
         <Link
-          href={`/trip/${tripId}/settings?tab=flights`}
+          href={`/trip/${tripId}/settings?tab=travel`}
           className="bg-white border border-gray-100 rounded-2xl p-4 hover:border-indigo-200 hover:shadow-sm transition-all group block"
         >
           <div className="flex items-center gap-2 mb-2">
-            <Plane className="w-4 h-4 text-indigo-500" />
-            <span className="text-xs font-medium text-gray-500 uppercase tracking-wide flex-1">Flights</span>
+            {trip.flights.length === 0 && transportSegments.length > 0 ? (
+              <Ship className="w-4 h-4 text-indigo-500" />
+            ) : (
+              <Plane className="w-4 h-4 text-indigo-500" />
+            )}
+            <span className="text-xs font-medium text-gray-500 uppercase tracking-wide flex-1">Travel</span>
             <ChevronRight className="w-3.5 h-3.5 text-gray-300 group-hover:text-indigo-500 transition-colors" />
           </div>
-          {trip.flights.length > 0 ? (
+          {travelLegCount > 0 ? (
             <div className="space-y-1.5 mt-1">
               {trip.flights.map((flight) => (
                 <div
@@ -271,13 +318,33 @@ export default async function TripOverviewPage({ params }: { params: Promise<{ t
                   </span>
                 </div>
               ))}
+              {transportSegments.map((seg) => (
+                <div key={seg.id} className="text-xs text-gray-700 truncate">
+                  {seg.operator}{" "}
+                  {seg.arrivalLocation
+                    ? `${seg.departureLocation}\u2192${seg.arrivalLocation}`
+                    : seg.departureLocation}{" "}
+                  <span className="text-gray-400">
+                    {formatDateInTimezone(seg.departureTime, "MMM d", seg.departureTimezone || undefined)}
+                  </span>
+                </div>
+              ))}
               <span className="text-xs text-indigo-500 inline-block mt-1">
-                {trip.flights.length} flight{trip.flights.length !== 1 ? "s" : ""}
+                {[
+                  trip.flights.length > 0
+                    ? `${trip.flights.length} flight${trip.flights.length !== 1 ? "s" : ""}`
+                    : null,
+                  transportSegments.length > 0
+                    ? `${transportSegments.length} ${transportSegments.length !== 1 ? "legs" : "leg"}`
+                    : null,
+                ]
+                  .filter(Boolean)
+                  .join(" \u00b7 ")}
               </span>
             </div>
           ) : (
             <span className="text-xs text-indigo-500 inline-block">
-              Add flights
+              Add flights or ferry, train &amp; bus
             </span>
           )}
         </Link>
@@ -418,6 +485,19 @@ export default async function TripOverviewPage({ params }: { params: Promise<{ t
                 <span className="text-xs font-semibold text-purple-900 ml-auto">{formatCurrency(costSummary.hotels)}</span>
               </div>
             )}
+            {costSummary.transport > 0 && (
+              <div className="flex items-center gap-2 bg-teal-50 rounded-xl px-3 py-2">
+                {transportSegments.some((s) => s.mode === "TRAIN") ? (
+                  <TrainFront className="w-3.5 h-3.5 text-teal-600 shrink-0" />
+                ) : transportSegments.some((s) => s.mode === "BUS") ? (
+                  <Bus className="w-3.5 h-3.5 text-teal-600 shrink-0" />
+                ) : (
+                  <Ship className="w-3.5 h-3.5 text-teal-600 shrink-0" />
+                )}
+                <span className="text-xs text-teal-800">Ground &amp; sea</span>
+                <span className="text-xs font-semibold text-teal-900 ml-auto">{formatCurrency(costSummary.transport)}</span>
+              </div>
+            )}
             {costSummary.activities > 0 && (
               <div className="flex items-center gap-2 bg-amber-50 rounded-xl px-3 py-2">
                 <Star className="w-3.5 h-3.5 text-amber-600 shrink-0" />
@@ -459,6 +539,7 @@ export default async function TripOverviewPage({ params }: { params: Promise<{ t
           </div>
           <TripOverviewMap
             markers={mapMarkers}
+            transportLegs={transportLegs}
             apiKey={apiKey}
             center={
               trip.destinationLat && trip.destinationLng

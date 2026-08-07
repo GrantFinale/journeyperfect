@@ -8,9 +8,19 @@ import { calculateTravel } from "./travel-connector"
 import { useDroppable, useDraggable } from "@dnd-kit/core"
 import type { WishlistActivity } from "./wishlist-panel"
 import type { DayForecast } from "@/lib/weather"
-import { CalendarDays, ArrowRight, X, MapPin, Plus, ChevronLeft, ChevronRight, Copy, Check, ExternalLink, Ticket, Pencil, Trash2, Loader2, Clock } from "lucide-react"
+import { CalendarDays, ArrowRight, X, MapPin, Plus, ChevronLeft, ChevronRight, Copy, Check, ExternalLink, Ticket, Pencil, Trash2, Loader2, Clock, Ship, TrainFront, Bus, Car } from "lucide-react"
 import { createReservation, updateReservation, deleteReservation } from "@/lib/actions/reservations"
 import type { ReservationInput } from "@/lib/actions/reservations"
+import {
+  computeLeaveBy,
+  bufferKeyForTransport,
+  formatDurationMins,
+  formatTravelMode,
+  travelModeIcon,
+  type CheckInBufferKey,
+  type TravelMode,
+} from "@/lib/departure-planner"
+import { getAirportCoords } from "@/lib/airports"
 
 type Reservation = {
   id: string
@@ -23,6 +33,36 @@ type Reservation = {
   currency: string
   status: string
   notes: string | null
+}
+
+// Ferry / train / bus leg attached to an itinerary item.
+// Fields past the first four are optional so a narrower Prisma select still type-checks.
+export type TransportSegmentInfo = {
+  id: string
+  mode: string
+  operator: string
+  departureLocation: string
+  serviceNumber?: string | null
+  departureTerminal?: string | null
+  departureAddress?: string | null
+  departureLat?: number | null
+  departureLng?: number | null
+  departureTime?: Date | string | null
+  departureTimezone?: string | null
+  arrivalLocation?: string | null
+  arrivalTerminal?: string | null
+  arrivalAddress?: string | null
+  arrivalLat?: number | null
+  arrivalLng?: number | null
+  arrivalTime?: Date | string | null
+  arrivalTimezone?: string | null
+  confirmationNumber?: string | null
+  bookingLink?: string | null
+  seatInfo?: string | null
+  vehicleOnBoard?: boolean | null
+  passengerCount?: number | null
+  checkInMinsBefore?: number | null
+  notes?: string | null
 }
 
 type ItineraryItem = {
@@ -38,6 +78,7 @@ type ItineraryItem = {
   costEstimate: number
   position: number
   activityId?: string | null
+  transportSegment?: TransportSegmentInfo | null
   flight?: {
     airline: string | null
     flightNumber: string | null
@@ -97,6 +138,14 @@ function minutesToTime(mins: number): string {
   return `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`
 }
 
+/** Like minutesToTime but without the 7am–11pm clamp — a "leave by" can fall before dawn. */
+function minutesToClockTime(mins: number): string {
+  const wrapped = ((Math.round(mins) % 1440) + 1440) % 1440
+  const h = Math.floor(wrapped / 60)
+  const m = wrapped % 60
+  return `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`
+}
+
 function snapToGrid(mins: number): number {
   return Math.round(mins / SNAP_MINS) * SNAP_MINS
 }
@@ -108,6 +157,8 @@ function typeColor(type: string) {
     case "HOTEL_CHECK_IN":
     case "HOTEL_CHECK_OUT":
       return "bg-sky-100 border-sky-300 text-sky-800"
+    case "TRANSPORT":
+      return "bg-teal-100 border-teal-300 text-teal-800"
     case "ACTIVITY":
       return "bg-indigo-100 border-indigo-300 text-indigo-800"
     case "MEAL":
@@ -121,15 +172,28 @@ function typeColor(type: string) {
   }
 }
 
-function typeIcon(type: string): string {
+function typeIcon(type: string, transportMode?: string | null): string {
   switch (type) {
     case "FLIGHT": return "\u2708\uFE0F"
     case "HOTEL_CHECK_IN":
     case "HOTEL_CHECK_OUT": return "\uD83C\uDFE8"
     case "MEAL": return "\uD83C\uDF7D\uFE0F"
     case "TRANSIT": return "\uD83D\uDE8C"
+    case "TRANSPORT":
+      return transportMode === "TRAIN" ? "\uD83D\uDE86" : transportMode === "BUS" ? "\uD83D\uDE8D" : "\u26F4\uFE0F"
     default: return ""
   }
+}
+
+/** Lucide icon for a transport segment, chosen by mode. */
+function TransportModeIcon({ mode, className }: { mode?: string | null; className?: string }) {
+  if (mode === "TRAIN") return <TrainFront className={className} />
+  if (mode === "BUS") return <Bus className={className} />
+  return <Ship className={className} />
+}
+
+function transportModeLabel(mode?: string | null): string {
+  return mode === "TRAIN" ? "Train" : mode === "BUS" ? "Bus" : "Ferry"
 }
 
 function formatDuration(mins: number) {
@@ -141,12 +205,187 @@ function formatDuration(mins: number) {
 
 // ─── Visual Duration for Flights ─────────────────────────────────────────
 function getVisualDuration(item: ItineraryItem): number {
-  if (item.type === "FLIGHT" && item.startTime && item.endTime) {
+  if ((item.type === "FLIGHT" || item.type === "TRANSPORT") && item.startTime && item.endTime) {
     const startMins = timeToMinutes(item.startTime)
     const endMins = timeToMinutes(item.endTime)
     return endMins > startMins ? endMins - startMins : item.durationMins
   }
   return item.durationMins
+}
+
+// ─── "Leave by" lead-ins ──────────────────────────────────────────────────
+
+export type OriginInfo = {
+  label: string
+  lat: number | null
+  lng: number | null
+}
+
+type Place = { lat: number; lng: number; label: string }
+
+/** Where an item leaves you once it's over — used as the origin for the next leg. */
+function endPlaceOf(item: ItineraryItem): Place | null {
+  const seg = item.transportSegment
+  if (seg?.arrivalLat != null && seg?.arrivalLng != null) {
+    return { lat: seg.arrivalLat, lng: seg.arrivalLng, label: seg.arrivalTerminal || seg.arrivalLocation || seg.operator }
+  }
+  if (item.activity?.lat != null && item.activity?.lng != null) {
+    return { lat: item.activity.lat, lng: item.activity.lng, label: item.activity.name }
+  }
+  if (item.hotel?.lat != null && item.hotel?.lng != null) {
+    return { lat: item.hotel.lat, lng: item.hotel.lng, label: item.hotel.name }
+  }
+  return null
+}
+
+/**
+ * Where you have to physically be for an item to start.
+ *
+ * The `Flight` model stores only IATA codes, so a departure airport's position
+ * comes from the static `AIRPORT_COORDS` table. An unknown code returns null
+ * here and the lead-in degrades to a check-in deadline with no drive time.
+ */
+function startPlaceOf(item: ItineraryItem): Place | null {
+  const seg = item.transportSegment
+  if (seg?.departureLat != null && seg?.departureLng != null) {
+    return {
+      lat: seg.departureLat,
+      lng: seg.departureLng,
+      label: seg.departureTerminal || seg.departureLocation,
+    }
+  }
+  if (item.type === "FLIGHT" && item.flight?.departureAirport) {
+    const airport = getAirportCoords(item.flight.departureAirport)
+    if (airport) {
+      return { lat: airport.lat, lng: airport.lng, label: item.flight.departureAirport.trim().toUpperCase() }
+    }
+  }
+  if (item.activity?.lat != null && item.activity?.lng != null) {
+    return { lat: item.activity.lat, lng: item.activity.lng, label: item.activity.name }
+  }
+  if (item.hotel?.lat != null && item.hotel?.lng != null) {
+    return { lat: item.hotel.lat, lng: item.hotel.lng, label: item.hotel.name }
+  }
+  return null
+}
+
+function bufferKeyFor(item: ItineraryItem): CheckInBufferKey | null {
+  if (item.type === "FLIGHT") return "FLIGHT"
+  if (item.type === "TRANSPORT") {
+    const mode = item.transportSegment?.mode
+    if (mode === "TRAIN" || mode === "BUS" || mode === "FERRY") {
+      return bufferKeyForTransport(mode, item.transportSegment?.vehicleOnBoard ?? false)
+    }
+    return "FERRY"
+  }
+  if (item.type === "RENTAL_CAR_PICKUP") return "RENTAL_CAR_PICKUP"
+  return null
+}
+
+/** "boarding" reads better than "departure" for a ferry you drive onto. */
+function departureNoun(item: ItineraryItem): string {
+  if (item.type === "TRANSPORT" && item.transportSegment?.mode === "FERRY") return "boarding"
+  if (item.type === "FLIGHT") return "departure"
+  return "departure"
+}
+
+type LeadIn = {
+  departMins: number
+  arriveMins: number
+  leaveMins: number | null
+  travelMins: number | null
+  travelMode: TravelMode | null
+  checkInMins: number
+  originLabel: string | null
+  destLabel: string | null
+  noun: string
+}
+
+/**
+ * Work backwards from an item's start time to when you have to walk out the door.
+ *
+ * All arithmetic happens in the item's own local clock (its startTime string is
+ * already local to the departure timezone), so a crossing that changes time zone
+ * never shifts the lead-in.
+ */
+function computeLeadIn(item: ItineraryItem, origin: Place | null): LeadIn | null {
+  if (!item.startTime) return null
+  const departMins = timeToMinutes(item.startTime)
+  const bufferKey = bufferKeyFor(item)
+
+  // Non-transport items have no check-in ritual — the only lead time is the travel itself.
+  const explicitBuffer = item.transportSegment?.checkInMinsBefore
+  const dest = startPlaceOf(item)
+
+  // Anchor a synthetic Date on the item's local clock so computeLeaveBy does the
+  // subtraction for us without dragging real timezones into it.
+  const departAt = new Date(2000, 0, 1, 0, 0, 0)
+  departAt.setMinutes(departMins)
+
+  if (!bufferKey && !dest) return null
+
+  if (!origin || !dest) {
+    // No route to measure. We can still state the check-in deadline, which is a
+    // fact from the booking rather than an estimate.
+    if (!bufferKey) return null
+    const plan = computeLeaveBy({
+      departAt,
+      checkInMinsBefore: explicitBuffer,
+      modeDefault: bufferKey,
+      originLat: 0,
+      originLng: 0,
+      destLat: 0,
+      destLng: 0,
+    })
+    if (!plan) return null
+    return {
+      departMins,
+      arriveMins: departMins - plan.checkInMins,
+      leaveMins: null,
+      travelMins: null,
+      travelMode: null,
+      checkInMins: plan.checkInMins,
+      originLabel: origin?.label ?? null,
+      destLabel: dest ? dest.label : null,
+      noun: departureNoun(item),
+    }
+  }
+
+  const plan = computeLeaveBy({
+    departAt,
+    // A plain activity has no check-in buffer at all — only the travel time counts.
+    checkInMinsBefore: bufferKey ? explicitBuffer : 0,
+    modeDefault: bufferKey ?? "RENTAL_CAR_PICKUP",
+    originLat: origin.lat,
+    originLng: origin.lng,
+    destLat: dest.lat,
+    destLng: dest.lng,
+  })
+  if (!plan) return null
+  if (plan.distanceKm < 0.05) return null
+
+  return {
+    departMins,
+    arriveMins: departMins - plan.checkInMins,
+    leaveMins: departMins - plan.checkInMins - plan.travelMins,
+    travelMins: plan.travelMins,
+    travelMode: plan.travelMode,
+    checkInMins: plan.checkInMins,
+    originLabel: origin.label,
+    destLabel: dest.label,
+    noun: departureNoun(item),
+  }
+}
+
+function leadInSentence(lead: LeadIn): string {
+  const arriveStr = formatTime(minutesToClockTime(lead.arriveMins))
+  const tail = lead.checkInMins > 0 ? ` (${lead.checkInMins} min before ${lead.noun})` : ""
+  if (lead.leaveMins == null || lead.travelMins == null || !lead.travelMode) {
+    return `Be at ${lead.destLabel || "the terminal"} by ${arriveStr}${tail}`
+  }
+  const leaveStr = formatTime(minutesToClockTime(lead.leaveMins))
+  const where = lead.originLabel ? ` ${lead.originLabel}` : ""
+  return `Leave${where} by ${leaveStr} — ${formatDurationMins(lead.travelMins)} ${formatTravelMode(lead.travelMode)} to ${lead.destLabel}, arrive ${arriveStr}${tail}`
 }
 
 // ─── Overlap Detection (Google Calendar algorithm) ────────────────────────
@@ -925,7 +1164,7 @@ function TimelineItem({
   const resizeRef = useRef<{ startY: number; startDuration: number } | null>(null)
   const lastDragEndRef = useRef(0)
 
-  const isFixed = item.type === "FLIGHT" || item.type === "HOTEL_CHECK_IN" || item.type === "HOTEL_CHECK_OUT"
+  const isFixed = item.type === "FLIGHT" || item.type === "TRANSPORT" || item.type === "HOTEL_CHECK_IN" || item.type === "HOTEL_CHECK_OUT"
   const hasReservation = !!item.reservation
 
   // @dnd-kit draggable for cross-day drag
@@ -1056,6 +1295,67 @@ function TimelineItem({
           {isMedium && (
             <p className="text-[9px] opacity-70 mt-0.5">
               {formatTime(minutesToTime(startMins))} - {formatTime(endTimeStr)}
+            </p>
+          )}
+        </div>
+      )
+    }
+
+    // TRANSPORT items (ferry / train / bus)
+    if (item.type === "TRANSPORT") {
+      const t = item.transportSegment
+      const route = t
+        ? [t.departureLocation, t.arrivalLocation].filter(Boolean).join(" → ")
+        : null
+      const service = t ? [t.operator, t.serviceNumber].filter(Boolean).join(" ") : null
+      return (
+        <div className="flex flex-col h-full overflow-hidden">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <TransportModeIcon mode={t?.mode} className="w-3 h-3 shrink-0" />
+            <p className="text-[11px] font-semibold truncate leading-tight">
+              {route || item.title}
+            </p>
+            {t?.vehicleOnBoard && (
+              <Car className="w-2.5 h-2.5 shrink-0 opacity-70" aria-label="Vehicle aboard" />
+            )}
+          </div>
+          {isLarge && t && (
+            <>
+              {service && (
+                <p className="text-[9px] opacity-70 mt-0.5 truncate">
+                  {service} {"·"} {transportModeLabel(t.mode)}
+                </p>
+              )}
+              <p className="text-[9px] opacity-70 mt-0.5">
+                {formatTime(minutesToTime(startMins))}
+                {item.endTime ? ` - ${formatTime(endTimeStr)} · ${formatDuration(currentDuration)}` : ""}
+              </p>
+              {t.departureTerminal && (
+                <p className="text-[8px] opacity-50 truncate mt-0.5 flex items-center gap-0.5">
+                  <MapPin className="w-2 h-2 shrink-0" />{t.departureTerminal}
+                </p>
+              )}
+              <div className="flex items-center gap-1 mt-0.5 flex-wrap">
+                {t.vehicleOnBoard && (
+                  <span className="inline-flex items-center gap-0.5 text-[8px] font-medium bg-teal-200/70 text-teal-800 px-1 py-0.5 rounded">
+                    <Car className="w-2 h-2" /> Vehicle aboard
+                  </span>
+                )}
+                {t.seatInfo && (
+                  <span className="text-[8px] bg-black/5 rounded px-1 py-0.5">{t.seatInfo}</span>
+                )}
+                {t.confirmationNumber && (
+                  <span className="inline-flex items-center gap-0.5 text-[8px] font-medium bg-white/70 px-1 py-0.5 rounded">
+                    {"🎫"} {t.confirmationNumber}
+                  </span>
+                )}
+              </div>
+            </>
+          )}
+          {isMedium && (
+            <p className="text-[9px] opacity-70 mt-0.5">
+              {formatTime(minutesToTime(startMins))}
+              {item.endTime ? ` - ${formatTime(endTimeStr)}` : ""}
             </p>
           )}
         </div>
@@ -1351,6 +1651,7 @@ function TimelineDay({
   onAddCustom,
   onOpenCustomModal,
   isMobileFullWidth,
+  origin,
 }: {
   tripId: string
   day: GroupedDay<ItineraryItem>
@@ -1361,6 +1662,7 @@ function TimelineDay({
   onContextMenu: (e: React.MouseEvent, item: ItineraryItem) => void
   onMoveToWishlist?: (itemId: string) => void
   hotel?: HotelInfo | null
+  origin?: OriginInfo | null
   wishlistItems?: WishlistActivity[]
   onAddFromWishlist?: (activityId: string, dayStr: string, startTime: string) => void
   onAddCustom?: (dayStr: string, startTime: string, title: string, durationMins: number) => void
@@ -1462,6 +1764,67 @@ function TimelineDay({
           )
         })}
 
+        {/* "Leave by" lead-ins — the drive from wherever you are to the gate/dock */}
+        {(() => {
+          const sorted = day.items
+            .filter((item) => item.startTime)
+            .sort((a, b) => timeToMinutes(a.startTime!) - timeToMinutes(b.startTime!))
+          if (sorted.length === 0) return null
+
+          const homeBase: Place | null =
+            origin && origin.lat != null && origin.lng != null
+              ? { lat: origin.lat, lng: origin.lng, label: origin.label || "Home" }
+              : null
+          const hotelBase: Place | null =
+            hotel && hotel.lat != null && hotel.lng != null
+              ? { lat: hotel.lat, lng: hotel.lng, label: hotel.name }
+              : null
+
+          return sorted.map((item, i) => {
+            // Only the first departure of the day, plus every flight / ferry / train / bus.
+            const isDeparture = item.type === "FLIGHT" || item.type === "TRANSPORT"
+            if (i !== 0 && !isDeparture) return null
+
+            // Origin: whatever precedes it today → the day's hotel → the trip's start point.
+            let from: Place | null = null
+            for (let p = i - 1; p >= 0 && !from; p--) from = endPlaceOf(sorted[p])
+            if (!from) from = hotelBase
+            if (!from) from = homeBase
+
+            const lead = computeLeadIn(item, from)
+            if (!lead) return null
+
+            const startTop = ((lead.departMins - HOUR_START * 60) / 60) * hourHeight
+            const bandStartMins = lead.leaveMins ?? lead.arriveMins
+            const rawTop = ((bandStartMins - HOUR_START * 60) / 60) * hourHeight
+            const top = Math.max(0, rawTop)
+            const height = Math.max(startTop - top, 14)
+            if (startTop <= 0) return null
+
+            const sentence = leadInSentence(lead)
+            const icon = lead.travelMode ? travelModeIcon(lead.travelMode) : "🕑"
+            const pill =
+              lead.leaveMins != null
+                ? `Leave ${formatTime(minutesToClockTime(lead.leaveMins))}`
+                : `Be there ${formatTime(minutesToClockTime(lead.arriveMins))}`
+
+            return (
+              <div
+                key={`leaveby-${item.id}`}
+                className="absolute left-0 right-0 flex flex-col items-center z-10 pointer-events-none"
+                style={{ top, height }}
+                title={sentence}
+              >
+                <div className="text-[8px] text-amber-700 whitespace-nowrap flex items-center gap-0.5 bg-amber-50 px-1.5 py-0.5 rounded-full shadow-sm border border-amber-200 pointer-events-auto">
+                  <span>{icon}</span>
+                  <span className="font-medium">{pill}</span>
+                </div>
+                <div className="w-px flex-1 border-l border-dashed border-amber-300 mx-auto" />
+              </div>
+            )
+          })
+        })()}
+
         {/* Travel connectors between non-overlapping sequential items */}
         {(() => {
           const layoutMap = new Map<string, OverlapLayout>()
@@ -1478,7 +1841,9 @@ function TimelineDay({
 
             const hotelTypes = ["HOTEL_CHECK_IN", "HOTEL_CHECK_OUT"]
             if (hotel && (hotelTypes.includes(item.type) || hotelTypes.includes(nextItem.type))) return null
-            if (item.type === "FLIGHT") return null
+            // Flights and ferry/train/bus legs move you between cities — a
+            // point-to-point drive estimate would be nonsense.
+            if (item.type === "FLIGHT" || item.type === "TRANSPORT") return null
 
             const activePreviews = previewDurations.size > 0 ? previewDurations : undefined
             const itemEnd = getItemEnd(item, activePreviews, undefined)
@@ -1551,7 +1916,7 @@ function TimelineDay({
         {/* Hotel-to-first-event and last-event-to-hotel travel connectors */}
         {hotel && (() => {
           const sorted = day.items
-            .filter((item) => item.startTime && item.type !== "FLIGHT" && item.type !== "HOTEL_CHECK_IN" && item.type !== "HOTEL_CHECK_OUT")
+            .filter((item) => item.startTime && item.type !== "FLIGHT" && item.type !== "TRANSPORT" && item.type !== "HOTEL_CHECK_IN" && item.type !== "HOTEL_CHECK_OUT")
             .sort((a, b) => timeToMinutes(a.startTime!) - timeToMinutes(b.startTime!))
           if (sorted.length === 0) return null
 
@@ -1789,6 +2154,8 @@ interface TimelineViewProps {
   wishlistItems?: WishlistActivity[]
   hotels?: HotelInfo[]
   forecasts?: DayForecast[]
+  /** The trip's starting point (home) — the fallback origin for "leave by". */
+  origin?: OriginInfo | null
 }
 
 export function TimelineView({
@@ -1804,6 +2171,7 @@ export function TimelineView({
   wishlistItems,
   hotels,
   forecasts,
+  origin,
 }: TimelineViewProps) {
   const [contextMenu, setContextMenu] = useState<{
     item: ItineraryItem
@@ -2003,6 +2371,7 @@ export function TimelineView({
                   onMoveToWishlist={onMoveToWishlist}
 
                   hotel={getHotelForDate(day.dateStr)}
+                  origin={origin}
                   wishlistItems={wishlistItems}
                   onAddFromWishlist={onAddFromWishlist}
                   onAddCustom={onAddCustom}

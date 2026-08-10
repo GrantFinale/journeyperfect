@@ -1174,6 +1174,15 @@ function TimelineItem({
     disabled: isFixed,
   })
 
+  // Track when DnD drag ends to prevent click-after-drag.
+  // Must stay above the early returns below: hooks have to run in the same
+  // order on every render, and item.startTime can change while mounted.
+  useEffect(() => {
+    if (!isDndDragging) {
+      lastDragEndRef.current = Date.now()
+    }
+  }, [isDndDragging])
+
   if (!item.startTime) return null
   const startMins = timeToMinutes(item.startTime)
   const offsetMins = startMins - HOUR_START * 60
@@ -1490,13 +1499,6 @@ function TimelineItem({
     if (target.closest("a") || target.closest("button")) return
     setExpanded(!expanded)
   }
-
-  // Track when DnD drag ends to prevent click-after-drag
-  useEffect(() => {
-    if (!isDndDragging) {
-      lastDragEndRef.current = Date.now()
-    }
-  }, [isDndDragging])
 
   return (
     <>

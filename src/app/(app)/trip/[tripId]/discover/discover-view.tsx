@@ -194,6 +194,9 @@ export function DiscoverView({
 
   // Initial results loaded on mount
   const initialLoaded = useRef(false)
+  // City the current results belong to, so a location change can re-search and
+  // a no-op change (or the initial mount) doesn't fire a duplicate call.
+  const searchedCity = useRef<string | null>(null)
 
   // Custom event modal
   const [showAddCustom, setShowAddCustom] = useState(false)
@@ -241,9 +244,31 @@ export function DiscoverView({
   useEffect(() => {
     if (initialLoaded.current) return
     initialLoaded.current = true
+    searchedCity.current = effectiveLocation || trip.destination
     handleSearch(queryForTab(DEFAULT_TAB_ID))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Picking a different city re-runs the active category there straight away —
+  // no manual re-search. Typing a custom city is debounced so we don't issue a
+  // Places call per keystroke.
+  useEffect(() => {
+    // Mount hasn't searched yet, so there's nothing to replace.
+    if (searchedCity.current === null) return
+
+    const city = (effectiveLocation || trip.destination || "").trim()
+    if (!city || city === searchedCity.current) return
+    // A half-typed custom city isn't worth searching.
+    if (selectedLocation === "__other__" && city.length < 3) return
+
+    const timer = setTimeout(() => {
+      searchedCity.current = city
+      if (activeTab === "ai_picks") loadAIPicks()
+      else handleSearch(queryForTab(activeTab), searchQuery || undefined)
+    }, selectedLocation === "__other__" ? 600 : 0)
+    return () => clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [effectiveLocation, selectedLocation])
 
   // ─── Handlers ─────────────────────────────────────────────────────────────
 

@@ -89,6 +89,7 @@ type ItineraryItem = {
     id: string
     confirmationNumber: string | null
     provider: string | null
+    reservationName: string | null
     bookingUrl: string | null
     partySize: number | null
     specialRequests: string | null

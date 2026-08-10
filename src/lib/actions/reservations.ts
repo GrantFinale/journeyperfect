@@ -8,6 +8,7 @@ import { z } from "zod"
 const reservationSchema = z.object({
   confirmationNumber: z.string().optional(),
   provider: z.string().optional(),
+  reservationName: z.string().optional(),
   bookingUrl: z.string().optional(),
   partySize: z.number().int().optional(),
   specialRequests: z.string().optional(),

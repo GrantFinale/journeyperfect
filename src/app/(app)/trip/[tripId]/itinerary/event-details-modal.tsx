@@ -49,7 +49,10 @@ import { getPlaceDetails } from "@/lib/actions/places-detail"
 export type EventReservation = {
   id: string
   confirmationNumber: string | null
+  /** Who it was booked through — OpenTable, Viator, the hotel direct. */
   provider: string | null
+  /** The name the booking is held under, which is often someone else. */
+  reservationName: string | null
   bookingUrl: string | null
   partySize: number | null
   specialRequests: string | null
@@ -350,6 +353,9 @@ function ReservationEditor({
     reservation?.confirmationNumber || ""
   )
   const [provider, setProvider] = useState(reservation?.provider || "")
+  const [reservationName, setReservationName] = useState(
+    reservation?.reservationName || ""
+  )
   const [partySize, setPartySize] = useState(reservation?.partySize?.toString() || "")
   const [bookingUrl, setBookingUrl] = useState(reservation?.bookingUrl || "")
   const [price, setPrice] = useState(reservation?.price?.toString() || "")
@@ -365,6 +371,7 @@ function ReservationEditor({
       const data: ReservationInput = {
         confirmationNumber: confirmationNumber.trim() || undefined,
         provider: provider.trim() || undefined,
+        reservationName: reservationName.trim() || undefined,
         bookingUrl: bookingUrl.trim() || undefined,
         partySize: Number.isFinite(parsedParty) ? parsedParty : undefined,
         specialRequests: specialRequests.trim() || undefined,
@@ -407,16 +414,32 @@ function ReservationEditor({
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className={fieldLabelClass} htmlFor="res-provider">
-            Booked with / under
+            Booked with
           </label>
           <input
             id="res-provider"
             value={provider}
             onChange={(e) => setProvider(e.target.value)}
-            placeholder="OpenTable, or the name it's under"
+            placeholder="OpenTable, Viator, hotel direct"
             className={inputClass}
           />
         </div>
+        <div>
+          <label className={fieldLabelClass} htmlFor="res-name">
+            Reserved under
+          </label>
+          <input
+            id="res-name"
+            value={reservationName}
+            onChange={(e) => setReservationName(e.target.value)}
+            placeholder="Name on the booking"
+            className={inputClass}
+            autoComplete="off"
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
         <div>
           <label className={fieldLabelClass} htmlFor="res-party">
             Party size
@@ -431,25 +454,6 @@ function ReservationEditor({
             placeholder="2"
             className={inputClass}
           />
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className={fieldLabelClass} htmlFor="res-status">
-            Status
-          </label>
-          <select
-            id="res-status"
-            value={status}
-            onChange={(e) => setStatus(e.target.value)}
-            className={inputClass}
-          >
-            <option value="CONFIRMED">Confirmed</option>
-            <option value="PENDING">Pending</option>
-            <option value="WAITLISTED">Waitlisted</option>
-            <option value="CANCELLED">Cancelled</option>
-          </select>
         </div>
         <div>
           <label className={fieldLabelClass} htmlFor="res-price">
@@ -467,6 +471,23 @@ function ReservationEditor({
             className={inputClass}
           />
         </div>
+      </div>
+
+      <div>
+        <label className={fieldLabelClass} htmlFor="res-status">
+          Status
+        </label>
+        <select
+          id="res-status"
+          value={status}
+          onChange={(e) => setStatus(e.target.value)}
+          className={inputClass}
+        >
+          <option value="CONFIRMED">Confirmed</option>
+          <option value="PENDING">Pending</option>
+          <option value="WAITLISTED">Waitlisted</option>
+          <option value="CANCELLED">Cancelled</option>
+        </select>
       </div>
 
       <div>
@@ -596,6 +617,7 @@ function ReservationSection({
   const hasAnyDetail =
     reservation.confirmationNumber ||
     reservation.provider ||
+    reservation.reservationName ||
     reservation.partySize ||
     reservation.price != null ||
     reservation.specialRequests ||
@@ -661,8 +683,14 @@ function ReservationSection({
       <div className="grid grid-cols-2 gap-x-4 gap-y-3">
         {reservation.provider && (
           <div>
-            <p className={fieldLabelClass}>Booked with / under</p>
+            <p className={fieldLabelClass}>Booked with</p>
             <p className="text-sm text-gray-800">{reservation.provider}</p>
+          </div>
+        )}
+        {reservation.reservationName && (
+          <div>
+            <p className={fieldLabelClass}>Reserved under</p>
+            <p className="text-sm text-gray-800">{reservation.reservationName}</p>
           </div>
         )}
         {reservation.partySize != null && (

@@ -787,7 +787,12 @@ model Reservation {
   id                 String            @id @default(cuid())
   itineraryItemId    String            @unique
   confirmationNumber String?
+  /// Who the booking was made through — OpenTable, Viator, the hotel direct.
   provider           String?
+  /// The name the booking is held under at the host stand / front desk, which
+  /// is often not the trip owner (a partner, an assistant, a group organiser).
+  /// Deliberately distinct from `provider`: "OpenTable" vs "Grant Benedict".
+  reservationName    String?
   bookingUrl         String?
   partySize          Int?
   specialRequests    String?

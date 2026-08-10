@@ -12,6 +12,7 @@ type Reservation = {
   id: string
   confirmationNumber: string | null
   provider: string | null
+  reservationName: string | null
   bookingUrl: string | null
   partySize: number | null
   specialRequests: string | null
@@ -69,6 +70,7 @@ function ReservationForm({
   const [saving, setSaving] = useState(false)
   const [confirmationNumber, setConfirmationNumber] = useState(reservation?.confirmationNumber || "")
   const [provider, setProvider] = useState(reservation?.provider || "")
+  const [reservationName, setReservationName] = useState(reservation?.reservationName || "")
   const [partySize, setPartySize] = useState(reservation?.partySize?.toString() || "")
   const [specialRequests, setSpecialRequests] = useState(reservation?.specialRequests || "")
   const [price, setPrice] = useState(reservation?.price?.toString() || "")
@@ -82,6 +84,7 @@ function ReservationForm({
       const data: ReservationInput = {
         confirmationNumber: confirmationNumber || undefined,
         provider: provider || undefined,
+        reservationName: reservationName || undefined,
         bookingUrl: bookingUrl || undefined,
         partySize: partySize ? parseInt(partySize) : undefined,
         specialRequests: specialRequests || undefined,
@@ -120,9 +123,16 @@ function ReservationForm({
       />
       <input
         type="text"
-        placeholder="Provider (e.g. OpenTable, Viator)"
+        placeholder="Booked with (e.g. OpenTable, Viator, hotel direct)"
         value={provider}
         onChange={(e) => setProvider(e.target.value)}
+        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+      />
+      <input
+        type="text"
+        placeholder="Reserved under (name on the booking)"
+        value={reservationName}
+        onChange={(e) => setReservationName(e.target.value)}
         className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
       />
       <div className="flex gap-2">
@@ -299,8 +309,15 @@ function ReservationRow({
 
           {reservation.provider && (
             <div>
-              <p className="text-[10px] text-gray-400 uppercase tracking-wide font-medium">Provider</p>
+              <p className="text-[10px] text-gray-400 uppercase tracking-wide font-medium">Booked With</p>
               <p className="text-xs text-gray-700">{reservation.provider}</p>
+            </div>
+          )}
+
+          {reservation.reservationName && (
+            <div>
+              <p className="text-[10px] text-gray-400 uppercase tracking-wide font-medium">Reserved Under</p>
+              <p className="text-xs text-gray-700">{reservation.reservationName}</p>
             </div>
           )}
 

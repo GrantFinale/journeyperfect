@@ -429,6 +429,7 @@ export default async function TripOverviewPage({ params }: { params: Promise<{ t
               id: i.reservation.id,
               confirmationNumber: i.reservation.confirmationNumber,
               provider: i.reservation.provider,
+              reservationName: i.reservation.reservationName,
               bookingUrl: i.reservation.bookingUrl,
               partySize: i.reservation.partySize,
               specialRequests: i.reservation.specialRequests,

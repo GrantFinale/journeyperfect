@@ -30,11 +30,15 @@ export default async function DiscoverPage({ params }: { params: Promise<{ tripI
       lng: d.lng,
     }))
 
-    // Extract hotels with coordinates for distance calculation
+    // Extract hotels with coordinates for distance calculation. `city`/`address`
+    // let Discover pick the hotel that belongs to the currently selected city
+    // when a trip stays in several places.
     const hotels = (trip.hotels || [])
       .filter((h) => h.name)
       .map((h) => ({
         name: h.name,
+        address: h.address ?? null,
+        city: h.city ?? null,
         lat: h.lat ?? null,
         lng: h.lng ?? null,
       }))

@@ -437,7 +437,18 @@ export async function addToWishlistMustDo(tripId: string, data: {
   return activity
 }
 
-export async function searchPlaces(query: string, locationBias?: string, options?: { limit?: number; pageToken?: string }) {
+/**
+ * Search a text query against Places v1.
+ *
+ * `locationBias` is a `"lat,lng"` string and doubles as the centre point for
+ * `options.radiusMeters`. With no radius we bias loosely (50 km circle); with a
+ * radius we *restrict* instead — see the body construction below.
+ */
+export async function searchPlaces(
+  query: string,
+  locationBias?: string,
+  options?: { limit?: number; pageToken?: string; radiusMeters?: number }
+) {
   const session = await auth()
   if (!session?.user?.id) throw new Error("Unauthorized")
 
@@ -448,9 +459,19 @@ export async function searchPlaces(query: string, locationBias?: string, options
 
   const limit = options?.limit ?? 12
   const pageToken = options?.pageToken
+  // Places caps any search region at 50 km. Every UI preset (max 10 mi ≈
+  // 16,093 m) is well inside that, but clamp so a caller can't overshoot.
+  const MAX_SEARCH_RADIUS_M = 50_000
+  const METERS_PER_DEG_LAT = 111_320
+  const radiusMeters =
+    options?.radiusMeters && options.radiusMeters > 0
+      ? Math.min(options.radiusMeters, MAX_SEARCH_RADIUS_M)
+      : undefined
 
-  // Check cache (skip if using pageToken — it's a continuation)
-  const cacheKey = `${query}|${locationBias || ""}|${pageToken || ""}`
+  // Check cache (skip if using pageToken — it's a continuation).
+  // The radius is part of the key: without it a 1-mile search would be served
+  // the cached 10-mile result set for the same query + centre.
+  const cacheKey = `${query}|${locationBias || ""}|${radiusMeters ?? ""}|${pageToken || ""}`
   if (!pageToken) {
     const cached = placesSearchCache.get(cacheKey)
     if (cached && Date.now() < cached.expiry) {
@@ -470,12 +491,36 @@ export async function searchPlaces(query: string, locationBias?: string, options
       body.pageToken = pageToken
     }
 
-    // Add location bias if provided (lat,lng string)
+    // Scope the search around the given centre (a "lat,lng" string).
+    //
+    // `locationBias` and `locationRestriction` are mutually exclusive on
+    // places:searchText — sending both is an INVALID_ARGUMENT — so exactly one
+    // is set here.
     if (locationBias && locationBias.includes(",")) {
       const [lat, lng] = locationBias.split(",").map(Number)
       if (!isNaN(lat) && !isNaN(lng)) {
-        body.locationBias = {
-          circle: { center: { latitude: lat, longitude: lng }, radius: 50000 }
+        if (radiusMeters) {
+          // searchText's `locationRestriction` is a union that only accepts a
+          // *rectangle* — unlike Nearby Search it has no circle variant — so we
+          // restrict to the bounding box circumscribing the requested circle.
+          // That still returns a full page of genuinely nearby places; callers
+          // clip the box corners back to the exact circle with haversine.
+          const latDelta = radiusMeters / METERS_PER_DEG_LAT
+          const cosLat = Math.max(Math.cos((lat * Math.PI) / 180), 0.01)
+          const lngDelta = radiusMeters / (METERS_PER_DEG_LAT * cosLat)
+          const clampLat = (v: number) => Math.min(90, Math.max(-90, v))
+          const wrapLng = (v: number) => ((((v + 180) % 360) + 360) % 360) - 180
+          body.locationRestriction = {
+            rectangle: {
+              // low = southwest corner, high = northeast corner
+              low: { latitude: clampLat(lat - latDelta), longitude: wrapLng(lng - lngDelta) },
+              high: { latitude: clampLat(lat + latDelta), longitude: wrapLng(lng + lngDelta) },
+            },
+          }
+        } else {
+          body.locationBias = {
+            circle: { center: { latitude: lat, longitude: lng }, radius: MAX_SEARCH_RADIUS_M }
+          }
         }
       }
     }

@@ -36,6 +36,9 @@ export type Place = {
 
 type HotelInfo = { name: string; lat: number | null; lng: number | null }
 
+/** Fixed point to measure this place against, e.g. the hotel a radius filter is anchored on. */
+type DistanceAnchor = { name: string; lat: number; lng: number }
+
 const PRICE_LABEL: Record<string, string> = {
   PRICE_LEVEL_FREE: "Free",
   PRICE_LEVEL_INEXPENSIVE: "$",
@@ -65,6 +68,12 @@ interface BrowseCardProps {
   onDurationChange?: (place: Place, durationMins: number) => void
   isDismissing?: boolean
   hotels?: HotelInfo[]
+  /**
+   * When a distance radius is active, distances are shown against the anchor the
+   * radius is measured from rather than whichever hotel happens to be nearest —
+   * otherwise the number on the card wouldn't explain why the place passed.
+   */
+  distanceAnchor?: DistanceAnchor | null
   destination?: string
 }
 
@@ -121,6 +130,7 @@ export function BrowseCard({
   onDurationChange,
   isDismissing,
   hotels = [],
+  distanceAnchor = null,
   destination = "",
 }: BrowseCardProps) {
   const [expanded, setExpanded] = useState(false)
@@ -145,9 +155,15 @@ export function BrowseCard({
 
   const indoorOutdoor = classifyIndoorOutdoorFromTypes(place.types)
 
-  // Calculate distance to nearest hotel
-  const nearestHotel = useMemo(() => {
-    if (!place.lat || !place.lng || hotels.length === 0) return null
+  // Distance readout: the radius anchor when one is set, otherwise the nearest hotel.
+  const distanceFrom = useMemo(() => {
+    if (place.lat == null || place.lng == null) return null
+    if (distanceAnchor) {
+      const distMi =
+        haversineDistance(place.lat, place.lng, distanceAnchor.lat, distanceAnchor.lng) * KM_TO_MI
+      return { name: distanceAnchor.name, distanceMi: distMi }
+    }
+    if (hotels.length === 0) return null
     let closest: { name: string; distanceMi: number } | null = null
     for (const h of hotels) {
       if (h.lat == null || h.lng == null) continue
@@ -158,7 +174,7 @@ export function BrowseCard({
       }
     }
     return closest
-  }, [place.lat, place.lng, hotels])
+  }, [place.lat, place.lng, hotels, distanceAnchor])
 
   async function handleExpand() {
     const willExpand = !expanded
@@ -358,12 +374,17 @@ export function BrowseCard({
             <span className="line-clamp-1">{place.address}</span>
           </div>
 
-          {/* Distance from hotel */}
-          {nearestHotel && (
+          {/* Distance from the radius anchor, or the nearest hotel */}
+          {distanceFrom && (
             <div className="flex items-start gap-1 text-xs text-gray-400">
               <Hotel className="w-3 h-3 shrink-0 mt-0.5" />
               <span className="line-clamp-1">
-                {nearestHotel.distanceMi.toFixed(1)} mi from {nearestHotel.name}
+                {/* Sub-mile distances need the extra digit — "0.1 mi" and
+                    "0.9 mi" are very different walks. */}
+                {distanceFrom.distanceMi < 1
+                  ? distanceFrom.distanceMi.toFixed(2)
+                  : distanceFrom.distanceMi.toFixed(1)}{" "}
+                mi from {distanceFrom.name}
               </span>
             </div>
           )}

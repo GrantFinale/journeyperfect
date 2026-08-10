@@ -30,7 +30,8 @@ import { BrowseCard, type Place } from "./browse-card"
 import { WishlistSidebar, type Activity } from "./wishlist-sidebar"
 import { DiscoverHeader } from "./discover-header"
 import { DiscoverTabs, CATEGORY_TABS, DEFAULT_TAB_ID, type CategoryTab } from "./discover-tabs"
-import { DiscoverFilters } from "./discover-filters"
+import { DiscoverFilters, METERS_PER_MILE } from "./discover-filters"
+import { haversineDistance } from "@/lib/haversine"
 import { AddCustomEvent } from "@/components/add-custom-event"
 import { Plus } from "lucide-react"
 
@@ -48,7 +49,16 @@ type ItineraryItem = {
 }
 
 type Destination = { name: string; lat?: number | null; lng?: number | null }
-export type HotelInfo = { name: string; lat: number | null; lng: number | null }
+export type HotelInfo = {
+  name: string
+  address?: string | null
+  city?: string | null
+  lat: number | null
+  lng: number | null
+}
+
+/** The point a distance radius is measured from, and what to call it in the UI. */
+export type DistanceAnchor = { name: string; lat: number; lng: number; isHotel: boolean }
 
 interface Props {
   tripId: string
@@ -113,6 +123,61 @@ function getLocationBias(selected: string, opts: LocationOption[]): string | und
   return undefined
 }
 
+/** "San Antonio, TX, USA" -> "san antonio", so the two spellings compare equal. */
+function cityKey(name: string): string {
+  return name.split(",")[0].trim().toLowerCase()
+}
+
+/**
+ * Where "within X miles" is measured from, in priority order:
+ *   1. a hotel in the city currently selected in the Discover dropdown — trips
+ *      can span several cities, so the anchor has to agree with the city filter;
+ *   2. failing that, the first hotel that has coordinates;
+ *   3. failing that, the selected city's own centre.
+ * The caller renders `anchor.name` next to the control so this is never a guess.
+ */
+function resolveAnchor(
+  hotels: HotelInfo[],
+  effectiveLocation: string,
+  selected: string,
+  opts: LocationOption[]
+): DistanceAnchor | null {
+  const geocoded = hotels.filter(
+    (h): h is HotelInfo & { lat: number; lng: number } => h.lat != null && h.lng != null
+  )
+
+  // 1. Hotel in the selected city. `city` is often null on older rows, so fall
+  //    back to a substring check against the address.
+  const key = cityKey(effectiveLocation || "")
+  if (key) {
+    const match = geocoded.find((h) =>
+      h.city ? cityKey(h.city) === key : (h.address || "").toLowerCase().includes(key)
+    )
+    if (match) return { name: match.name, lat: match.lat, lng: match.lng, isHotel: true }
+  }
+
+  // 2. Any hotel we can actually place on a map.
+  if (geocoded[0]) {
+    const h = geocoded[0]
+    return { name: h.name, lat: h.lat, lng: h.lng, isHotel: true }
+  }
+
+  // 3. The city itself.
+  const o = opts.find((x) => x.value === selected)
+  if (o?.lat != null && o?.lng != null) {
+    return { name: o.label, lat: o.lat, lng: o.lng, isHotel: false }
+  }
+  return null
+}
+
+const KM_PER_MILE = 1.609344
+
+/** Straight-line miles from the anchor, or null when the place has no coords. */
+function milesFromAnchor(place: Place, anchor: DistanceAnchor | null): number | null {
+  if (!anchor || place.lat == null || place.lng == null) return null
+  return haversineDistance(place.lat, place.lng, anchor.lat, anchor.lng) / KM_PER_MILE
+}
+
 /** Query for a category id, e.g. the default tab on mount. */
 function queryForTab(tabId: string): string | undefined {
   return CATEGORY_TABS.find((t) => t.id === tabId)?.query
@@ -138,12 +203,30 @@ function byRatingDesc(a: Place, b: Place): number {
   return (b.ratingCount ?? 0) - (a.ratingCount ?? 0)
 }
 
-/** Apply the client-side refinements (see REFINEMENT_CHIPS) to places. */
-function applyFilters(places: Place[], filters: Set<string>): Place[] {
-  if (filters.size === 0) return places
+/**
+ * Apply the client-side refinements (see REFINEMENT_CHIPS) to places, plus the
+ * distance radius.
+ *
+ * The radius pass is a backstop, not the primary mechanism: the Places request
+ * is already restricted to the bounding box around the anchor, but that box is
+ * a square (and Google treats region hints loosely), so we clip to the exact
+ * circle here. A place with no coordinates can't be verified, so it's dropped
+ * while a radius is active and kept when it isn't.
+ */
+function applyFilters(
+  places: Place[],
+  filters: Set<string>,
+  radius?: { anchor: DistanceAnchor | null; miles: number }
+): Place[] {
+  const radiusOn = !!radius && radius.miles > 0 && !!radius.anchor
+  if (filters.size === 0 && !radiusOn) return places
   return places.filter((p) => {
     if (filters.has("open_now") && !p.openNow) return false
     if (filters.has("free") && p.priceLevel !== "PRICE_LEVEL_FREE") return false
+    if (radiusOn) {
+      const mi = milesFromAnchor(p, radius!.anchor)
+      if (mi == null || mi > radius!.miles) return false
+    }
     return true
   })
 }
@@ -178,6 +261,11 @@ export function DiscoverView({
   const [nextPageToken, setNextPageToken] = useState<string | null>(null)
   const [lastSearchQuery, setLastSearchQuery] = useState<string>("")
   const [lastSearchBias, setLastSearchBias] = useState<string | undefined>(undefined)
+  // Places requires every paging call to repeat the original region params, so
+  // "Show more" has to reuse the radius the first page was fetched with.
+  const [lastSearchRadius, setLastSearchRadius] = useState<number | undefined>(undefined)
+  // Max distance from the anchor, in miles. 0 = no limit.
+  const [radiusMi, setRadiusMi] = useState(0)
 
   // Activities and dismissed
   const [activities, setActivities] = useState<Activity[]>(initialActivities)
@@ -194,9 +282,10 @@ export function DiscoverView({
 
   // Initial results loaded on mount
   const initialLoaded = useRef(false)
-  // City the current results belong to, so a location change can re-search and
-  // a no-op change (or the initial mount) doesn't fire a duplicate call.
-  const searchedCity = useRef<string | null>(null)
+  // `city|radius` the current results belong to, so a change to either can
+  // re-search while a no-op change (or the initial mount) doesn't fire a
+  // duplicate call.
+  const searchedKey = useRef<string | null>(null)
 
   // Custom event modal
   const [showAddCustom, setShowAddCustom] = useState(false)
@@ -206,6 +295,17 @@ export function DiscoverView({
 
   const effectiveLocation = selectedLocation === "__other__" ? customLocation : selectedLocation
   const locationBias = getLocationBias(selectedLocation, locationOptions)
+
+  // What "within N miles" is measured from — usually the hotel in the selected city.
+  const distanceAnchor = resolveAnchor(hotels, effectiveLocation, selectedLocation, locationOptions)
+  // No anchor means nothing to measure from, so the radius is ignored entirely
+  // rather than silently re-centred on the city.
+  const radiusMeters =
+    radiusMi > 0 && distanceAnchor ? Math.round(radiusMi * METERS_PER_MILE) : undefined
+  // With a radius the search must be centred on the anchor, not the city centre.
+  const searchCenter = radiusMeters && distanceAnchor
+    ? `${distanceAnchor.lat},${distanceAnchor.lng}`
+    : locationBias
 
   // Build interest map: googlePlaceId -> priority (only WISHLIST items)
   const interestMap = new Map<string, "MUST_DO" | "LOW">()
@@ -226,7 +326,8 @@ export function DiscoverView({
   // surface the highest-rated first (covers "Show more" appends too).
   const filteredResults = applyFilters(
     searchResults.filter((p) => !dismissedIds.has(p.googlePlaceId)),
-    activeFilters
+    activeFilters,
+    { anchor: distanceAnchor, miles: radiusMi }
   )
     .slice()
     .sort(byRatingDesc)
@@ -244,31 +345,32 @@ export function DiscoverView({
   useEffect(() => {
     if (initialLoaded.current) return
     initialLoaded.current = true
-    searchedCity.current = effectiveLocation || trip.destination
+    searchedKey.current = `${effectiveLocation || trip.destination}|${radiusMi}`
     handleSearch(queryForTab(DEFAULT_TAB_ID))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Picking a different city re-runs the active category there straight away —
-  // no manual re-search. Typing a custom city is debounced so we don't issue a
-  // Places call per keystroke.
+  // Picking a different city — or a different distance radius — re-runs the
+  // active category straight away, no manual re-search. Typing a custom city is
+  // debounced so we don't issue a Places call per keystroke.
   useEffect(() => {
     // Mount hasn't searched yet, so there's nothing to replace.
-    if (searchedCity.current === null) return
+    if (searchedKey.current === null) return
 
     const city = (effectiveLocation || trip.destination || "").trim()
-    if (!city || city === searchedCity.current) return
+    const key = `${city}|${radiusMi}`
+    if (!city || key === searchedKey.current) return
     // A half-typed custom city isn't worth searching.
     if (selectedLocation === "__other__" && city.length < 3) return
 
     const timer = setTimeout(() => {
-      searchedCity.current = city
+      searchedKey.current = key
       if (activeTab === "ai_picks") loadAIPicks()
       else handleSearch(queryForTab(activeTab), searchQuery || undefined)
     }, selectedLocation === "__other__" ? 600 : 0)
     return () => clearTimeout(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [effectiveLocation, selectedLocation])
+  }, [effectiveLocation, selectedLocation, radiusMi])
 
   // ─── Handlers ─────────────────────────────────────────────────────────────
 
@@ -279,12 +381,16 @@ export function DiscoverView({
     if (parts.length === 0) return
 
     const fullQuery = parts.join(" ")
-    const bias = locationBias || undefined
+    const bias = searchCenter || undefined
     setLoading(true)
     setLastSearchQuery(fullQuery)
     setLastSearchBias(bias)
+    setLastSearchRadius(radiusMeters)
+    // Drop any page token from the previous query/radius so a stray "Show more"
+    // can't append results from a search we're replacing.
+    setNextPageToken(null)
     try {
-      const result = await searchPlaces(fullQuery, bias, { limit: 12 })
+      const result = await searchPlaces(fullQuery, bias, { limit: 12, radiusMeters })
       setSearchResults(dedupeByPlaceId(result.results))
       setNextPageToken(result.nextPageToken)
       if (result.error && result.results.length === 0) {
@@ -301,7 +407,11 @@ export function DiscoverView({
     if (!nextPageToken || loadingMore) return
     setLoadingMore(true)
     try {
-      const result = await searchPlaces(lastSearchQuery, lastSearchBias, { limit: 12, pageToken: nextPageToken })
+      const result = await searchPlaces(lastSearchQuery, lastSearchBias, {
+        limit: 12,
+        pageToken: nextPageToken,
+        radiusMeters: lastSearchRadius,
+      })
       // Append + de-dupe; the rating sort in `filteredResults` re-ranks the
       // combined list rather than resetting it.
       setSearchResults((prev) => dedupeByPlaceId([...prev, ...result.results]))
@@ -655,8 +765,14 @@ export function DiscoverView({
             </button>
           </div>
 
-          {/* Filter chips */}
-          <DiscoverFilters activeFilters={activeFilters} onToggleFilter={handleToggleFilter} />
+          {/* Filter chips + distance-from-hotel control */}
+          <DiscoverFilters
+            activeFilters={activeFilters}
+            onToggleFilter={handleToggleFilter}
+            radiusMi={radiusMi}
+            onRadiusChange={setRadiusMi}
+            anchorLabel={distanceAnchor?.name ?? null}
+          />
 
           {/* AI Picks: locked state for free users */}
           {showAIPicks && userPlan === "FREE" && (
@@ -690,9 +806,16 @@ export function DiscoverView({
           {/* AI Picks results */}
           {showAIPicks && !aiPicksLoading && filteredAiPicks.length > 0 && (
             <div className="mb-6">
-              <div className="flex items-center gap-2 mb-3">
+              <div className="flex items-center gap-2 mb-3 flex-wrap">
                 <Sparkles className="w-4 h-4 text-purple-600" />
                 <h2 className="text-sm font-semibold text-purple-900">AI Picks for {effectiveLocation || trip.destination}</h2>
+                {/* AI picks are names, not Places records — they carry no
+                    coordinates, so the distance filter can't be applied. */}
+                {radiusMi > 0 && (
+                  <span className="text-[11px] text-gray-400">
+                    (distance filter doesn&apos;t apply to AI Picks)
+                  </span>
+                )}
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 items-start">
                 {filteredAiPicks.map((place) => (
@@ -755,6 +878,7 @@ export function DiscoverView({
                     onDurationChange={handleDurationChange}
                     isDismissing={dismissingIds.has(place.googlePlaceId)}
                     hotels={hotels}
+                    distanceAnchor={radiusMi > 0 ? distanceAnchor : null}
                     destination={effectiveLocation || trip.destination}
                   />
                 ))}
@@ -786,9 +910,23 @@ export function DiscoverView({
             filteredResults.length === 0 && (
               <div className="text-center py-20">
                 <Search className="w-12 h-12 text-gray-200 mx-auto mb-3" />
-                <p className="text-gray-500 text-sm">
-                  Search for places or pick a category to get started
-                </p>
+                {radiusMi > 0 && distanceAnchor ? (
+                  <>
+                    <p className="text-gray-500 text-sm">
+                      Nothing within {radiusMi} mi of {distanceAnchor.name}
+                    </p>
+                    <button
+                      onClick={() => setRadiusMi(0)}
+                      className="mt-2 text-xs font-medium text-indigo-600 hover:text-indigo-700"
+                    >
+                      Clear distance filter
+                    </button>
+                  </>
+                ) : (
+                  <p className="text-gray-500 text-sm">
+                    Search for places or pick a category to get started
+                  </p>
+                )}
               </div>
             )}
         </div>

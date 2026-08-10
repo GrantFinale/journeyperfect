@@ -452,6 +452,7 @@ model ItineraryItem {
   costEstimate         Float   @default(0)
   position             Int     @default(0)
   isConfirmed          Boolean @default(false)
+  needsReservation     Boolean @default(false) // user flagged this as not yet booked; cleared by a confirmation number or an attachment
 
   trip             Trip              @relation(fields: [tripId], references: [id], onDelete: Cascade)
   activity         Activity?         @relation(fields: [activityId], references: [id], onDelete: SetNull)
@@ -798,6 +799,10 @@ model Reservation {
   specialRequests    String?
   price              Float?
   currency           String            @default("USD")
+  balanceDue         Float? // outstanding amount still owed, distinct from price already paid
+  balanceDueDate     DateTime?
+  checkInOpensAt     DateTime? // explicit check-in window; travel legs otherwise derive it from departure
+  checkInCompletedAt DateTime? // set when the user has checked in, which clears the To Do task
   status             ReservationStatus @default(CONFIRMED)
   notes              String?
 

@@ -8,7 +8,7 @@ import { calculateTravel } from "./travel-connector"
 import { useDroppable, useDraggable } from "@dnd-kit/core"
 import type { WishlistActivity } from "./wishlist-panel"
 import type { DayForecast } from "@/lib/weather"
-import { CalendarDays, ArrowRight, X, MapPin, Plus, ChevronLeft, ChevronRight, Copy, Check, ExternalLink, Ticket, Pencil, Trash2, Loader2, Clock, Ship, TrainFront, Bus, Car, FileText } from "lucide-react"
+import { CalendarDays, ArrowRight, X, MapPin, Plus, ChevronLeft, ChevronRight, Copy, Check, ExternalLink, Ticket, Pencil, Trash2, Loader2, Clock, Ship, TrainFront, Bus, Car, FileText, AlertTriangle } from "lucide-react"
 import { createReservation, updateReservation, deleteReservation } from "@/lib/actions/reservations"
 import type { ReservationInput } from "@/lib/actions/reservations"
 import {
@@ -21,7 +21,8 @@ import {
   type TravelMode,
 } from "@/lib/departure-planner"
 import { getAirportCoords } from "@/lib/airports"
-import { EventDetailsModal, buildMapsUrl } from "./event-details-modal"
+import { EventDetailsModal, buildMapsUrl, buildTaskSubject } from "./event-details-modal"
+import { isAwaitingReservation } from "@/lib/trip-tasks"
 
 type Reservation = {
   id: string
@@ -35,6 +36,10 @@ type Reservation = {
   currency: string
   status: string
   notes: string | null
+  balanceDue?: number | null
+  balanceDueDate?: Date | string | null
+  checkInOpensAt?: Date | string | null
+  checkInCompletedAt?: Date | string | null
 }
 
 // Ferry / train / bus leg attached to an itinerary item.
@@ -80,12 +85,18 @@ type ItineraryItem = {
   costEstimate: number
   position: number
   activityId?: string | null
+  /** The traveller flagged this as still needing to be booked. */
+  needsReservation?: boolean | null
+  /** From `getItinerary`'s `_count` — a voucher on file counts as booking proof. */
+  _count?: { attachments: number } | null
   transportSegment?: TransportSegmentInfo | null
   flight?: {
     airline: string | null
     flightNumber: string | null
     departureAirport: string | null
     arrivalAirport: string | null
+    // Drives the derived check-in window (see resolveCheckInOpensAt).
+    departureTime?: Date | string | null
   } | null
   activity?: {
     lat: number | null
@@ -174,6 +185,34 @@ function typeColor(type: string) {
     default:
       return "bg-gray-100 border-gray-300 text-gray-700"
   }
+}
+
+/**
+ * Styling for an event the traveller flagged as still needing to be booked.
+ *
+ * It *replaces* `typeColor` rather than stacking on top of it: layering would
+ * need `!important` variants to beat the per-type background, and two competing
+ * palettes on one card reads as a rendering bug. Events that are fine keep
+ * their per-type colour untouched.
+ *
+ * Rose rather than red, plus a dashed border, so it is distinct from the
+ * existing red error/cancelled treatments — and `NotBookedFlag` carries the
+ * same meaning in text and iconography, so nothing here depends on colour.
+ */
+const AWAITING_RESERVATION_COLOR =
+  "bg-rose-50 border-dashed border-rose-400 text-rose-900"
+
+/** Text + icon affordance so the red state survives colour-blindness. */
+function NotBookedFlag({ compact }: { compact?: boolean }) {
+  return (
+    <span
+      className="inline-flex shrink-0 items-center gap-0.5 rounded bg-rose-600 px-1 py-0.5 text-[8px] font-bold uppercase tracking-wide text-white"
+      title="Not booked yet"
+    >
+      <AlertTriangle className="h-2 w-2" aria-hidden="true" />
+      {compact ? <span className="sr-only">Not booked yet</span> : "Not booked"}
+    </span>
+  )
 }
 
 function typeIcon(type: string, transportMode?: string | null): string {
@@ -1028,10 +1067,12 @@ function EventDetailPanel({
   item,
   onClose,
   onOpenDetails,
+  awaitingReservation,
 }: {
   item: ItineraryItem
   onClose: () => void
   onOpenDetails: () => void
+  awaitingReservation?: boolean
 }) {
   const startMins = item.startTime ? timeToMinutes(item.startTime) : null
   const endMins = startMins != null ? startMins + getVisualDuration(item) : null
@@ -1066,6 +1107,17 @@ function EventDetailPanel({
       </div>
 
       <div className="space-y-1.5">
+        {/* Outstanding arrangement — same predicate that reddens the card. */}
+        {awaitingReservation && (
+          <div className="flex items-start gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-2 py-1.5">
+            <AlertTriangle className="w-3 h-3 text-rose-600 shrink-0 mt-px" />
+            <p className="text-[10px] text-rose-800">
+              <span className="font-semibold">Not booked yet.</span> Add a
+              confirmation number or a voucher to clear this.
+            </p>
+          </div>
+        )}
+
         {/* Time & duration */}
         {item.startTime && (
           <div className="flex items-center gap-1 text-xs text-gray-600">
@@ -1158,7 +1210,7 @@ function EventDetailPanel({
             onPointerDown={(e) => e.stopPropagation()}
           >
             <FileText className="w-3 h-3" />
-            {reservation ? "Booking & files" : "Add booking details & files"}
+            {reservation ? "Booking & files" : "Booking details & files"}
           </button>
         </div>
       </div>
@@ -1180,6 +1232,7 @@ function TimelineItem({
   onContextMenu,
   onMoveToWishlist,
   onPreviewChange,
+  focused,
 }: {
   item: ItineraryItem
   column: number
@@ -1192,6 +1245,8 @@ function TimelineItem({
   onContextMenu: (e: React.MouseEvent, item: ItineraryItem) => void
   onMoveToWishlist?: (itemId: string) => void
   onPreviewChange?: (itemId: string, previewDuration: number | null) => void
+  /** This item was deep-linked to (`?item=<id>`); expand it and scroll it in. */
+  focused?: boolean
 }) {
   const [resizing, setResizing] = useState(false)
   const [previewDuration, setPreviewDuration] = useState<number | null>(null)
@@ -1218,6 +1273,41 @@ function TimelineItem({
       lastDragEndRef.current = Date.now()
     }
   }, [isDndDragging])
+
+  // Outstanding-arrangement state, from the shared predicate so the plan, the
+  // To Do screen and the nav badge always agree. Derived from item data only,
+  // so dragging and resizing can't make it flicker.
+  const awaitingFromProps = useMemo(
+    () => isAwaitingReservation(buildTaskSubject(item)),
+    [item]
+  )
+  // The open modal reports changes here so the card reddens (or stops being red)
+  // the instant the user toggles the flag or saves a confirmation number.
+  const [awaitingOverride, setAwaitingOverride] = useState<boolean | null>(null)
+  // Once the server data catches up, drop the optimistic value.
+  useEffect(() => setAwaitingOverride(null), [awaitingFromProps])
+  const awaitingReservation = awaitingOverride ?? awaitingFromProps
+
+  // Deep link from the To Do screen (`/trip/<id>/itinerary?item=<itemId>`):
+  // open the same inline panel a tap would, and bring the card into view.
+  const cardRef = useRef<HTMLDivElement | null>(null)
+  // dnd-kit owns one ref and the deep-link scroll owns another, so compose them.
+  const setCardRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      cardRef.current = node
+      setDragRef(node)
+    },
+    [setDragRef]
+  )
+  useEffect(() => {
+    if (!focused) return
+    setExpanded(true)
+    // One frame, so the day column has laid out before we scroll to it.
+    const t = setTimeout(() => {
+      cardRef.current?.scrollIntoView({ block: "center", behavior: "smooth" })
+    }, 120)
+    return () => clearTimeout(t)
+  }, [focused])
 
   if (!item.startTime) return null
   const startMins = timeToMinutes(item.startTime)
@@ -1298,6 +1388,7 @@ function TimelineItem({
                 ? `${f.departureAirport} \u2192 ${f.arrivalAirport}`
                 : item.title}
             </p>
+            {awaitingReservation && <NotBookedFlag compact />}
           </div>
           {isLarge && f && (
             <>
@@ -1453,6 +1544,7 @@ function TimelineItem({
               <p className="text-[11px] font-semibold truncate leading-tight flex-1">
                 {typeIcon(item.type) ? `${typeIcon(item.type)} ` : ""}{item.title}
               </p>
+              {awaitingReservation && <NotBookedFlag />}
               {hasReservation && item.reservation?.confirmationNumber && (
                 <span className="shrink-0 inline-flex items-center gap-0.5 text-[8px] font-medium bg-indigo-100 text-indigo-700 px-1 py-0.5 rounded">
                   {"\uD83C\uDFAB"} {item.reservation.confirmationNumber}
@@ -1500,6 +1592,7 @@ function TimelineItem({
             <span className="text-[8px] bg-black/5 rounded px-1 py-0.5 font-medium">
               {formatDuration(currentDuration)}
             </span>
+            {awaitingReservation && <NotBookedFlag compact />}
           </div>
         </div>
       )
@@ -1507,9 +1600,12 @@ function TimelineItem({
 
     // SMALL card (< 40px): just title
     return (
-      <p className="text-[10px] font-medium truncate leading-tight pr-4">
-        {typeIcon(item.type) ? `${typeIcon(item.type)} ` : ""}{item.title}
-      </p>
+      <div className="flex items-center gap-1 min-w-0 pr-4">
+        <p className="text-[10px] font-medium truncate leading-tight">
+          {typeIcon(item.type) ? `${typeIcon(item.type)} ` : ""}{item.title}
+        </p>
+        {awaitingReservation && <NotBookedFlag compact />}
+      </div>
     )
   }
 
@@ -1539,10 +1635,10 @@ function TimelineItem({
   return (
     <>
       <div
-        ref={setDragRef}
+        ref={setCardRef}
         className={cn(
           "absolute rounded-lg border overflow-hidden select-none transition-shadow group/timeline-item",
-          typeColor(item.type),
+          awaitingReservation ? AWAITING_RESERVATION_COLOR : typeColor(item.type),
           !isFixed && "cursor-grab active:cursor-grabbing",
           resizing && "z-20 shadow-lg ring-2 ring-indigo-400/50",
           isDndDragging && "opacity-50 z-30",
@@ -1621,6 +1717,7 @@ function TimelineItem({
             item={item}
             onClose={() => setExpanded(false)}
             onOpenDetails={() => setDetailsOpen(true)}
+            awaitingReservation={awaitingReservation}
           />
         </div>
       )}
@@ -1632,6 +1729,7 @@ function TimelineItem({
           item={item}
           tripId={tripId}
           onClose={() => setDetailsOpen(false)}
+          onOutstandingChange={setAwaitingOverride}
         />
       )}
     </>
@@ -1700,6 +1798,7 @@ function TimelineDay({
   onOpenCustomModal,
   isMobileFullWidth,
   origin,
+  focusItemId,
 }: {
   tripId: string
   day: GroupedDay<ItineraryItem>
@@ -1716,6 +1815,7 @@ function TimelineDay({
   onAddCustom?: (dayStr: string, startTime: string, title: string, durationMins: number) => void
   onOpenCustomModal?: (dayStr: string, startTime: string) => void
   isMobileFullWidth?: boolean
+  focusItemId?: string | null
 }) {
   const dayDate = new Date(day.date)
   const dayLabel = dayDate.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })
@@ -1808,6 +1908,7 @@ function TimelineDay({
               onContextMenu={onContextMenu}
               onMoveToWishlist={onMoveToWishlist}
               onPreviewChange={handlePreviewChange}
+              focused={!!focusItemId && focusItemId === item.id}
             />
           )
         })}
@@ -2204,6 +2305,12 @@ interface TimelineViewProps {
   forecasts?: DayForecast[]
   /** The trip's starting point (home) — the fallback origin for "leave by". */
   origin?: OriginInfo | null
+  /**
+   * Deep link target from `/trip/<id>/itinerary?item=<itineraryItemId>` (the To
+   * Do screen links here). The matching card expands and scrolls into view; an
+   * id that matches nothing is simply ignored.
+   */
+  focusItemId?: string | null
 }
 
 export function TimelineView({
@@ -2220,6 +2327,7 @@ export function TimelineView({
   hotels,
   forecasts,
   origin,
+  focusItemId,
 }: TimelineViewProps) {
   const [contextMenu, setContextMenu] = useState<{
     item: ItineraryItem
@@ -2311,6 +2419,18 @@ export function TimelineView({
     // Desktop: show all days (or up to 5 with scroll)
     return days
   }, [mode, days, mobileSelectedDay])
+
+  // Deep link (`?item=<id>`): mobile mounts one day at a time, so jump to the
+  // day holding the target before its card tries to expand itself. -1 when the
+  // id is absent or matches nothing on this trip, which makes this a no-op.
+  const focusDayIdx = useMemo(() => {
+    if (!focusItemId) return -1
+    return days.findIndex((d) => d.items.some((i) => i.id === focusItemId))
+  }, [days, focusItemId])
+
+  useEffect(() => {
+    if (focusDayIdx >= 0) setMobileSelectedDay(focusDayIdx)
+  }, [focusDayIdx])
 
   // Swipe support for mobile
   const touchRef = useRef<{ startX: number; startY: number } | null>(null)
@@ -2425,6 +2545,7 @@ export function TimelineView({
                   onAddCustom={onAddCustom}
                   onOpenCustomModal={onOpenCustomModal}
                   isMobileFullWidth={mode === "mobile"}
+                  focusItemId={focusItemId}
                 />
               </div>
             )

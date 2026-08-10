@@ -130,6 +130,10 @@ export async function getItinerary(tripId: string) {
       rentalCar: true,
       reservation: true,
       transportSegment: true,
+      // A voucher or ticket counts as proof a booking exists (see
+      // `hasBookingProof` in lib/trip-tasks), so the plan needs to know whether
+      // any file is attached. Counting avoids shipping every row's blob metadata.
+      _count: { select: { attachments: true } },
     },
     orderBy: [{ date: "asc" }, { position: "asc" }, { startTime: "asc" }],
   })
@@ -550,6 +554,33 @@ export async function runAIOptimizer(tripId: string) {
     totalCost: 0,
     reasoning: aiResult.map((d) => `${d.date}: ${d.reasoning}`),
   }
+}
+
+/**
+ * Flags (or un-flags) an event as still needing to be arranged.
+ *
+ * The boolean records the traveller's *intent* and is never cleared silently —
+ * `isAwaitingReservation` in lib/trip-tasks decides how it presents, so entering
+ * a confirmation number or attaching a voucher stops the nagging on its own
+ * while the declared intent survives if that proof is later removed.
+ */
+export async function setNeedsReservation(
+  tripId: string,
+  itineraryItemId: string,
+  needsReservation: boolean
+) {
+  await requireTripAccess(tripId, "EDITOR")
+
+  const updated = await prisma.itineraryItem.update({
+    where: { id: itineraryItemId, tripId },
+    data: { needsReservation },
+  })
+
+  // Drives the red events on the plan, the To Do screen and its nav badge, so
+  // invalidate the whole trip subtree rather than the itinerary route alone.
+  revalidatePath(`/trip/${tripId}/itinerary`)
+  revalidatePath(`/trip/${tripId}`, "layout")
+  return updated
 }
 
 export async function updateItineraryItemNotes(tripId: string, itemId: string, userNotes: string) {

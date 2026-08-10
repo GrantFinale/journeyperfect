@@ -24,13 +24,25 @@ import {
   BadgeCheck,
   Plus,
   AlertCircle,
+  AlertTriangle,
+  CheckCircle2,
+  CalendarClock,
+  Wallet,
+  ClipboardCheck,
 } from "lucide-react"
 import {
   createReservation,
   updateReservation,
   deleteReservation,
+  setCheckInCompleted,
   type ReservationInput,
 } from "@/lib/actions/reservations"
+import { setNeedsReservation } from "@/lib/actions/itinerary"
+import {
+  hasBookingProof,
+  isAwaitingReservation,
+  type TaskSubject,
+} from "@/lib/trip-tasks"
 import {
   listAttachments,
   uploadAttachment,
@@ -60,6 +72,13 @@ export type EventReservation = {
   currency: string
   status: string
   notes: string | null
+  /** Still owed, distinct from `price` (what the booking costs). */
+  balanceDue?: number | null
+  balanceDueDate?: Date | string | null
+  /** Explicit check-in window; travel legs otherwise derive it from departure. */
+  checkInOpensAt?: Date | string | null
+  /** Stamped once the traveller has checked in, which clears the To Do row. */
+  checkInCompletedAt?: Date | string | null
 }
 
 /**
@@ -76,6 +95,11 @@ export type EventDetailsItem = {
   endTime: string | null
   durationMins: number
   notes: string | null
+  /** The traveller flagged this as still needing to be booked. */
+  needsReservation?: boolean | null
+  /** From `getItinerary`'s `_count` — a voucher on file counts as booking proof. */
+  _count?: { attachments: number } | null
+  transportSegment?: { departureTime?: Date | string | null } | null
   activity?: {
     name: string
     address: string | null
@@ -121,6 +145,94 @@ export function buildMapsUrl(place: {
   const query = [name, address].filter(Boolean).join(" ").trim()
   if (!query) return null
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`
+}
+
+/* ─── Outstanding-arrangement subject ─────────────────────────────────────── */
+
+/**
+ * Anything the modal or the timeline can hand to `buildTaskSubject`. Kept
+ * structural so the timeline's own `ItineraryItem` satisfies it without either
+ * file importing the other's types.
+ */
+export type TaskSubjectSource = {
+  id: string
+  title: string
+  type: string
+  date: Date | string
+  startTime?: string | null
+  needsReservation?: boolean | null
+  reservation?: EventReservation | null
+  _count?: { attachments: number } | null
+  // Both carry a departure, and either can drive a derived check-in window.
+  // Flights especially: airline check-in is the canonical case, so omitting it
+  // here would let the To Do screen list "Check in" for a flight while this
+  // modal showed no check-in affordance at all.
+  flight?: { departureTime?: Date | string | null } | null
+  transportSegment?: { departureTime?: Date | string | null } | null
+}
+
+function toIsoOrNull(value: Date | string | null | undefined): string | null {
+  if (!value) return null
+  const d = value instanceof Date ? value : new Date(value)
+  return Number.isNaN(d.getTime()) ? null : d.toISOString()
+}
+
+/**
+ * Itinerary dates are midnight-UTC standing in for a local date (see
+ * `groupByDay`), so read the UTC parts rather than letting the local timezone
+ * shift the day.
+ */
+function toDateKey(value: Date | string): string {
+  const d = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(d.getTime())) return ""
+  const m = String(d.getUTCMonth() + 1).padStart(2, "0")
+  const day = String(d.getUTCDate()).padStart(2, "0")
+  return `${d.getUTCFullYear()}-${m}-${day}`
+}
+
+/**
+ * Flattens an itinerary item into the shape `lib/trip-tasks` reasons over, so
+ * the modal, the plan, the To Do screen and the nav badge can never disagree
+ * about whether something still needs doing.
+ *
+ * `overrides` lets the open modal answer from live local state (the freshly
+ * saved reservation, the file the user just uploaded) instead of the props it
+ * mounted with.
+ */
+export function buildTaskSubject(
+  item: TaskSubjectSource,
+  overrides?: {
+    needsReservation?: boolean
+    hasAttachments?: boolean
+    reservation?: EventReservation | null
+  }
+): TaskSubject {
+  const reservation =
+    overrides?.reservation !== undefined ? overrides.reservation : item.reservation ?? null
+
+  return {
+    itineraryItemId: item.id,
+    title: item.title,
+    type: item.type,
+    date: toDateKey(item.date),
+    startTime: item.startTime ?? null,
+    needsReservation: overrides?.needsReservation ?? !!item.needsReservation,
+    hasAttachments: overrides?.hasAttachments ?? (item._count?.attachments ?? 0) > 0,
+    reservation: reservation
+      ? {
+          confirmationNumber: reservation.confirmationNumber,
+          reservationName: reservation.reservationName,
+          bookingUrl: reservation.bookingUrl,
+          status: reservation.status,
+          price: reservation.price,
+          balanceDue: reservation.balanceDue ?? null,
+          balanceDueDate: toIsoOrNull(reservation.balanceDueDate),
+          checkInOpensAt: toIsoOrNull(reservation.checkInOpensAt),
+          checkInCompletedAt: toIsoOrNull(reservation.checkInCompletedAt),
+        }
+      : null,
+    departureTime: toIsoOrNull(item.flight?.departureTime ?? item.transportSegment?.departureTime),
+  }
 }
 
 /* ─── Small helpers ───────────────────────────────────────────────────────── */
@@ -234,6 +346,79 @@ function effectiveMimeType(file: File): string {
   if (declared) return declared
   const ext = file.name.split(".").pop()?.toLowerCase()
   return (ext && EXTENSION_FALLBACK[ext]) || ""
+}
+
+const MIME_LABELS: Record<string, string> = {
+  "application/pdf": "PDF",
+  "image/jpeg": "JPEG",
+  "image/jpg": "JPEG",
+  "image/png": "PNG",
+  "image/webp": "WEBP",
+  "image/heic": "HEIC",
+  "image/heif": "HEIF",
+}
+
+/**
+ * The headline on an uploaded file tile: "PDF", never "application/pdf". Falls
+ * back to the MIME subtype and then the filename extension, so an unexpected
+ * type still reads as something rather than blank.
+ */
+function fileTypeLabel(mimeType: string, fileName: string): string {
+  const mime = (mimeType || "").toLowerCase().split(";")[0].trim()
+  const known = MIME_LABELS[mime]
+  if (known) return known
+  const subtype = mime.split("/")[1]
+  if (subtype) return subtype.replace(/^x-/, "").toUpperCase().slice(0, 6)
+  const ext = fileName.split(".").pop()
+  return ext && ext !== fileName ? ext.toUpperCase().slice(0, 6) : "FILE"
+}
+
+/* ─── Date <input> plumbing ───────────────────────────────────────────────── */
+
+function pad2(n: number): string {
+  return String(n).padStart(2, "0")
+}
+
+/** `yyyy-MM-dd` in the viewer's own timezone, for `<input type="date">`. */
+function toDateInputValue(value: Date | string | null | undefined): string {
+  if (!value) return ""
+  const d = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(d.getTime())) return ""
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`
+}
+
+/** `yyyy-MM-ddTHH:mm` in the viewer's own timezone, for `datetime-local`. */
+function toDateTimeInputValue(value: Date | string | null | undefined): string {
+  const datePart = toDateInputValue(value)
+  if (!datePart) return ""
+  const d = value instanceof Date ? value : new Date(value as string | Date)
+  return `${datePart}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`
+}
+
+/** Empty input means "clear it"; the action treats `null` as an explicit unset. */
+function fromDateInputValue(raw: string): Date | null {
+  if (!raw) return null
+  const d = new Date(raw)
+  return Number.isNaN(d.getTime()) ? null : d
+}
+
+function formatMoney(amount: number, currency: string | null | undefined): string {
+  try {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: currency || "USD",
+    }).format(amount)
+  } catch {
+    // An unknown/empty ISO code would otherwise throw and blank the modal.
+    return `${currency || ""} ${amount.toFixed(2)}`.trim()
+  }
+}
+
+function formatWhen(value: Date | string | null | undefined, withTime: boolean): string {
+  if (!value) return ""
+  const d = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(d.getTime())) return ""
+  return formatDate(d, withTime ? "EEE, MMM d 'at' h:mm a" : "EEE, MMM d")
 }
 
 /**
@@ -359,6 +544,15 @@ function ReservationEditor({
   const [partySize, setPartySize] = useState(reservation?.partySize?.toString() || "")
   const [bookingUrl, setBookingUrl] = useState(reservation?.bookingUrl || "")
   const [price, setPrice] = useState(reservation?.price?.toString() || "")
+  const [balanceDue, setBalanceDue] = useState(
+    reservation?.balanceDue != null ? String(reservation.balanceDue) : ""
+  )
+  const [balanceDueDate, setBalanceDueDate] = useState(
+    toDateInputValue(reservation?.balanceDueDate)
+  )
+  const [checkInOpensAt, setCheckInOpensAt] = useState(
+    toDateTimeInputValue(reservation?.checkInOpensAt)
+  )
   const [specialRequests, setSpecialRequests] = useState(reservation?.specialRequests || "")
   const [status, setStatus] = useState(reservation?.status || "CONFIRMED")
   const [notes, setNotes] = useState(reservation?.notes || "")
@@ -368,6 +562,9 @@ function ReservationEditor({
     try {
       const parsedParty = partySize ? parseInt(partySize, 10) : undefined
       const parsedPrice = price ? parseFloat(price) : undefined
+      // Money, same handling as `price` — a blank box clears the balance rather
+      // than leaving a stale amount owing.
+      const parsedBalance = balanceDue ? parseFloat(balanceDue) : null
       const data: ReservationInput = {
         confirmationNumber: confirmationNumber.trim() || undefined,
         provider: provider.trim() || undefined,
@@ -379,6 +576,12 @@ function ReservationEditor({
         currency: reservation?.currency || "USD",
         status: status as ReservationInput["status"],
         notes: notes.trim() || undefined,
+        balanceDue:
+          parsedBalance != null && Number.isFinite(parsedBalance) ? parsedBalance : null,
+        balanceDueDate: fromDateInputValue(balanceDueDate),
+        checkInOpensAt: fromDateInputValue(checkInOpensAt),
+        // Deliberately not edited here — the read view's one-tap "Mark as
+        // checked in" owns that stamp, and omitting the key leaves it untouched.
       }
 
       const result = reservation
@@ -471,6 +674,54 @@ function ReservationEditor({
             className={inputClass}
           />
         </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className={fieldLabelClass} htmlFor="res-balance">
+            Balance due
+          </label>
+          <input
+            id="res-balance"
+            type="number"
+            inputMode="decimal"
+            step="0.01"
+            min={0}
+            value={balanceDue}
+            onChange={(e) => setBalanceDue(e.target.value)}
+            placeholder="0.00"
+            className={inputClass}
+          />
+        </div>
+        <div>
+          <label className={fieldLabelClass} htmlFor="res-balance-date">
+            Pay by
+          </label>
+          <input
+            id="res-balance-date"
+            type="date"
+            value={balanceDueDate}
+            onChange={(e) => setBalanceDueDate(e.target.value)}
+            className={inputClass}
+          />
+        </div>
+      </div>
+
+      <div>
+        <label className={fieldLabelClass} htmlFor="res-checkin-opens">
+          Check-in opens
+        </label>
+        <input
+          id="res-checkin-opens"
+          type="datetime-local"
+          value={checkInOpensAt}
+          onChange={(e) => setCheckInOpensAt(e.target.value)}
+          className={inputClass}
+        />
+        <p className="mt-1 text-[11px] text-gray-400">
+          Leave blank for flights and ferries — check-in is assumed to open 24
+          hours before departure.
+        </p>
       </div>
 
       <div>
@@ -570,6 +821,21 @@ function ReservationSection({
   const [editing, setEditing] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [checkingIn, setCheckingIn] = useState(false)
+
+  async function handleToggleCheckIn(completed: boolean) {
+    if (!reservation) return
+    setCheckingIn(true)
+    try {
+      const result = await setCheckInCompleted(tripId, reservation.id, completed)
+      onChange(result as unknown as EventReservation)
+      toast.success(completed ? "Marked as checked in" : "Check-in cleared")
+    } catch (err) {
+      toast.error(errorMessage(err, "Couldn't update check-in"))
+    } finally {
+      setCheckingIn(false)
+    }
+  }
 
   async function handleDelete() {
     if (!reservation) return
@@ -622,7 +888,14 @@ function ReservationSection({
     reservation.price != null ||
     reservation.specialRequests ||
     reservation.notes ||
-    reservation.bookingUrl
+    reservation.bookingUrl ||
+    reservation.balanceDue != null ||
+    reservation.balanceDueDate ||
+    reservation.checkInOpensAt ||
+    reservation.checkInCompletedAt
+
+  const balanceOutstanding =
+    reservation.balanceDue != null && reservation.balanceDue > 0
 
   return (
     <div className="space-y-3">
@@ -705,14 +978,100 @@ function ReservationSection({
           <div>
             <p className={fieldLabelClass}>Price</p>
             <p className="text-sm text-gray-800">
-              {new Intl.NumberFormat("en-US", {
-                style: "currency",
-                currency: reservation.currency || "USD",
-              }).format(reservation.price)}
+              {formatMoney(reservation.price, reservation.currency)}
             </p>
           </div>
         )}
       </div>
+
+      {/* Payment still owing */}
+      {(reservation.balanceDue != null || reservation.balanceDueDate) && (
+        <div
+          className={cn(
+            "flex items-start gap-2 rounded-lg border p-2.5",
+            balanceOutstanding
+              ? "border-amber-200 bg-amber-50"
+              : "border-gray-200 bg-gray-50"
+          )}
+        >
+          <Wallet
+            className={cn(
+              "mt-0.5 h-4 w-4 shrink-0",
+              balanceOutstanding ? "text-amber-600" : "text-gray-400"
+            )}
+          />
+          <div className="min-w-0">
+            <p
+              className={cn(
+                "text-sm font-medium",
+                balanceOutstanding ? "text-amber-900" : "text-gray-700"
+              )}
+            >
+              {reservation.balanceDue != null
+                ? `${formatMoney(reservation.balanceDue, reservation.currency)} still to pay`
+                : "Payment due"}
+            </p>
+            {reservation.balanceDueDate && (
+              <p
+                className={cn(
+                  "text-xs",
+                  balanceOutstanding ? "text-amber-700" : "text-gray-500"
+                )}
+              >
+                By {formatWhen(reservation.balanceDueDate, false)}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Check-in */}
+      {(reservation.checkInOpensAt || reservation.checkInCompletedAt) && (
+        <div
+          className={cn(
+            "flex items-start gap-2 rounded-lg border p-2.5",
+            reservation.checkInCompletedAt
+              ? "border-green-200 bg-green-50"
+              : "border-indigo-200 bg-indigo-50"
+          )}
+        >
+          {reservation.checkInCompletedAt ? (
+            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-green-600" />
+          ) : (
+            <CalendarClock className="mt-0.5 h-4 w-4 shrink-0 text-indigo-500" />
+          )}
+          <div className="min-w-0 flex-1">
+            <p
+              className={cn(
+                "text-sm font-medium",
+                reservation.checkInCompletedAt ? "text-green-900" : "text-indigo-900"
+              )}
+            >
+              {reservation.checkInCompletedAt
+                ? `Checked in ${formatWhen(reservation.checkInCompletedAt, true)}`
+                : `Check-in opens ${formatWhen(reservation.checkInOpensAt, true)}`}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => handleToggleCheckIn(!reservation.checkInCompletedAt)}
+            disabled={checkingIn}
+            className={cn(
+              "inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1.5 text-xs font-medium transition-colors disabled:opacity-60",
+              reservation.checkInCompletedAt
+                ? "text-green-700 hover:bg-green-100"
+                : "bg-indigo-600 text-white hover:bg-indigo-700"
+            )}
+          >
+            {checkingIn ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <ClipboardCheck className="h-3.5 w-3.5" />
+            )}
+            {reservation.checkInCompletedAt ? "Undo" : "I've checked in"}
+          </button>
+        </div>
+      )}
 
       {reservation.specialRequests && (
         <div>
@@ -753,6 +1112,14 @@ function ReservationSection({
 
 /* ─── Attachments section ─────────────────────────────────────────────────── */
 
+/**
+ * One uploaded file, as a green "this is on file" tile.
+ *
+ * The whole tile is the anchor, so on a phone the tap target is the card rather
+ * than a 16px icon. The delete control sits *outside* that anchor as a sibling —
+ * a button nested inside an `<a>` is invalid HTML and makes the tap ambiguous —
+ * while keeping its two-step confirmation.
+ */
 function AttachmentRow({
   meta,
   onDeleted,
@@ -765,6 +1132,7 @@ function AttachmentRow({
   const [confirming, setConfirming] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const isImage = meta.mimeType.startsWith("image/")
+  const typeLabel = fileTypeLabel(meta.mimeType, meta.fileName)
 
   async function handleDelete() {
     setDeleting(true)
@@ -779,49 +1147,53 @@ function AttachmentRow({
   }
 
   return (
-    <li className="flex items-center gap-3 rounded-lg border border-gray-200 bg-white p-2.5">
-      <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-md bg-gray-100">
-        {isImage ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={meta.url}
-            alt=""
-            loading="lazy"
-            className="h-full w-full object-cover"
-          />
-        ) : (
-          <KindIcon kind={meta.kind} className="h-5 w-5 text-gray-400" />
-        )}
-      </div>
-
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium text-gray-900">{meta.fileName}</p>
-        <p className="mt-0.5 flex items-center gap-1.5 text-[11px] text-gray-500">
-          <span className="inline-flex items-center gap-1 rounded bg-gray-100 px-1.5 py-0.5 font-medium text-gray-600">
-            <KindIcon kind={meta.kind} className="h-3 w-3" />
-            {KIND_LABELS[meta.kind] || meta.kind}
-          </span>
-          <span>{formatBytes(meta.sizeBytes)}</span>
-        </p>
-      </div>
-
+    <li className="flex items-stretch gap-2">
       <a
         href={meta.url}
         target="_blank"
         rel="noopener noreferrer"
-        aria-label={`Open ${meta.fileName}`}
-        className="shrink-0 rounded-md p-2 text-gray-400 transition-colors hover:bg-indigo-50 hover:text-indigo-600"
+        aria-label={`Open ${meta.fileName} (${typeLabel}, ${formatBytes(meta.sizeBytes)})`}
+        className="flex min-h-[60px] min-w-0 flex-1 items-center gap-3 rounded-xl border border-green-300 bg-green-50 px-3 py-2.5 text-left transition-colors hover:border-green-400 hover:bg-green-100 active:bg-green-200"
       >
-        <ExternalLink className="h-4 w-4" />
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-green-200 bg-white">
+          {isImage ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={meta.url}
+              alt=""
+              loading="lazy"
+              className="h-full w-full object-cover"
+            />
+          ) : (
+            <KindIcon kind={meta.kind} className="h-5 w-5 text-green-600" />
+          )}
+        </div>
+
+        <div className="min-w-0 flex-1">
+          {/* File type is the headline — big, and the first thing read. */}
+          <p className="text-base font-bold leading-tight text-green-900">
+            {typeLabel}
+          </p>
+          {/* Filename matters less, so it's smaller and truncates. */}
+          <p className="truncate text-xs leading-tight text-green-800">
+            {meta.fileName}
+          </p>
+          {/* Size matters least of all. */}
+          <p className="mt-0.5 truncate text-[10px] leading-tight text-green-700/70">
+            {KIND_LABELS[meta.kind] || meta.kind} · {formatBytes(meta.sizeBytes)}
+          </p>
+        </div>
+
+        <ExternalLink className="h-4 w-4 shrink-0 text-green-600" aria-hidden="true" />
       </a>
 
       {confirming ? (
-        <div className="flex shrink-0 items-center gap-1">
+        <div className="flex shrink-0 flex-col justify-center gap-1">
           <button
             type="button"
             onClick={handleDelete}
             disabled={deleting}
-            className="inline-flex items-center gap-1 rounded-md bg-red-600 px-2 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-60"
+            className="inline-flex items-center justify-center gap-1 rounded-lg bg-red-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-60"
           >
             {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
             Delete
@@ -830,7 +1202,7 @@ function AttachmentRow({
             type="button"
             onClick={() => setConfirming(false)}
             disabled={deleting}
-            className="rounded-md px-2 py-1.5 text-xs font-medium text-gray-500 hover:bg-gray-100"
+            className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-gray-500 hover:bg-gray-100"
           >
             Cancel
           </button>
@@ -840,7 +1212,7 @@ function AttachmentRow({
           type="button"
           onClick={() => setConfirming(true)}
           aria-label={`Delete ${meta.fileName}`}
-          className="shrink-0 rounded-md p-2 text-gray-400 transition-colors hover:bg-red-50 hover:text-red-600"
+          className="flex w-11 shrink-0 items-center justify-center rounded-xl border border-gray-200 text-gray-400 transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-600"
         >
           <Trash2 className="h-4 w-4" />
         </button>
@@ -852,9 +1224,12 @@ function AttachmentRow({
 function AttachmentsSection({
   tripId,
   itineraryItemId,
+  onCountChange,
 }: {
   tripId: string
   itineraryItemId: string
+  /** Reports the live file count so the modal's booking-proof state stays honest. */
+  onCountChange?: (count: number) => void
 }) {
   const [files, setFiles] = useState<AttachmentMeta[] | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -870,6 +1245,10 @@ function AttachmentsSection({
   const uploadingRef = useRef(uploading)
   filesRef.current = files
   uploadingRef.current = uploading
+  // Held in a ref so a new callback identity from the parent can't re-fire the
+  // notification effect below.
+  const onCountChangeRef = useRef(onCountChange)
+  onCountChangeRef.current = onCountChange
 
   useEffect(() => {
     aliveRef.current = true
@@ -877,6 +1256,12 @@ function AttachmentsSection({
       aliveRef.current = false
     }
   }, [])
+
+  // Null means "still loading" — don't claim zero files before we know.
+  useEffect(() => {
+    if (files === null) return
+    onCountChangeRef.current?.(files.length)
+  }, [files])
 
   // Files live in Postgres, so this list is fetched only when the modal opens
   // for this one event — never per timeline row.
@@ -1080,6 +1465,114 @@ function AttachmentsSection({
   )
 }
 
+/* ─── Still-needs-arranging flag ──────────────────────────────────────────── */
+
+/**
+ * Lets the traveller declare "this isn't booked yet", and shows whether that
+ * declaration is still outstanding.
+ *
+ * The stored boolean is the *intent* and is never cleared behind the user's
+ * back — `isAwaitingReservation` decides the presentation, so the moment a
+ * confirmation number or a voucher exists this reads as sorted instead of
+ * nagging, and it goes back to nagging if that proof is later removed.
+ */
+function NeedsReservationSection({
+  tripId,
+  itineraryItemId,
+  needsReservation,
+  awaiting,
+  hasProof,
+  onChange,
+}: {
+  tripId: string
+  itineraryItemId: string
+  needsReservation: boolean
+  awaiting: boolean
+  hasProof: boolean
+  onChange: (value: boolean) => void
+}) {
+  const [saving, setSaving] = useState(false)
+
+  async function handleToggle() {
+    const next = !needsReservation
+    setSaving(true)
+    // Optimistic: the toggle is the whole interaction, so it has to feel instant.
+    onChange(next)
+    try {
+      await setNeedsReservation(tripId, itineraryItemId, next)
+    } catch (err) {
+      onChange(!next)
+      toast.error(errorMessage(err, "Couldn't update this event"))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="space-y-2.5">
+      <button
+        type="button"
+        role="switch"
+        aria-checked={needsReservation}
+        onClick={handleToggle}
+        disabled={saving}
+        className={cn(
+          "flex w-full items-center gap-3 rounded-xl border px-3 py-3 text-left transition-colors disabled:opacity-60",
+          needsReservation
+            ? "border-rose-300 bg-rose-50 hover:bg-rose-100"
+            : "border-gray-200 bg-white hover:border-indigo-300 hover:bg-indigo-50"
+        )}
+      >
+        <span
+          className={cn(
+            "relative inline-flex h-6 w-10 shrink-0 items-center rounded-full transition-colors",
+            needsReservation ? "bg-rose-500" : "bg-gray-300"
+          )}
+          aria-hidden="true"
+        >
+          <span
+            className={cn(
+              "absolute h-5 w-5 rounded-full bg-white shadow transition-transform",
+              needsReservation ? "translate-x-[1.125rem]" : "translate-x-0.5"
+            )}
+          />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-medium text-gray-900">
+            Still needs to be booked
+          </span>
+          <span className="block text-xs text-gray-500">
+            Flags this event on your plan and in your to-do list.
+          </span>
+        </span>
+        {saving && <Loader2 className="h-4 w-4 shrink-0 animate-spin text-gray-400" />}
+      </button>
+
+      {needsReservation && awaiting && (
+        <div className="flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 p-2.5">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rose-600" />
+          <p className="text-xs text-rose-800">
+            <span className="font-semibold">Not booked yet.</span> Add a
+            confirmation number or attach a voucher below and this clears itself.
+          </p>
+        </div>
+      )}
+
+      {needsReservation && !awaiting && (
+        <div className="flex items-start gap-2 rounded-lg border border-green-200 bg-green-50 p-2.5">
+          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-green-600" />
+          <p className="text-xs text-green-800">
+            <span className="font-semibold">Sorted.</span>{" "}
+            {hasProof
+              ? "You've got proof of this booking on file, so it no longer shows as outstanding."
+              : "This no longer shows as outstanding."}
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
+
 /* ─── Modal ───────────────────────────────────────────────────────────────── */
 
 function SectionHeading({
@@ -1104,14 +1597,28 @@ export function EventDetailsModal({
   item,
   tripId,
   onClose,
+  onOutstandingChange,
 }: {
   item: EventDetailsItem
   tripId: string
   onClose: () => void
+  /**
+   * Fires whenever this event's outstanding state changes while the modal is
+   * open, so the plan behind it can go red (or stop being red) immediately
+   * rather than waiting for a server round trip.
+   */
+  onOutstandingChange?: (awaiting: boolean) => void
 }) {
   const [mounted, setMounted] = useState(false)
   const [reservation, setReservation] = useState<EventReservation | null>(
     item.reservation ?? null
+  )
+  const [needsReservationFlag, setNeedsReservationFlag] = useState(
+    !!item.needsReservation
+  )
+  // Seeded from the server's count, then kept live by the attachments list.
+  const [attachmentCount, setAttachmentCount] = useState(
+    item._count?.attachments ?? 0
   )
   const [phone, setPhone] = useState<string | null>(null)
   const [website, setWebsite] = useState<string | null>(
@@ -1125,6 +1632,22 @@ export function EventDetailsModal({
   onCloseRef.current = onClose
 
   useEffect(() => setMounted(true), [])
+
+  // Single source of truth for "does this still need doing", shared with the
+  // To Do screen, the nav badge and the plan's red events.
+  const subject = buildTaskSubject(item, {
+    needsReservation: needsReservationFlag,
+    hasAttachments: attachmentCount > 0,
+    reservation,
+  })
+  const awaiting = isAwaitingReservation(subject)
+  const proof = hasBookingProof(subject)
+
+  const onOutstandingChangeRef = useRef(onOutstandingChange)
+  onOutstandingChangeRef.current = onOutstandingChange
+  useEffect(() => {
+    onOutstandingChangeRef.current?.(awaiting)
+  }, [awaiting])
 
   const place = item.activity || item.hotel || null
   const address = item.activity?.address || item.hotel?.address || null
@@ -1344,6 +1867,29 @@ export function EventDetailsModal({
             )}
           </div>
 
+          {/* Still needs arranging */}
+          <div className="mt-5 border-t border-gray-100 pt-4">
+            <SectionHeading
+              icon={
+                awaiting ? (
+                  <AlertTriangle className="h-3.5 w-3.5 text-rose-500" />
+                ) : (
+                  <ClipboardCheck className="h-3.5 w-3.5 text-indigo-500" />
+                )
+              }
+            >
+              Arrangements
+            </SectionHeading>
+            <NeedsReservationSection
+              tripId={tripId}
+              itineraryItemId={item.id}
+              needsReservation={needsReservationFlag}
+              awaiting={awaiting}
+              hasProof={proof}
+              onChange={setNeedsReservationFlag}
+            />
+          </div>
+
           {/* Confirmation details */}
           <div className="mt-5 border-t border-gray-100 pt-4">
             <SectionHeading icon={<Ticket className="h-3.5 w-3.5 text-indigo-500" />}>
@@ -1362,7 +1908,11 @@ export function EventDetailsModal({
             <SectionHeading icon={<Paperclip className="h-3.5 w-3.5 text-indigo-500" />}>
               Vouchers &amp; receipts
             </SectionHeading>
-            <AttachmentsSection tripId={tripId} itineraryItemId={item.id} />
+            <AttachmentsSection
+              tripId={tripId}
+              itineraryItemId={item.id}
+              onCountChange={setAttachmentCount}
+            />
           </div>
         </div>
       </div>

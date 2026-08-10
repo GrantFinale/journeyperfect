@@ -231,6 +231,35 @@ function applyFilters(
   })
 }
 
+/**
+ * Columns in the results grid at its widest (`lg:grid-cols-3`). Narrower
+ * breakpoints render 1 or 2 columns, so a multiple of 3 only guarantees a full
+ * final row on large screens — see trimToFullRows.
+ */
+const GRID_COLUMNS = 3
+
+/**
+ * Hold back the 1–2 places that would leave a half-empty final row, so the grid
+ * always ends on a full row of 3.
+ *
+ * This is a *render-time* trim: the trimmed places stay in `searchResults`, and
+ * `moreAvailable` guarantees they become visible again the moment the next page
+ * lands (either via "Show more" or a fresh search). Two cases deliberately
+ * render everything, ragged row and all, because trimming there would hide
+ * results the user cannot get back:
+ *
+ *   1. `!moreAvailable` — this is the true end of the list, so a partial last
+ *      row is unavoidable and strictly better than dropping places.
+ *   2. Fewer than GRID_COLUMNS results — trimming would empty the grid and trip
+ *      the "no results" state while results exist.
+ */
+function trimToFullRows<T>(items: T[], moreAvailable: boolean): T[] {
+  if (!moreAvailable) return items
+  const fullRows = Math.floor(items.length / GRID_COLUMNS) * GRID_COLUMNS
+  if (fullRows === 0 || fullRows === items.length) return items
+  return items.slice(0, fullRows)
+}
+
 /* ─── Main Component ───────────────────────────────────────────────────────── */
 
 export function DiscoverView({
@@ -331,6 +360,13 @@ export function DiscoverView({
   )
     .slice()
     .sort(byRatingDesc)
+  // Dismissals and the open-now/free/radius refinements all run after the fetch,
+  // so 12 fetched places routinely render as 10 or 11. Trim to whole rows of 3
+  // while there's another page to pull the remainder from; render everything once
+  // the list is exhausted.
+  const visibleResults = trimToFullRows(filteredResults, !!nextPageToken)
+  // AI Picks come back as one fixed list with no pagination, so there's no later
+  // page to reveal a held-back item — they're rendered in full, ragged row and all.
   const filteredAiPicks = aiPicks.filter((p) => !dismissedIds.has(p.googlePlaceId))
 
   // Detect mobile
@@ -853,11 +889,11 @@ export function DiscoverView({
           )}
 
           {/* Search results */}
-          {!showAIPicks && !loading && filteredResults.length > 0 && (
+          {!showAIPicks && !loading && visibleResults.length > 0 && (
             <div className="mb-6">
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-sm font-semibold text-gray-900">
-                  {filteredResults.length} results
+                  {visibleResults.length} results
                 </h2>
                 <button
                   onClick={handleClearSearch}
@@ -867,7 +903,7 @@ export function DiscoverView({
                 </button>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 items-start">
-                {filteredResults.map((place) => (
+                {visibleResults.map((place) => (
                   <BrowseCard
                     key={place.googlePlaceId}
                     place={place}
@@ -905,9 +941,11 @@ export function DiscoverView({
           )}
 
           {/* Empty state */}
+          {/* Empty state. `visibleResults` is only empty when `filteredResults`
+              is too — trimToFullRows never trims a non-empty list to nothing. */}
           {!showAIPicks &&
             !loading &&
-            filteredResults.length === 0 && (
+            visibleResults.length === 0 && (
               <div className="text-center py-20">
                 <Search className="w-12 h-12 text-gray-200 mx-auto mb-3" />
                 {radiusMi > 0 && distanceAnchor ? (

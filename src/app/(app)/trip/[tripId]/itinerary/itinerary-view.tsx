@@ -66,6 +66,8 @@ type ItineraryItem = {
     flightNumber: string | null
     departureAirport: string | null
     arrivalAirport: string | null
+    // Drives the derived check-in window (see resolveCheckInOpensAt).
+    departureTime?: Date | string | null
   } | null
   activity?: {
     lat: number | null
@@ -85,6 +87,10 @@ type ItineraryItem = {
     name: string
   } | null
   activityId?: string | null
+  /** The traveller flagged this as still needing to be booked. */
+  needsReservation?: boolean | null
+  /** From `getItinerary`'s `_count` — a voucher on file counts as booking proof. */
+  _count?: { attachments: number } | null
   reservation?: {
     id: string
     confirmationNumber: string | null
@@ -97,6 +103,10 @@ type ItineraryItem = {
     currency: string
     status: string
     notes: string | null
+    balanceDue?: number | null
+    balanceDueDate?: Date | string | null
+    checkInOpensAt?: Date | string | null
+    checkInCompletedAt?: Date | string | null
   } | null
 }
 
@@ -140,6 +150,12 @@ interface Props {
   destinations?: DestinationInfo[]
   /** Trip starting point (home) — fallback origin for the "leave by" lead-in. */
   origin?: OriginInfo | null
+  /**
+   * `?item=<itineraryItemId>` from the route — how the To Do screen links a task
+   * to the event that raised it. The matching card expands and scrolls into
+   * view; an id that matches nothing on this trip is ignored.
+   */
+  focusItemId?: string | null
 }
 
 export function ItineraryView({
@@ -153,6 +169,7 @@ export function ItineraryView({
   hotels = [],
   destinations = [],
   origin,
+  focusItemId,
 }: Props) {
   const router = useRouter()
   const [items, setItems] = useState<ItineraryItem[]>(initialItems)
@@ -823,6 +840,7 @@ export function ItineraryView({
                 hotels={hotels}
                 forecasts={weather?.forecasts}
                 origin={origin}
+                focusItemId={focusItemId}
               />
             </div>
           </div>

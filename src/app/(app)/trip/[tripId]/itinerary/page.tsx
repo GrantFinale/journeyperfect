@@ -9,8 +9,22 @@ import { hasFeature } from "@/lib/features"
 import { requireTripAccess } from "@/lib/auth-trip"
 import { getPreferences } from "@/lib/actions/preferences"
 
-export default async function ItineraryPage({ params }: { params: Promise<{ tripId: string }> }) {
+export default async function ItineraryPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ tripId: string }>
+  searchParams?: Promise<{ [key: string]: string | string[] | undefined }>
+}) {
   const { tripId } = await params
+
+  // `?item=<itineraryItemId>` — how the To Do screen links a task back to the
+  // event that raised it. Repeated params arrive as an array; take the first,
+  // and treat anything that isn't a plain non-empty string as absent. An id
+  // that matches no item on this trip is ignored client-side.
+  const rawItem = (await searchParams)?.item
+  const focusItemId =
+    (Array.isArray(rawItem) ? rawItem[0] : rawItem)?.trim() || null
 
   let trip: Awaited<ReturnType<typeof getTrip>>
   let items: Awaited<ReturnType<typeof getItinerary>>
@@ -95,6 +109,7 @@ export default async function ItineraryPage({ params }: { params: Promise<{ trip
         lat: trip.originLat,
         lng: trip.originLng,
       }}
+      focusItemId={focusItemId}
     />
   )
 }

@@ -21,10 +21,12 @@ import {
   BarChart3,
   Navigation,
   ClipboardList,
+  CircleAlert,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { signOut } from "next-auth/react"
 import { NotificationBell } from "@/components/notification-bell"
+import { TripTaskCountProvider, type TripTaskCountValue } from "@/components/trip-task-count"
 
 interface AppShellProps {
   children: React.ReactNode
@@ -36,6 +38,28 @@ type NavItem = {
   label: string
   icon: typeof LayoutDashboard
   exact?: boolean
+  /** Outstanding-item count, rendered as a red circle. Omitted/0 = no badge. */
+  badgeCount?: number
+}
+
+/** Screen-reader text for a badged nav item, so the count isn't colour-only. */
+function badgeLabel(label: string, count: number) {
+  return `${label}, ${count} ${count === 1 ? "item needs" : "items need"} attention`
+}
+
+function NavBadge({ count, className }: { count: number; className?: string }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={cn(
+        "inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full",
+        "bg-red-600 text-white text-[10px] font-semibold leading-none tabular-nums",
+        className
+      )}
+    >
+      {count > 9 ? "9+" : count}
+    </span>
+  )
 }
 
 const NAV_ITEMS: NavItem[] = [
@@ -46,9 +70,16 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/settings/referrals", label: "Refer a Friend", icon: Gift },
 ]
 
-const TRIP_NAV_PRIMARY = (tripId: string): NavItem[] => [
+/** The To Do entry only exists while something actually needs doing. */
+const todoNavItem = (tripId: string, todoCount: number): NavItem[] =>
+  todoCount > 0
+    ? [{ href: `/trip/${tripId}/todo`, label: "To Do", icon: CircleAlert, badgeCount: todoCount }]
+    : []
+
+const TRIP_NAV_PRIMARY = (tripId: string, todoCount = 0): NavItem[] => [
   { href: `/trip/${tripId}`, label: "Overview", icon: Map, exact: true },
   { href: `/trip/${tripId}/itinerary`, label: "Plan", icon: ClipboardList },
+  ...todoNavItem(tripId, todoCount),
   { href: `/trip/${tripId}/map`, label: "Map", icon: Navigation },
   { href: `/trip/${tripId}/discover`, label: "Discover", icon: Compass },
 ]
@@ -60,25 +91,32 @@ const TRIP_NAV_SECONDARY = (tripId: string): NavItem[] => [
   { href: `/trip/${tripId}/settings`, label: "Settings", icon: Settings },
 ]
 
-const TRIP_NAV_ITEMS = (tripId: string): NavItem[] => [
-  ...TRIP_NAV_PRIMARY(tripId),
+const TRIP_NAV_ITEMS = (tripId: string, todoCount = 0): NavItem[] => [
+  ...TRIP_NAV_PRIMARY(tripId, todoCount),
   ...TRIP_NAV_SECONDARY(tripId),
 ]
 
 export function AppShell({ children, user }: AppShellProps) {
   const pathname = usePathname() ?? ""
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  // Pushed up from the trip layout, which fetches it on the server. See
+  // components/trip-task-count.tsx.
+  const [tripTasks, setTripTasks] = useState<TripTaskCountValue>(null)
 
   // Extract trip ID from path if we're in a trip
   const tripMatch = pathname.match(/\/trip\/([^/]+)/)
   const currentTripId = tripMatch?.[1]
-  const navItems = currentTripId ? TRIP_NAV_ITEMS(currentTripId) : NAV_ITEMS
+  // Ignore a count belonging to a different trip (e.g. mid-navigation).
+  const todoCount =
+    currentTripId && tripTasks?.tripId === currentTripId ? tripTasks.count : 0
+  const navItems = currentTripId ? TRIP_NAV_ITEMS(currentTripId, todoCount) : NAV_ITEMS
 
   // Bottom nav items for mobile (most used)
-  const BOTTOM_NAV = currentTripId
+  const BOTTOM_NAV: NavItem[] = currentTripId
     ? [
         { href: `/trip/${currentTripId}`, label: "Overview", icon: Map },
         { href: `/trip/${currentTripId}/itinerary`, label: "Plan", icon: ClipboardList },
+        ...todoNavItem(currentTripId, todoCount),
         { href: `/trip/${currentTripId}/discover`, label: "Discover", icon: Compass },
         { href: `/trip/${currentTripId}/budget`, label: "Budget", icon: DollarSign },
         { href: `/trip/${currentTripId}/packing`, label: "Packing", icon: Package },
@@ -118,7 +156,7 @@ export function AppShell({ children, user }: AppShellProps) {
         <nav className="flex-1 overflow-y-auto py-3 px-2">
           {currentTripId ? (
             <>
-              {TRIP_NAV_PRIMARY(currentTripId).map((item) => {
+              {TRIP_NAV_PRIMARY(currentTripId, todoCount).map((item) => {
                 const isActive = item.exact
                   ? pathname === item.href
                   : pathname.startsWith(item.href)
@@ -126,6 +164,9 @@ export function AppShell({ children, user }: AppShellProps) {
                   <Link
                     key={item.href}
                     href={item.href}
+                    aria-label={
+                      item.badgeCount ? badgeLabel(item.label, item.badgeCount) : undefined
+                    }
                     className={cn(
                       "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors mb-0.5",
                       isActive
@@ -134,7 +175,8 @@ export function AppShell({ children, user }: AppShellProps) {
                     )}
                   >
                     <item.icon className="w-4 h-4 shrink-0" />
-                    {item.label}
+                    <span className="flex-1">{item.label}</span>
+                    {item.badgeCount ? <NavBadge count={item.badgeCount} /> : null}
                   </Link>
                 )
               })}
@@ -223,7 +265,7 @@ export function AppShell({ children, user }: AppShellProps) {
             <nav className="flex-1 overflow-y-auto py-3 px-2">
               {currentTripId ? (
                 <>
-                  {TRIP_NAV_PRIMARY(currentTripId).map((item) => {
+                  {TRIP_NAV_PRIMARY(currentTripId, todoCount).map((item) => {
                     const isActive = item.exact
                       ? pathname === item.href
                       : pathname.startsWith(item.href)
@@ -232,13 +274,17 @@ export function AppShell({ children, user }: AppShellProps) {
                         key={item.href}
                         href={item.href}
                         onClick={() => setSidebarOpen(false)}
+                        aria-label={
+                          item.badgeCount ? badgeLabel(item.label, item.badgeCount) : undefined
+                        }
                         className={cn(
                           "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors mb-0.5",
                           isActive ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-accent hover:text-foreground"
                         )}
                       >
                         <item.icon className="w-4 h-4 shrink-0" />
-                        {item.label}
+                        <span className="flex-1">{item.label}</span>
+                        {item.badgeCount ? <NavBadge count={item.badgeCount} /> : null}
                       </Link>
                     )
                   })}
@@ -301,7 +347,7 @@ export function AppShell({ children, user }: AppShellProps) {
 
         {/* Page content */}
         <main className="flex-1 overflow-y-auto pb-20 md:pb-0">
-          {children}
+          <TripTaskCountProvider setCount={setTripTasks}>{children}</TripTaskCountProvider>
         </main>
 
         {/* Mobile bottom tab bar */}
@@ -313,12 +359,18 @@ export function AppShell({ children, user }: AppShellProps) {
                 <Link
                   key={item.href}
                   href={item.href}
+                  aria-label={item.badgeCount ? badgeLabel(item.label, item.badgeCount) : undefined}
                   className={cn(
                     "flex-1 flex flex-col items-center justify-center py-2 gap-0.5 transition-colors",
                     isActive ? "text-primary" : "text-muted-foreground"
                   )}
                 >
-                  <item.icon className="w-5 h-5" />
+                  <span className="relative">
+                    <item.icon className="w-5 h-5" />
+                    {item.badgeCount ? (
+                      <NavBadge count={item.badgeCount} className="absolute -top-1.5 -right-2.5" />
+                    ) : null}
+                  </span>
                   <span className="text-[10px] font-medium">{item.label}</span>
                 </Link>
               )

@@ -8,7 +8,7 @@ import { calculateTravel } from "./travel-connector"
 import { useDroppable, useDraggable } from "@dnd-kit/core"
 import type { WishlistActivity } from "./wishlist-panel"
 import type { DayForecast } from "@/lib/weather"
-import { CalendarDays, ArrowRight, X, MapPin, Plus, ChevronLeft, ChevronRight, Copy, Check, ExternalLink, Ticket, Pencil, Trash2, Loader2, Clock, Ship, TrainFront, Bus, Car } from "lucide-react"
+import { CalendarDays, ArrowRight, X, MapPin, Plus, ChevronLeft, ChevronRight, Copy, Check, ExternalLink, Ticket, Pencil, Trash2, Loader2, Clock, Ship, TrainFront, Bus, Car, FileText } from "lucide-react"
 import { createReservation, updateReservation, deleteReservation } from "@/lib/actions/reservations"
 import type { ReservationInput } from "@/lib/actions/reservations"
 import {
@@ -21,6 +21,7 @@ import {
   type TravelMode,
 } from "@/lib/departure-planner"
 import { getAirportCoords } from "@/lib/airports"
+import { EventDetailsModal, buildMapsUrl } from "./event-details-modal"
 
 type Reservation = {
   id: string
@@ -92,6 +93,8 @@ type ItineraryItem = {
     name: string
     imageUrl?: string | null
     indoorOutdoor?: string | null
+    googlePlaceId?: string | null
+    websiteUrl?: string | null
   } | null
   hotel?: {
     lat: number | null
@@ -1022,18 +1025,28 @@ function ReservationForm({
 
 function EventDetailPanel({
   item,
-  tripId,
   onClose,
+  onOpenDetails,
 }: {
   item: ItineraryItem
-  tripId: string
   onClose: () => void
+  onOpenDetails: () => void
 }) {
   const startMins = item.startTime ? timeToMinutes(item.startTime) : null
   const endMins = startMins != null ? startMins + getVisualDuration(item) : null
   const endTimeStr = endMins != null ? minutesToTime(endMins) : null
   const address = item.activity?.address || item.hotel?.address
   const reservation = item.reservation
+  const place = item.activity || item.hotel || null
+  const mapsUrl = place
+    ? buildMapsUrl({
+        name: item.activity?.name || item.hotel?.name || item.title,
+        address,
+        lat: place.lat,
+        lng: place.lng,
+        googlePlaceId: item.activity?.googlePlaceId ?? null,
+      })
+    : null
 
   return (
     <div
@@ -1062,12 +1075,29 @@ function EventDetailPanel({
           </div>
         )}
 
-        {/* Location */}
+        {/* Location — opens Google Maps. stopPropagation keeps the tap off the
+            card's expand/collapse handler and off the DnD listeners. */}
         {address && (
-          <div className="flex items-center gap-1 text-xs text-gray-600">
-            <MapPin className="w-3 h-3 text-gray-400 shrink-0" />
-            <span className="truncate">{address}</span>
-          </div>
+          mapsUrl ? (
+            <a
+              href={mapsUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              title={`Open "${address}" in Google Maps`}
+              className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 transition-colors"
+              onClick={(e) => e.stopPropagation()}
+              onPointerDown={(e) => e.stopPropagation()}
+            >
+              <MapPin className="w-3 h-3 text-indigo-400 shrink-0" />
+              <span className="truncate underline decoration-indigo-200 underline-offset-2">{address}</span>
+              <ExternalLink className="w-2.5 h-2.5 shrink-0 opacity-60" />
+            </a>
+          ) : (
+            <div className="flex items-center gap-1 text-xs text-gray-600">
+              <MapPin className="w-3 h-3 text-gray-400 shrink-0" />
+              <span className="truncate">{address}</span>
+            </div>
+          )
         )}
 
         {/* Reservation info (read-only) */}
@@ -1115,16 +1145,20 @@ function EventDetailPanel({
           </div>
         )}
 
-        {/* View in overview link */}
+        {/* Full details: confirmation numbers, vouchers, receipts */}
         <div className="pt-1.5 mt-1.5 border-t border-gray-100">
-          <a
-            href={`/trip/${tripId}`}
-            className="text-[10px] text-indigo-600 hover:text-indigo-800 font-medium"
-            onClick={(e) => e.stopPropagation()}
+          <button
+            type="button"
+            className="inline-flex items-center gap-1 text-[10px] text-indigo-600 hover:text-indigo-800 font-medium py-1"
+            onClick={(e) => {
+              e.stopPropagation()
+              onOpenDetails()
+            }}
             onPointerDown={(e) => e.stopPropagation()}
           >
-            View in overview
-          </a>
+            <FileText className="w-3 h-3" />
+            {reservation ? "Booking & files" : "Add booking details & files"}
+          </button>
         </div>
       </div>
     </div>
@@ -1161,6 +1195,7 @@ function TimelineItem({
   const [resizing, setResizing] = useState(false)
   const [previewDuration, setPreviewDuration] = useState<number | null>(null)
   const [expanded, setExpanded] = useState(false)
+  const [detailsOpen, setDetailsOpen] = useState(false)
   const resizeRef = useRef<{ startY: number; startDuration: number } | null>(null)
   const lastDragEndRef = useRef(0)
 
@@ -1583,10 +1618,20 @@ function TimelineItem({
         >
           <EventDetailPanel
             item={item}
-            tripId={tripId}
             onClose={() => setExpanded(false)}
+            onOpenDetails={() => setDetailsOpen(true)}
           />
         </div>
+      )}
+
+      {/* Full event / reservation details. Portalled to <body> from inside the
+          modal, so it escapes the timeline's overflow + stacking contexts. */}
+      {detailsOpen && (
+        <EventDetailsModal
+          item={item}
+          tripId={tripId}
+          onClose={() => setDetailsOpen(false)}
+        />
       )}
     </>
   )

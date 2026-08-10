@@ -74,6 +74,9 @@ type ItineraryItem = {
     name: string
     imageUrl?: string | null
     indoorOutdoor?: string | null
+    /** Used by the event-details modal for the Maps deep link + phone lookup. */
+    googlePlaceId?: string | null
+    websiteUrl?: string | null
   } | null
   hotel?: {
     lat: number | null

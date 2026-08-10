@@ -51,6 +51,7 @@ model User {
   aiUsage          AIUsage[]
   pendingEmails    PendingEmail[]
   vehicles         Vehicle[]
+  eventAttachments EventAttachment[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -188,6 +189,7 @@ model Trip {
   collaborators     TripCollaborator[]
   activityNotes     ActivityNote[]
   dismissedPlaces   DismissedPlace[]
+  attachments       EventAttachment[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -458,6 +460,7 @@ model ItineraryItem {
   rentalCar        RentalCar?        @relation(fields: [rentalCarId], references: [id], onDelete: SetNull)
   transportSegment TransportSegment? @relation(fields: [transportSegmentId], references: [id], onDelete: SetNull)
   reservation      Reservation?
+  attachments      EventAttachment[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -806,6 +809,51 @@ enum ReservationStatus {
   CONFIRMED
   CANCELLED
   WAITLISTED
+}
+
+// ─── Event Attachments ──────────────────────────────────────────────────────
+
+/// Files (vouchers, receipts, tickets) attached to a single itinerary event.
+/// The bytes live in Postgres as `bytea` rather than object storage — a
+/// deliberate choice, which is why the upload path enforces hard per-file,
+/// per-event and per-trip caps (see src/lib/actions/attachments.ts).
+///
+/// WARNING: `data` is a Bytes column and Prisma selects every scalar field by
+/// default. Any `findMany` / `findFirst` / `include` on this model WITHOUT an
+/// explicit `select` will stream the full blob of every matching row out of
+/// the database. Listing code must `select` metadata only and never `data`;
+/// the only place that reads `data` is the streaming route handler at
+/// src/app/api/trip/[tripId]/attachment/[attachmentId]/route.ts.
+///
+/// For the same reason this model is intentionally separate from
+/// TravelDocument, whose rows are link-based and listed on the Documents page.
+model EventAttachment {
+  id              String         @id @default(cuid())
+  tripId          String
+  itineraryItemId String
+  fileName        String
+  mimeType        String
+  sizeBytes       Int
+  kind            AttachmentKind @default(OTHER)
+  data            Bytes // bytea — never `select` this outside the download route
+  uploadedById    String?
+
+  trip          Trip          @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  itineraryItem ItineraryItem @relation(fields: [itineraryItemId], references: [id], onDelete: Cascade)
+  uploadedBy    User?         @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@index([itineraryItemId])
+  @@index([tripId])
+}
+
+enum AttachmentKind {
+  VOUCHER
+  RECEIPT
+  TICKET
+  CONFIRMATION
+  OTHER
 }
 
 enum BudgetCategory {

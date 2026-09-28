@@ -10,7 +10,8 @@
  *   - the profile is re-sealed after the browser closes so refreshed cookies persist
  */
 import type { BrowserContext } from "playwright"
-import { runHiltonCityRatesTask, runHiltonRatesTask, verifySignedIn } from "./hilton.js"
+import { detectChallenge } from "./challenges.js"
+import { collectPageSignals, runHiltonCityRatesTask, runHiltonRatesTask, verifySignedIn } from "./hilton.js"
 import type { Logger } from "./sessions.js"
 import type { RateObservation, RunnerResult, RunnerTask } from "./types.js"
 
@@ -39,7 +40,12 @@ export async function runTask(userId: string, task: RunnerTask, deps: RunDeps): 
 
     const signedIn = await verifySignedIn(page, Math.max(5_000, Math.min(45_000, remaining()))).catch(() => false)
     if (!signedIn) {
-      result = { ok: false, status: "SIGNED_OUT" }
+      // An Akamai block on the account page also looks "not signed in"; report
+      // it as BLOCKED so the user is not told to sign in again for nothing.
+      const kind = await collectPageSignals(page)
+        .then(detectChallenge)
+        .catch(() => "NONE" as const)
+      result = kind === "BLOCKED" ? { ok: false, status: "CHALLENGE", challengeKind: "BLOCKED" } : { ok: false, status: "SIGNED_OUT" }
     } else {
       const ctx = { deadlineAt, rateCodeParam: deps.rateCodeParam, log: deps.log }
       result =

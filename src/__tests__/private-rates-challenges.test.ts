@@ -61,6 +61,46 @@ describe("detectChallenge", () => {
     })
   })
 
+  describe("BLOCKED", () => {
+    it("detects an Akamai 'Access Denied' title", () => {
+      expect(detectChallenge(results({ title: "Access Denied", bodyText: "" }))).toBe("BLOCKED")
+    })
+
+    it("detects the hilton.com 'Something went wrong' page with an Akamai reference id", () => {
+      expect(
+        detectChallenge({
+          url: "https://www.hilton.com/en/hilton-honors/login/",
+          title: "Hilton",
+          bodyText: "SOMETHING WENT WRONG\nWe're sorry, please try again later.\nReference No. 18.8f2d3017.1759000000.1a2b3c4d",
+        }),
+      ).toBe("BLOCKED")
+      expect(detectChallenge(results({ bodyText: "Something went wrong. Reference #18.ab12cd" }))).toBe("BLOCKED")
+      expect(detectChallenge(results({ bodyText: "Something went wrong (reference: see below)" }))).toBe("BLOCKED")
+    })
+
+    it("detects the Akamai permission and edgesuite error copy, including curly apostrophes", () => {
+      expect(detectChallenge(results({ bodyText: "You don’t have permission to access this server." }))).toBe("BLOCKED")
+      expect(detectChallenge(results({ bodyText: "More info: https://errors.edgesuite.net/18.1234" }))).toBe("BLOCKED")
+    })
+
+    it("outranks CAPTCHA and SIGNED_OUT", () => {
+      expect(
+        detectChallenge({
+          url: "https://www.hilton.com/en/hilton-honors/login/",
+          title: "Access Denied",
+          bodyText: "Verify you are human",
+          hasIframeFrom: ["https://www.google.com/recaptcha/api2/anchor"],
+          formFieldNames: ["username", "password"],
+        }),
+      ).toBe("BLOCKED")
+    })
+
+    it("does not fire on 'something went wrong' without a reference, or on normal pages", () => {
+      expect(detectChallenge(results({ bodyText: "Something went wrong. Select a room $100 per night" }))).toBe("NONE")
+      expect(detectChallenge(results())).toBe("NONE")
+    })
+  })
+
   describe("MFA", () => {
     it("detects verification-code / one-time / authenticator copy", () => {
       expect(detectChallenge(results({ bodyText: "We sent a verification code to your phone" }))).toBe("MFA")
@@ -139,7 +179,7 @@ describe("detectChallenge", () => {
       expect(detectChallenge({ url: "about:blank", title: "", bodyText: "" })).toBe("UNKNOWN_INTERSTITIAL")
     })
 
-    it("fires on an Akamai-style access denied page", () => {
+    it("does not swallow an Akamai access-denied page on a results URL (it is BLOCKED)", () => {
       expect(
         detectChallenge({
           url: "https://www.hilton.com/en/book/reservation/rooms/",
@@ -147,7 +187,7 @@ describe("detectChallenge", () => {
           bodyText: "You don't have permission to access this resource. Reference #18.abc",
           formFieldNames: [],
         }),
-      ).toBe("NONE") // path has content marker; content-less body but the URL says results route
+      ).toBe("BLOCKED") // previously NONE because the URL carries a results-route marker
     })
   })
 

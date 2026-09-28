@@ -44,4 +44,22 @@ describe("challenges.ts copy", () => {
       }),
     ).toBe("CAPTCHA")
   })
+
+  it("classifies Akamai block pages as BLOCKED, ahead of CAPTCHA", () => {
+    const url = "https://www.hilton.com/en/hilton-honors/login/"
+    expect(detectChallenge({ url, title: "Access Denied", bodyText: "" })).toBe("BLOCKED")
+    expect(
+      detectChallenge({ url, title: "Hilton", bodyText: "SOMETHING WENT WRONG. Please try again. Reference No. 18.8f2d3017.1759000000.1a2b3c4d" }),
+    ).toBe("BLOCKED")
+    expect(detectChallenge({ url, title: "", bodyText: "Something went wrong. Reference #18.ab12" })).toBe("BLOCKED")
+    expect(
+      detectChallenge({ url, title: "", bodyText: "You don't have permission to access \"http://www.hilton.com/\" on this server." }),
+    ).toBe("BLOCKED")
+    expect(detectChallenge({ url, title: "", bodyText: "https://errors.edgesuite.net/18.1234" })).toBe("BLOCKED")
+    expect(
+      detectChallenge({ url, title: "Access Denied", bodyText: "", hasIframeFrom: ["https://www.google.com/recaptcha/api2/anchor"] }),
+    ).toBe("BLOCKED")
+    // "Something went wrong" alone is not a block.
+    expect(detectChallenge({ url: "https://www.hilton.com/en/book/reservation/rooms/", title: "", bodyText: "Something went wrong" })).not.toBe("BLOCKED")
+  })
 })

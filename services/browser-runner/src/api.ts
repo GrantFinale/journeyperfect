@@ -79,6 +79,9 @@ export function buildApi(deps: ApiDeps): FastifyInstance {
     const { id } = req.params as { id: string }
     const session = deps.sessions.get(id)
     if (!session) return reply.code(404).send({ error: "unknown session" })
+    // Re-check the live page first so a bot-protection block (BLOCKED) is
+    // reported on this poll rather than leaving the session AWAITING_LOGIN.
+    await deps.sessions.refresh(session)
     const s = deps.sessions.statusOf(session)
     const out: Record<string, unknown> = { status: s.status }
     if (s.challengeKind) out.challengeKind = s.challengeKind

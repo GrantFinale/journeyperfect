@@ -10,15 +10,17 @@
  * Invocation contract: detectChallenge is only called on pages where we expected
  * real content (a results page or the account page). A sign-in page in that
  * position therefore always means SIGNED_OUT. During the interactive sign-in the
- * runner does not call this; it only watches for the signed-in state.
+ * runner calls it on every poll too, but only acts on BLOCKED there (the other
+ * kinds are informational while the user drives the live view).
  *
  * Rule order (first match wins):
- *   1. CAPTCHA               recaptcha/hcaptcha/arkose iframes, "verify you are human", bot walls
- *   2. MFA                   "verification code" / "one-time" / "authenticator" / OTP field names
- *   3. SECURITY_VERIFY       "verify it's you" / "unusual activity" / "confirm your identity"
- *   4. SIGNED_OUT            sign-in URL, or a sign-in (password) form where results were expected
- *   5. UNKNOWN_INTERSTITIAL  no results/account markers and none of the above
- *   6. NONE
+ *   1. BLOCKED               bot protection refused the page (Akamai "Access Denied" / "Reference No. 18.x")
+ *   2. CAPTCHA               recaptcha/hcaptcha/arkose iframes, "verify you are human", bot walls
+ *   3. MFA                   "verification code" / "one-time" / "authenticator" / OTP field names
+ *   4. SECURITY_VERIFY       "verify it's you" / "unusual activity" / "confirm your identity"
+ *   5. SIGNED_OUT            sign-in URL, or a sign-in (password) form where results were expected
+ *   6. UNKNOWN_INTERSTITIAL  no results/account markers and none of the above
+ *   7. NONE
  */
 import type { ChallengeKind } from "./types"
 
@@ -32,6 +34,14 @@ export interface PageSignals {
   /** `name` (or id) of every input/select/textarea on the page. */
   formFieldNames?: string[]
 }
+
+/**
+ * Akamai (hilton.com's bot protection) block pages: HTTP 403, usually titled
+ * "Access Denied", or a "Something went wrong ... Reference No. 18.<hex>" page.
+ * There is nothing for the user to solve here; the browser was refused.
+ */
+const BLOCKED_TITLE = [/access denied/]
+const BLOCKED_TEXT = [/reference\s*(no\.?|#)\s*\d+\.[0-9a-f]+/, /you don't have permission to access/, /errors\.edgesuite\.net/]
 
 const CAPTCHA_IFRAME_HOSTS = [
   "recaptcha.net",
@@ -149,28 +159,32 @@ export function detectChallenge(signals: PageSignals): ChallengeKind {
   const iframes = (signals.hasIframeFrom ?? []).map((s) => s.toLowerCase())
   const fields = (signals.formFieldNames ?? []).map((f) => f.toLowerCase().trim())
 
-  // 1. CAPTCHA / bot wall
+  // 1. Blocked outright by bot protection (checked before CAPTCHA: nothing to solve)
+  if (any(BLOCKED_TITLE, title) || any(BLOCKED_TEXT, body)) return "BLOCKED"
+  if (/something went wrong/.test(body) && /reference/.test(body)) return "BLOCKED"
+
+  // 2. CAPTCHA / bot wall
   if (iframes.some((src) => CAPTCHA_IFRAME_HOSTS.some((host) => src.includes(host)))) return "CAPTCHA"
   if (any(CAPTCHA_TITLE, title) || any(CAPTCHA_TEXT, body)) return "CAPTCHA"
 
-  // 2. MFA
+  // 3. MFA
   if (fields.some((f) => any(MFA_FIELD, f))) return "MFA"
   if (any(MFA_TEXT, body)) return "MFA"
 
-  // 3. Security verification interstitial
+  // 4. Security verification interstitial
   if (any(SECURITY_TEXT, body) || any(SECURITY_TEXT, title)) return "SECURITY_VERIFY"
 
-  // 4. Signed out: we expected content, got a sign-in page/form instead
+  // 5. Signed out: we expected content, got a sign-in page/form instead
   if (SIGN_IN_PATH.test(path)) return "SIGNED_OUT"
   const hasPassword = fields.some((f) => PASSWORD_FIELD.test(f))
   const hasUsername = fields.some((f) => USERNAME_FIELD.test(f))
   if (hasPassword && hasUsername) return "SIGNED_OUT"
   if (any(SIGN_IN_TEXT, body)) return "SIGNED_OUT"
 
-  // 5. Nothing recognisable rendered
+  // 6. Nothing recognisable rendered
   const hasContent = CONTENT_PATH.test(path) || any(CONTENT_TEXT, body)
   if (!hasContent) return "UNKNOWN_INTERSTITIAL"
 
-  // 6. Looks like a normal page
+  // 7. Looks like a normal page
   return "NONE"
 }

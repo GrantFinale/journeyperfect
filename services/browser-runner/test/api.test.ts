@@ -112,6 +112,56 @@ describe("sessions", () => {
     })
   })
 
+  it("ends the session as CHALLENGE/BLOCKED when bot protection refused the sign-in page", async () => {
+    const ops = fakeOps({
+      collectSignals: async () => ({
+        url: "https://www.hilton.com/en/hilton-honors/login/",
+        title: "Access Denied",
+        bodyText: "SOMETHING WENT WRONG. Reference No. 18.8f2d3017.1759000000.1a2b3c4d",
+      }),
+    })
+    const { app, sessions } = build(ops)
+    cleanup.push(() => sessions.shutdown(), () => app.close())
+    const res = await app.inject({ method: "POST", url: "/sessions", headers: auth, payload: { userId: "user-a" } })
+    expect(res.statusCode).toBe(201)
+    const { sessionId } = res.json() as { sessionId: string }
+    const s = await app.inject({ method: "GET", url: `/sessions/${sessionId}/status`, headers: auth })
+    // Checked on navigation and on the status poll; no liveViewUrl once ended.
+    expect(s.json()).toEqual({ status: "CHALLENGE", challengeKind: "BLOCKED" })
+    expect(ops.sealed).toEqual([])
+    expect(ops.wiped).toEqual(["/tmp/fake-user-a"])
+    expect(sessions.activeForUser("user-a")).toBeUndefined()
+  })
+
+  it("notices a block on a later status poll (page navigated after open)", async () => {
+    let blocked = false
+    const ops = fakeOps({
+      collectSignals: async () =>
+        blocked
+          ? { url: "https://www.hilton.com/en/", title: "Access Denied", bodyText: "You don't have permission to access this server." }
+          : { url: "https://www.hilton.com/en/hilton-honors/login/", title: "Sign in", bodyText: "Sign in", formFieldNames: ["username", "password"] },
+    })
+    const locks = new UserLocks()
+    const sessions = new SessionManager(ops, locks, { loginTimeoutMs: 60_000, pollIntervalMs: 60_000, retentionMs: 60_000 })
+    const app = buildApi({
+      config: { secret: SECRET, liveViewPublicUrl: "wss://runner.example.com" },
+      sessions,
+      locks,
+      runTask: async () => ({ ok: true, data: [] }),
+      destroySealed: async () => true,
+      logger: false,
+    })
+    cleanup.push(() => sessions.shutdown(), () => app.close())
+    const { sessionId } = (await app.inject({ method: "POST", url: "/sessions", headers: auth, payload: { userId: "user-a" } })).json()
+    await vi.waitFor(async () => {
+      const s = await app.inject({ method: "GET", url: `/sessions/${sessionId}/status`, headers: auth })
+      expect(s.json()).toMatchObject({ status: "AWAITING_LOGIN" })
+    })
+    blocked = true
+    const s = await app.inject({ method: "GET", url: `/sessions/${sessionId}/status`, headers: auth })
+    expect(s.json()).toEqual({ status: "CHALLENGE", challengeKind: "BLOCKED" })
+  })
+
   it("times out, wipes the scratch dir without sealing, and is one-per-user", async () => {
     const ops = fakeOps()
     const locks = new UserLocks()
@@ -214,6 +264,14 @@ describe("run", () => {
     const boom = await app.inject({ method: "POST", url: "/run", headers: auth, payload: { userId: "boom", task } })
     expect(boom.statusCode).toBe(500)
     expect(boom.json()).toEqual({ ok: false, status: "RUNNER_UNAVAILABLE" })
+  })
+
+  it("returns a BLOCKED challenge from the run unchanged", async () => {
+    const { app, sessions } = build(fakeOps(), async () => ({ ok: false, status: "CHALLENGE", challengeKind: "BLOCKED", data: [] }))
+    cleanup.push(() => sessions.shutdown(), () => app.close())
+    const res = await app.inject({ method: "POST", url: "/run", headers: auth, payload: { userId: "u1", task } })
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toEqual({ ok: false, status: "CHALLENGE", challengeKind: "BLOCKED", data: [] })
   })
 })
 

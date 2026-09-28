@@ -128,9 +128,9 @@ export const CONFIG_KEYS = {
     desc: 'BrowserRunner implementation: "local" (Coolify browser-runner service) | "remote" (hosted browser provider).',
   },
   "privateRates.runnerUrl": {
-    default: "http://browser-runner:8787",
+    default: "https://runner.journeyperfect.com",
     group: "privateRates",
-    desc: "Internal base URL of the browser-runner service. Authenticated with BROWSER_RUNNER_SECRET from the environment.",
+    desc: "Base URL of the browser-runner service. Use the public URL: the internal Coolify hostname does not resolve from the app, and every route except /healthz requires the BROWSER_RUNNER_SECRET bearer token from the environment.",
   },
   "privateRates.maxChecksPerDay": {
     default: "5",

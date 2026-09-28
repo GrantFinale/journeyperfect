@@ -4,7 +4,15 @@
  * are duplicated; keep them in step when the app's types change.
  */
 
-export type ChallengeKind = "NONE" | "CAPTCHA" | "MFA" | "SECURITY_VERIFY" | "SIGNED_OUT" | "UNKNOWN_INTERSTITIAL"
+export type ChallengeKind =
+  | "NONE"
+  | "CAPTCHA"
+  | "MFA"
+  | "SECURITY_VERIFY"
+  | "SIGNED_OUT"
+  | "UNKNOWN_INTERSTITIAL"
+  /** Bot protection (e.g. Akamai "Access Denied" / "Reference No. 18.x") refused the page outright. */
+  | "BLOCKED"
 
 export type RateKind = "PRIVATE_HILTON_GO" | "PUBLIC"
 

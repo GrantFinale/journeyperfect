@@ -70,6 +70,8 @@ export class HttpRunnerClient implements BrowserRunner {
   private readonly sleep: (ms: number) => Promise<void>
   /** Latest live-view URL seen in a status poll, per session (so getLiveViewUrl needs no extra request). */
   private readonly liveViewUrls = new Map<string, string>()
+  /** challengeKind from the status poll that reported CHALLENGE, per session. */
+  private readonly challengeKinds = new Map<string, ChallengeKind>()
 
   constructor(baseUrl: string, options: HttpRunnerClientOptions = {}) {
     if (!baseUrl) throw new Error("HttpRunnerClient: runner base URL is required")
@@ -128,7 +130,10 @@ export class HttpRunnerClient implements BrowserRunner {
         if (typeof status.liveViewUrl === "string" && status.liveViewUrl) this.liveViewUrls.set(sessionId, status.liveViewUrl)
         else this.liveViewUrls.delete(sessionId)
         if (status.status === "SIGNED_IN") return "SIGNED_IN"
-        if (status.status === "CHALLENGE") return "CHALLENGE"
+        if (status.status === "CHALLENGE") {
+          if (status.challengeKind) this.challengeKinds.set(sessionId, status.challengeKind)
+          return "CHALLENGE"
+        }
         if (status.status === "TIMEOUT") return "TIMEOUT"
       }
       if (failures >= this.maxConsecutivePollFailures) {
@@ -158,6 +163,10 @@ export class HttpRunnerClient implements BrowserRunner {
     } catch {
       return null
     }
+  }
+
+  getChallengeKind(sessionId: string): ChallengeKind | null {
+    return this.challengeKinds.get(sessionId) ?? null
   }
 
   async run<T>(userId: string, task: RunnerTask): Promise<RunnerResult<T>> {

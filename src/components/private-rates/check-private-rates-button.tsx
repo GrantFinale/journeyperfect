@@ -17,8 +17,21 @@ import { checkPrivateRatesForSearch, getPrivateRateStatus } from "@/lib/actions/
 type Status = Awaited<ReturnType<typeof getPrivateRateStatus>>
 type CheckResult = Awaited<ReturnType<typeof checkPrivateRatesForSearch>>
 
+/** Bot protection refused the runner's browser (challengeKind BLOCKED). Signing in again will not help. */
+export const BLOCKED_MESSAGE =
+  "Hilton's site blocked the automated browser before the sign-in page loaded. Nothing was retrieved. This isn't something you can fix by signing in again."
+
 export function explainCheckResult(result: CheckResult): { kind: "success" | "warning" | "error"; message: string } {
   const n = result.quotesWritten
+  if (result.challengeKind === "BLOCKED") {
+    if (result.status === "CHALLENGE") return { kind: "error", message: BLOCKED_MESSAGE }
+    if (result.status === "PARTIAL") {
+      return {
+        kind: "warning",
+        message: `Some rates were retrieved (${n}). Then Hilton's site blocked the automated browser, so the rest were not retrieved. This isn't something you can fix by signing in again.`,
+      }
+    }
+  }
   switch (result.status) {
     case "OK":
       return { kind: "success", message: n > 0 ? `Hilton rates retrieved for ${n} ${n === 1 ? "listing" : "listings"}.` : "Nothing to price yet for this search." }

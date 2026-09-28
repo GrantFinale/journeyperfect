@@ -57,6 +57,7 @@ const CHALLENGE_KINDS: ReadonlySet<string> = new Set<ChallengeKind>([
   "SECURITY_VERIFY",
   "SIGNED_OUT",
   "UNKNOWN_INTERSTITIAL",
+  "BLOCKED",
 ])
 
 async function requireUser(): Promise<{ id: string }> {
@@ -233,13 +234,17 @@ export async function pollHiltonConnect(sessionId: string): Promise<{
 
   if (outcome === "CHALLENGE") {
     // The user handles every challenge; we never attempt to solve or bypass one.
+    // BLOCKED (bot protection refused the runner's browser) stays NEEDS_USER too,
+    // with its own kind so the UI can say signing in again will not help.
+    const challengeKind: ChallengeKind =
+      asChallengeKind(runner.getChallengeKind ? runner.getChallengeKind(sessionId) : null) ?? "UNKNOWN_INTERSTITIAL"
     await prisma.privateRateSession.update({
       where: { id: row.id },
-      data: { status: "NEEDS_USER", challengeKind: "UNKNOWN_INTERSTITIAL" },
+      data: { status: "NEEDS_USER", challengeKind },
     })
-    await audit(userId, "CHALLENGE", { phase: "connect", sessionId }, { provider: PROVIDER })
+    await audit(userId, "CHALLENGE", { phase: "connect", sessionId, challengeKind }, { provider: PROVIDER })
     revalidatePath("/settings/private-rates")
-    return { status: "NEEDS_USER", challengeKind: "UNKNOWN_INTERSTITIAL" }
+    return { status: "NEEDS_USER", challengeKind }
   }
 
   // Short poll elapsed without a sign-in; overall timeout is checked at the top of the next call.
@@ -286,7 +291,9 @@ export async function disconnectHilton(): Promise<{ ok: true }> {
  *   6. CHALLENGE / SIGNED_OUT stops the run at once: session → NEEDS_USER with
  *      challengeKind, CHALLENGE audited, no retry
  */
-export async function checkPrivateRatesForSearch(searchId: string): Promise<{ status: CheckStatus; quotesWritten: number }> {
+export async function checkPrivateRatesForSearch(
+  searchId: string,
+): Promise<{ status: CheckStatus; quotesWritten: number; challengeKind?: ChallengeKind }> {
   const { id: userId } = await requireUser()
 
   let remaining: number
@@ -429,6 +436,7 @@ export async function checkPrivateRatesForSearch(searchId: string): Promise<{ st
   const { status, progress } = await runPlannedChecks(plan.groups, { execute, write, shouldContinue: isPrivateRatesEnabled })
 
   const stopped = progress.stopped
+  let stoppedKind: ChallengeKind | undefined
   if (stopped?.kind === "FAILURE" && (stopped.status === "CHALLENGE" || stopped.status === "SIGNED_OUT")) {
     const challengeKind: ChallengeKind =
       stopped.status === "SIGNED_OUT" ? "SIGNED_OUT" : (stopped.challengeKind ?? "UNKNOWN_INTERSTITIAL")
@@ -436,6 +444,7 @@ export async function checkPrivateRatesForSearch(searchId: string): Promise<{ st
       where: { id: sessionRow.id },
       data: { status: "NEEDS_USER", challengeKind, lastUsedAt: retrievedAt },
     })
+    stoppedKind = challengeKind
     await audit(userId, "CHALLENGE", { phase: "check", challengeKind, groupsAttempted: progress.groupsAttempted }, { provider: PROVIDER, searchId })
   } else {
     await prisma.privateRateSession.update({ where: { id: sessionRow.id }, data: { lastUsedAt: retrievedAt } })
@@ -454,7 +463,7 @@ export async function checkPrivateRatesForSearch(searchId: string): Promise<{ st
   })
 
   revalidatePath("/settings/private-rates")
-  return { status, quotesWritten: progress.quotesWritten }
+  return stoppedKind ? { status, quotesWritten: progress.quotesWritten, challengeKind: stoppedKind } : { status, quotesWritten: progress.quotesWritten }
 }
 
 // ─── Admin ──────────────────────────────────────────────────────────────────

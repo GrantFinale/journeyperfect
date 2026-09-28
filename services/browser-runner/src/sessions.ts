@@ -22,7 +22,7 @@ export interface InteractiveSession {
   sessionId: string
   userId: string
   status: InteractiveStatus
-  /** Informational while AWAITING_LOGIN (CAPTCHA/MFA/SECURITY_VERIFY only); terminal cause on CHALLENGE. */
+  /** Informational while AWAITING_LOGIN (CAPTCHA/MFA/SECURITY_VERIFY only); terminal cause on CHALLENGE (e.g. BLOCKED). */
   challengeKind?: ChallengeKind
   context: BrowserContext | null
   page: Page | null
@@ -159,6 +159,9 @@ export class SessionManager {
     }, this.pollIntervalMs)
     this.timers.set(session.sessionId, { login, poll })
     this.log.info({ sessionId: session.sessionId, userId }, "interactive session opened")
+    // Classify the page the navigation landed on right away: if bot protection
+    // refused the browser (BLOCKED) the session ends before anyone waits on it.
+    void this.poll(session)
     return session
   }
 
@@ -191,6 +194,15 @@ export class SessionManager {
     return out
   }
 
+  /**
+   * Re-check the live page now (GET /sessions/:id/status calls this so the
+   * reported status is current). No-op once the session has ended or while a
+   * check is already in flight.
+   */
+  async refresh(session: InteractiveSession): Promise<void> {
+    await this.poll(session)
+  }
+
   private async poll(session: InteractiveSession): Promise<void> {
     if (session.status !== "AWAITING_LOGIN" || !session.page) return
     if (this.pollInFlight.has(session.sessionId)) return
@@ -204,9 +216,17 @@ export class SessionManager {
         await this.end(session, "SIGNED_IN")
         return
       }
-      // Informational only: the user resolves these themselves in the live view.
       const signals = await this.ops.collectSignals(session.page)
       const kind = detectChallenge(signals)
+      if (session.status !== "AWAITING_LOGIN") return // ended while we were looking
+      if (kind === "BLOCKED") {
+        // Bot protection refused the browser: nothing for the user to do in the
+        // live view, so end the session (closes the browser and the live view).
+        this.log.warn({ sessionId: session.sessionId }, "sign-in page blocked by bot protection")
+        await this.end(session, "CHALLENGE", "BLOCKED")
+        return
+      }
+      // Informational only: the user resolves these themselves in the live view.
       session.challengeKind = kind === "CAPTCHA" || kind === "MFA" || kind === "SECURITY_VERIFY" ? kind : undefined
     } catch (err) {
       // Navigation in progress or page transitioning; try again next tick.

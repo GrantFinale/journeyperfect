@@ -26,6 +26,7 @@ const CHALLENGE_TEXT: Record<string, string> = {
   SECURITY_VERIFY: "Hilton asked you to verify it's you.",
   SIGNED_OUT: "Hilton signed you out.",
   UNKNOWN_INTERSTITIAL: "Hilton showed a page we did not expect.",
+  BLOCKED: "Hilton's site blocked the automated browser before the sign-in page loaded. Nothing was retrieved. This isn't something you can fix by signing in again.",
 }
 
 function formatWhen(isoStr?: string): string {
@@ -80,7 +81,12 @@ export function PrivateRatesView({ initial }: { initial: Status }) {
       if (result.status === "NEEDS_USER") {
         stopPolling()
         setLive(null)
-        setNotice(`${CHALLENGE_TEXT[result.challengeKind ?? ""] ?? "Hilton needs your attention."} Connect again to continue.`)
+        // BLOCKED: reconnecting will not help, so do not suggest it.
+        setNotice(
+          result.challengeKind === "BLOCKED"
+            ? CHALLENGE_TEXT.BLOCKED
+            : `${CHALLENGE_TEXT[result.challengeKind ?? ""] ?? "Hilton needs your attention."} Connect again to continue.`,
+        )
         await refresh()
         return
       }

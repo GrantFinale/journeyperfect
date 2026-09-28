@@ -14,7 +14,15 @@ export type SessionStatus = "NONE" | "AWAITING_LOGIN" | "ACTIVE" | "NEEDS_USER" 
  * Output of `detectChallenge(pageSignals)`. Anything other than NONE aborts
  * the run and hands control back to the user. We never solve or bypass one.
  */
-export type ChallengeKind = "NONE" | "CAPTCHA" | "MFA" | "SECURITY_VERIFY" | "SIGNED_OUT" | "UNKNOWN_INTERSTITIAL"
+export type ChallengeKind =
+  | "NONE"
+  | "CAPTCHA"
+  | "MFA"
+  | "SECURITY_VERIFY"
+  | "SIGNED_OUT"
+  | "UNKNOWN_INTERSTITIAL"
+  /** Bot protection (e.g. Akamai "Access Denied" / "Reference No. 18.x") refused the page outright. */
+  | "BLOCKED"
 
 /** `HotelRateQuote.rateKind` */
 export type RateKind = "PRIVATE_HILTON_GO" | "PUBLIC"
@@ -77,6 +85,11 @@ export interface BrowserRunner {
    * has issued one (e.g. after the viewer's socket dropped); null otherwise.
    */
   getLiveViewUrl?(sessionId: string): Promise<string | null>
+  /**
+   * The challenge kind the runner reported when awaitSignedIn last returned
+   * CHALLENGE for this session (e.g. BLOCKED); null when unknown.
+   */
+  getChallengeKind?(sessionId: string): ChallengeKind | null
   /** unseal -> task -> seal, bounded by privateRates.maxRunSeconds. */
   run<T>(userId: string, task: RunnerTask): Promise<RunnerResult<T>>
   /** Destroy the sealed profile and any live session for this user. */

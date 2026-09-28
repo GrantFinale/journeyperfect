@@ -1,0 +1,46 @@
+name: Flight price watch
+
+# Re-prices every tracked FlightSearch once a day by calling the app's cron
+# route. Free, no new infrastructure. Set repository secrets:
+#   CRON_URL     e.g. https://journeyperfect.com/api/cron/flight-prices
+#   CRON_SECRET  the same value as the app's CRON_SECRET environment variable
+# The route itself skips watches checked within flights.checkIntervalHours, so
+# running this more often than that is harmless but pointless.
+# Alternative: a Coolify scheduled task (see docs/ops/cron.md).
+
+on:
+  schedule:
+    - cron: "0 9 * * *" # daily 09:00 UTC
+  workflow_dispatch: {}
+
+concurrency:
+  group: flight-prices
+  cancel-in-progress: false
+
+jobs:
+  reprice:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check configuration
+        run: |
+          if [ -z "${{ secrets.CRON_URL }}" ] || [ -z "${{ secrets.CRON_SECRET }}" ]; then
+            echo "CRON_URL and CRON_SECRET repository secrets must be set." >&2
+            exit 1
+          fi
+      - name: Call the cron route
+        run: |
+          set -o pipefail
+          http_code=$(curl --silent --show-error --output response.json --write-out "%{http_code}" \
+            --max-time 600 --retry 2 --retry-delay 30 \
+            -X POST \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -H "Accept: application/json" \
+            "${{ secrets.CRON_URL }}")
+          echo "HTTP $http_code"
+          cat response.json || true
+          echo
+          if [ "$http_code" -lt 200 ] || [ "$http_code" -ge 300 ]; then
+            echo "Cron route returned $http_code" >&2
+            exit 1
+          fi

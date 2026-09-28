@@ -12,6 +12,16 @@ export const PAID_FEATURES = {
   weatherAlerts: { name: "Weather Alerts & Rescheduling", minPlan: "PERSONAL" as Plan },
   tripSharing: { name: "Trip Sharing", minPlan: "PERSONAL" as Plan },
   liveFlightTracking: { name: "Live Flight Tracking", minPlan: "PERSONAL" as Plan },
+  // Flights plan (docs/plans/flights-search-tracking-and-booking.md §4.5)
+  flightSearch: { name: "Flight Search", minPlan: "PERSONAL" as Plan },
+  flightPriceTracking: { name: "Flight Price Tracking", minPlan: "PERSONAL" as Plan },
+  aiTripProposals: { name: "AI Trip Proposals", minPlan: "FAMILY" as Plan },
+  // Opportunity Discovery Engine (docs/plans/opportunity-discovery-engine.md §8).
+  // Private Rates are NOT a plan feature: they are gated by the
+  // `privateRates.enabled` config key plus a per-user PrivateRateEntitlement.
+  opportunityDiscovery: { name: "Opportunity Discovery", minPlan: "PERSONAL" as Plan },
+  // MCP server / agent-writable access to the trip graph (flights plan §7)
+  mcpAccess: { name: "Agent (MCP) Access", minPlan: "PERSONAL" as Plan },
 } as const
 
 const PLAN_ORDER: Plan[] = ["FREE", "PERSONAL", "FAMILY", "PRO"]

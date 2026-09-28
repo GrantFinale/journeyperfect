@@ -1,0 +1,32 @@
+# Example only. In production this service is deployed through Coolify (see
+# COOLIFY.md); this file is for running it locally next to the Next.js app.
+#
+#   cp docker-compose.example.yml docker-compose.yml
+#   export BROWSER_RUNNER_SECRET=$(openssl rand -hex 32)
+#   export PRIVATE_RATES_MASTER_KEY=$(openssl rand -base64 32)
+#   docker compose up --build
+#
+services:
+  browser-runner:
+    build: .
+    image: journeyperfect/browser-runner:local
+    restart: unless-stopped
+    environment:
+      BROWSER_RUNNER_SECRET: ${BROWSER_RUNNER_SECRET:?set BROWSER_RUNNER_SECRET}
+      PRIVATE_RATES_MASTER_KEY: ${PRIVATE_RATES_MASTER_KEY:?set PRIVATE_RATES_MASTER_KEY (base64, 32+ bytes)}
+      # Must be reachable from the USER'S browser (it hosts the live-view WebSocket).
+      LIVE_VIEW_PUBLIC_URL: ${LIVE_VIEW_PUBLIC_URL:-http://localhost:8787}
+      DATA_DIR: /data
+      PORT: 8787
+      SESSION_LOGIN_TIMEOUT_MS: "600000"
+      MAX_RUN_MS: "180000"
+    ports:
+      - "127.0.0.1:8787:8787"
+    volumes:
+      - browser-runner-data:/data
+    # Chromium and our unsealed profiles both use tmpfs; the Docker default (64 MB) is too small.
+    shm_size: "1gb"
+    init: true
+
+volumes:
+  browser-runner-data:

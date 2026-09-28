@@ -2,7 +2,7 @@ import Link from "next/link"
 import { auth } from "@/lib/auth"
 import { getTrips } from "@/lib/actions/trips"
 import { getCollaborativeTrips } from "@/lib/actions/collaborators"
-import { Plus, MapPin, Calendar, ChevronRight, Plane, Users, Eye, Pencil } from "lucide-react"
+import { Plus, MapPin, Calendar, ChevronRight, Plane, Users, Eye, Pencil, Sparkles } from "lucide-react"
 import { formatDate, tripDuration } from "@/lib/utils"
 import { ForwardingEmail } from "@/components/forwarding-email"
 
@@ -39,6 +39,23 @@ export default async function DashboardPage() {
           New trip
         </Link>
       </div>
+
+      {/* AI trip proposals entry (docs/plans/flights-search-tracking-and-booking.md §5) */}
+      <Link
+        href="/propose"
+        className="mb-6 flex items-center gap-4 rounded-2xl border border-indigo-100 bg-indigo-50/60 p-4 hover:border-indigo-300 hover:bg-indigo-50 transition-colors group"
+      >
+        <div className="w-10 h-10 rounded-xl bg-white flex items-center justify-center shrink-0">
+          <Sparkles className="w-5 h-5 text-indigo-600" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <h3 className="font-semibold text-gray-900 text-sm">Plan from an idea</h3>
+          <p className="text-xs text-gray-500 truncate">
+            &ldquo;Ten days in Portugal in May, two adults, mid-range&rdquo; &rarr; costed options you can build in one click
+          </p>
+        </div>
+        <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-indigo-500 shrink-0 transition-colors" />
+      </Link>
 
       {/* Forwarding email hint */}
       {session?.user?.id && trips.length > 0 && (

@@ -1,4 +1,6 @@
 import { getConfig } from "./config"
+import type { FlightQuery } from "./flights/types"
+import { aviasalesUrl, googleFlightsUrl } from "./flights/deeplinks"
 
 export interface AffiliateLink {
   provider: string
@@ -36,6 +38,30 @@ export async function getHotelBookingLink(
     label: "Find hotels on Booking.com",
     icon: "\u{1F3E8}",
     commission: "4%",
+  }
+}
+
+// Flights via Travelpayouts/Aviasales when a marker is configured
+// (config key "api.travelpayouts.marker"), else a plain Google Flights search.
+// Flight commission is ~1.1-1.5%; see the flights plan §6 — this is a
+// conversion feature, not a revenue line.
+export async function getFlightBookingLink(q: FlightQuery): Promise<AffiliateLink> {
+  const marker = (await getConfig("api.travelpayouts.marker", "")).trim()
+  if (marker) {
+    return {
+      provider: "Aviasales",
+      url: aviasalesUrl(q, marker),
+      label: "Compare fares on Aviasales",
+      icon: "✈️",
+      commission: "1.1-1.5%",
+    }
+  }
+  return {
+    provider: "Google Flights",
+    url: googleFlightsUrl(q),
+    label: "Search on Google Flights",
+    icon: "✈️",
+    commission: "none",
   }
 }
 

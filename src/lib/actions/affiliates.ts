@@ -10,9 +10,11 @@ import {
   getAmazonPackingLink,
   getViatorDestinationLink,
   buildParkingLink,
+  getFlightBookingLink,
   type AffiliateLink,
   type ParkingLinkParams,
 } from "@/lib/affiliates"
+import type { FlightQuery } from "@/lib/flights/types"
 import { prisma } from "@/lib/db"
 import { requireTripAccess } from "@/lib/auth-trip"
 
@@ -161,6 +163,12 @@ export async function getViatorDestinationAffiliate(
   const session = await auth()
   if (!session?.user?.id) throw new Error("Unauthorized")
   return getViatorDestinationLink(destination)
+}
+
+export async function getFlightAffiliate(q: FlightQuery): Promise<AffiliateLink> {
+  const session = await auth()
+  if (!session?.user?.id) throw new Error("Unauthorized")
+  return getFlightBookingLink(q)
 }
 
 // Note: this file is "use server", so every export must be an async function.

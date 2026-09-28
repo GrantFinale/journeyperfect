@@ -9,13 +9,19 @@
  * Pure module: no Prisma, no server imports, so client components can use it.
  */
 
-export type TripTaskKind = "MAKE_RESERVATION" | "ADD_CONFIRMATION" | "MAKE_PAYMENT" | "CHECK_IN"
+export type TripTaskKind =
+  | "MAKE_RESERVATION"
+  | "ADD_CONFIRMATION"
+  | "MAKE_PAYMENT"
+  | "CHECK_IN"
+  | "BOOK_FLIGHTS"
 
 export const TRIP_TASK_KINDS: TripTaskKind[] = [
   "MAKE_RESERVATION",
   "ADD_CONFIRMATION",
   "MAKE_PAYMENT",
   "CHECK_IN",
+  "BOOK_FLIGHTS",
 ]
 
 export const TRIP_TASK_LABELS: Record<TripTaskKind, string> = {
@@ -23,14 +29,16 @@ export const TRIP_TASK_LABELS: Record<TripTaskKind, string> = {
   ADD_CONFIRMATION: "Confirmation or voucher missing",
   MAKE_PAYMENT: "Payment required",
   CHECK_IN: "Check in",
+  BOOK_FLIGHTS: "Book flights",
 }
 
 /** Lower sorts first in the To Do list. */
 const KIND_ORDER: Record<TripTaskKind, number> = {
   CHECK_IN: 0, // time-boxed — the window closes
   MAKE_PAYMENT: 1, // money, often with a deadline
-  MAKE_RESERVATION: 2,
-  ADD_CONFIRMATION: 3,
+  BOOK_FLIGHTS: 2, // nothing else on the trip works without a way to get there
+  MAKE_RESERVATION: 3,
+  ADD_CONFIRMATION: 4,
 }
 
 /** How long before departure airline/operator check-in typically opens. */
@@ -74,7 +82,11 @@ export interface TaskSubject {
 
 export interface TripTask {
   kind: TripTaskKind
-  itineraryItemId: string
+  /**
+   * The itinerary item this task belongs to. `null` for trip-level tasks (see
+   * `tripLevelTasks`), which have no event to deep-link to.
+   */
+  itineraryItemId: string | null
   /** The event's own name, for display. */
   title: string
   label: string
@@ -212,10 +224,8 @@ export function tasksForSubject(subject: TaskSubject, now: Date): TripTask[] {
   return tasks
 }
 
-/** All outstanding tasks for a trip, most urgent first. */
-export function computeTripTasks(subjects: TaskSubject[], now: Date = new Date()): TripTask[] {
-  const tasks = subjects.flatMap((s) => tasksForSubject(s, now))
-
+/** Most urgent first. Shared by the per-item and trip-level task lists. */
+export function sortTripTasks(tasks: TripTask[]): TripTask[] {
   return tasks.sort((a, b) => {
     // Anything with a real deadline outranks anything without one.
     if (a.dueAt && b.dueAt && a.dueAt !== b.dueAt) return a.dueAt < b.dueAt ? -1 : 1
@@ -227,8 +237,62 @@ export function computeTripTasks(subjects: TaskSubject[], now: Date = new Date()
   })
 }
 
+/** All outstanding tasks for a trip's itinerary items, most urgent first. */
+export function computeTripTasks(subjects: TaskSubject[], now: Date = new Date()): TripTask[] {
+  return sortTripTasks(subjects.flatMap((s) => tasksForSubject(s, now)))
+}
+
+/**
+ * What trip-level task detection needs — facts about the trip as a whole rather
+ * than any one itinerary item. Callers build this from the Trip row.
+ */
+export interface TripLevelContext {
+  /** The trip has an origin with coordinates. */
+  hasOrigin: boolean
+  /** The trip has a destination with coordinates. */
+  hasDestination: boolean
+  hasDates: boolean
+  /** Number of `Flight` rows on the trip. */
+  flightCount: number
+  /** yyyy-MM-dd, or null when unknown. */
+  startDate: string | null
+}
+
+/**
+ * Tasks that belong to the trip rather than to an itinerary item. Currently just
+ * one: a trip you know the start and end of, with no flights on it, still needs
+ * flights booked. It clears itself the moment a `Flight` row exists — accepting
+ * an offer on the Flights screen creates one through the normal path — and is
+ * never raised once the trip has started, when it would just be noise.
+ *
+ * Independent of `tasksForSubject`/`computeTripTasks`, which are untouched.
+ */
+export function tripLevelTasks(ctx: TripLevelContext, now: Date): TripTask[] {
+  const tasks: TripTask[] = []
+
+  if (ctx.hasOrigin && ctx.hasDestination && ctx.hasDates && ctx.flightCount === 0 && ctx.startDate) {
+    // `startDate` is a calendar day; parsed as UTC midnight so a departure day
+    // that is already underway anywhere no longer counts as "in the future".
+    const start = new Date(ctx.startDate)
+    if (!Number.isNaN(start.getTime()) && start.getTime() > now.getTime()) {
+      tasks.push({
+        kind: "BOOK_FLIGHTS",
+        itineraryItemId: null,
+        title: "Flights to book",
+        label: TRIP_TASK_LABELS.BOOK_FLIGHTS,
+        detail: "No flights booked yet. Search fares and add the one you pick to the trip.",
+        dueAt: null,
+        date: ctx.startDate,
+        startTime: null,
+      })
+    }
+  }
+
+  return tasks
+}
+
 export function countTasksByKind(tasks: TripTask[]): Record<TripTaskKind, number> {
-  const counts = { MAKE_RESERVATION: 0, ADD_CONFIRMATION: 0, MAKE_PAYMENT: 0, CHECK_IN: 0 }
+  const counts = Object.fromEntries(TRIP_TASK_KINDS.map((k) => [k, 0])) as Record<TripTaskKind, number>
   for (const t of tasks) counts[t.kind] += 1
   return counts
 }

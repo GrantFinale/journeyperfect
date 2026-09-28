@@ -280,6 +280,7 @@ describe("computeTripTasks ordering and counting", () => {
       ADD_CONFIRMATION: 1,
       MAKE_PAYMENT: 1,
       CHECK_IN: 1,
+      BOOK_FLIGHTS: 0,
     })
     expect(tasks).toHaveLength(4)
   })
@@ -300,6 +301,7 @@ describe("computeTripTasks ordering and counting", () => {
       ADD_CONFIRMATION: 0,
       MAKE_PAYMENT: 0,
       CHECK_IN: 0,
+      BOOK_FLIGHTS: 0,
     })
   })
 })

@@ -21,8 +21,9 @@ export const config = {
      * - /shared/:path*
      * - /api/auth/:path*
      * - /api/health
+     * - /api/mcp and /api/cron/* (bearer-authenticated by their own handlers)
      * - _next/static, _next/image, favicon.ico, etc.
      */
-    "/((?!$|login|shared/.*|api/auth/.*|api/health|api/stripe/.*|api/inbound-email|api/trip/.*/calendar|_next/static|_next/image|favicon\\.ico|manifest\\.json|sw\\.js|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    "/((?!$|login|shared/.*|api/auth/.*|api/health|api/mcp$|api/cron/.*|api/stripe/.*|api/inbound-email|api/trip/.*/calendar|_next/static|_next/image|favicon\\.ico|manifest\\.json|sw\\.js|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 }

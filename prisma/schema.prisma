@@ -53,6 +53,17 @@ model User {
   vehicles         Vehicle[]
   eventAttachments EventAttachment[]
 
+  // Flights plan (docs/plans/flights-search-tracking-and-booking.md)
+  flightSearches FlightSearch[]
+
+  // Opportunity Discovery Engine + Private Rates (docs/plans/opportunity-discovery-engine.md)
+  opportunitySearches     OpportunitySearch[]
+  privateRateSessions     PrivateRateSession[]
+  privateRateEntitlements PrivateRateEntitlement[]
+
+  // MCP server / external agent access
+  apiKeys ApiKey[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -172,8 +183,16 @@ model Trip {
   // Own vehicle being driven on this trip (optional)
   vehicleId String?
 
+  /// Set by "Build This Trip" on the Opportunities page: the TravelOpportunity
+  /// this trip was created from. Plain id, no FK, so the trip outlives the search.
+  builtFromOpportunityId String?
+  /// The OpportunityReason[] that surfaced the opportunity, copied onto the trip
+  /// so the rationale survives after quotes and searches expire.
+  opportunityRationale   Json?
+
   // Relations
   user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  flightSearches    FlightSearch[]
   vehicle           Vehicle?           @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
   destinations      TripDestination[]
   travelers         TripTraveler[]
@@ -874,4 +893,373 @@ enum BudgetCategory {
   TRANSPORT
   SHOPPING
   OTHER
+}
+
+// ─── Flight Search & Price Tracking ────────────────────────────────────────
+// See docs/plans/flights-search-tracking-and-booking.md §4.1. `Flight` (above)
+// continues to mean "a flight you have booked"; these models cover the
+// pre-booking phase: shopping, snapshots of what a provider returned, and the
+// price history we accumulate ourselves.
+
+/// A route the user is shopping for. Becomes a price watch when isTracking.
+model FlightSearch {
+  id            String    @id @default(cuid())
+  userId        String
+  /// null = speculative, not yet tied to a trip
+  tripId        String?
+  /// IATA airport code
+  origin        String
+  /// IATA airport code
+  destination   String
+  departDate    DateTime  @db.Date
+  returnDate    DateTime? @db.Date
+  /// "economy" | "premium_economy" | "business" | "first"
+  cabin         String    @default("economy")
+  adults        Int       @default(1)
+  children      Int       @default(0)
+  maxStops      Int?
+  isTracking    Boolean   @default(false)
+  /// Notify when a fare is at or below this amount
+  targetPrice   Float?
+  currency      String    @default("USD")
+  lastCheckedAt DateTime?
+  lastPrice     Float?
+  /// Best price ever seen, for "new low" alerts
+  lowestPrice   Float?
+  /// Normalised query key (see src/lib/flights/types.ts queryHash); dedupes cache + provider calls
+  queryHash     String
+
+  user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  trip        Trip?              @relation(fields: [tripId], references: [id], onDelete: SetNull)
+  offers      FlightOffer[]
+  pricePoints FlightPricePoint[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([tripId])
+  @@index([queryHash])
+  @@index([isTracking, lastCheckedAt])
+}
+
+/// One option a provider returned. Snapshot, not live.
+model FlightOffer {
+  id           String    @id @default(cuid())
+  searchId     String
+  /// "serpapi" | "duffel" | "travelpayouts"
+  provider     String
+  /// Provider-side offer id (Duffel offer id, needed to book)
+  providerRef  String?
+  totalPrice   Float
+  currency     String
+  carrierCodes String[]
+  stops        Int
+  durationMins Int
+  /// Normalised FlightItinerary (src/lib/flights/types.ts)
+  outbound     Json
+  /// Normalised FlightItinerary for the return leg, null for one-way
+  inbound      Json?
+  bookingUrl   String
+  capturedAt   DateTime  @default(now())
+  /// Duffel offers expire; SerpApi ones just go stale
+  expiresAt    DateTime?
+
+  search FlightSearch @relation(fields: [searchId], references: [id], onDelete: Cascade)
+
+  @@index([searchId])
+  @@index([searchId, totalPrice])
+}
+
+/// One price sample. Drives the history chart and drop detection.
+model FlightPricePoint {
+  id         String   @id @default(cuid())
+  searchId   String
+  price      Float
+  currency   String
+  /// "serpapi" | "duffel" | "travelpayouts"
+  provider   String
+  /// Google's low/typical/high band when available (PriceInsight in src/lib/flights/types.ts)
+  insight    Json?
+  capturedAt DateTime @default(now())
+
+  search FlightSearch @relation(fields: [searchId], references: [id], onDelete: Cascade)
+
+  @@index([searchId, capturedAt])
+}
+
+// ─── Opportunity Discovery Engine ──────────────────────────────────────────
+// See docs/plans/opportunity-discovery-engine.md §7. The search runs as a
+// bounded, staged pipeline; every row below is user-scoped and user-initiated.
+
+/// One user-initiated discovery run. The unit of bounding, authorisation and audit.
+model OpportunitySearch {
+  id                       String    @id @default(cuid())
+  userId                   String
+  /// IATA codes, from the user's home airport(s)
+  originAirports           String[]
+  originLat                Float
+  originLng                Float
+  windowStart              DateTime  @db.Date
+  windowEnd                DateTime  @db.Date
+  nightsMin                Int
+  nightsMax                Int
+  /// "THU-SUN" | "FRI-MON" | null = any
+  weekdayPattern           String?
+  travelerProfileIds       String[]
+  /// SearchConstraints: { maxCoreCost?, nonstopOnly?, maxFlightMins?, drivingOk?, warm?, regions?: string[] }
+  constraints              Json
+  /// DRAFT | STAGE_0 | STAGE_1 | STAGE_2 | STAGE_3 | STAGE_4 | DONE | FAILED
+  status                   String    @default("DRAFT")
+  /// Set by an explicit user click in the session; stage 3 (private rates) never runs without it
+  privateRatesAuthorizedAt DateTime?
+  createdAt                DateTime  @default(now())
+  completedAt              DateTime?
+
+  user          User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  candidates    OpportunityCandidate[]
+  opportunities TravelOpportunity[]
+
+  @@index([userId, createdAt])
+}
+
+/// One destination × one date window inside a search. The working row the pipeline advances.
+model OpportunityCandidate {
+  id              String   @id @default(cuid())
+  searchId        String
+  destinationIata String
+  destinationName String
+  destinationLat  Float
+  destinationLng  Float
+  checkIn         DateTime @db.Date
+  checkOut        DateTime @db.Date
+  nights          Int
+  /// Last completed pipeline stage (0..4); a resumed search picks up here
+  stage           Int      @default(0)
+  pruned          Boolean  @default(false)
+  prunedReason    String?
+  /// CandidateFactors: Partial<Record<FactorKind, FactorResult>> (src/lib/opportunities/types.ts)
+  factors         Json     @default("{}")
+  /// → FlightSearch id (flights plan). Plain id, no FK, so the search can be pruned independently.
+  flightSearchId  String?
+  score           Float?
+  /// FactorKind that dominated the score
+  headlineFactor  String?
+
+  search OpportunitySearch @relation(fields: [searchId], references: [id], onDelete: Cascade)
+
+  @@index([searchId, stage])
+}
+
+/// A surfaced result: the card. Denormalised on purpose so it stays readable after quotes expire.
+model TravelOpportunity {
+  id                      String   @id @default(cuid())
+  searchId                String
+  candidateId             String
+  userId                  String
+  destinationName         String
+  destinationIata         String
+  checkIn                 DateTime @db.Date
+  checkOut                DateTime @db.Date
+  nights                  Int
+  travelerCount           Int
+  nonstopAvailable        Boolean
+  /// → FlightOffer id, the chosen option. Plain id, no FK.
+  flightOfferId           String?
+  /// { mode, durationMins, doorToDoorMins, carriers[], departs, returns, source }
+  transportation          Json
+  airfareTotal            Float?
+  /// RETRIEVED | ESTIMATED | UNKNOWN
+  airfareSource           String
+  /// → HotelRateQuote id for the private quote. Plain id, no FK.
+  hotelRateQuoteId        String?
+  /// → HotelRateQuote id for the public comparable. Plain id, no FK.
+  publicRateQuoteId       String?
+  hotelName               String?
+  privateNightlyRate      Float?
+  comparablePublicRate    Float?
+  hotelSavingsTotal       Float?
+  groundTransportEstimate Float?
+  majorActivityEstimate   Float?
+  coreTripCost            Float?
+  /// Source of the weakest addend: RETRIEVED | ESTIMATED | HISTORICAL | UNKNOWN
+  coreTripCostSource      String
+  /// { kind: FORECAST | HISTORICAL, highF, lowF, precipPct, swimmable, summary }
+  weatherContext          Json
+  /// { title, kind, date?, url?, source }
+  anchorExperience        Json?
+  familyFitReasons        String[]
+  /// OpportunityReason[], ordered by magnitude (src/lib/opportunities/types.ts)
+  opportunityReasons      Json
+  /// FactorKind that dominated the score
+  headlineFactor          String
+  retrievedAt             DateTime
+  /// Set by "Build This Trip"
+  builtTripId             String?
+  createdAt               DateTime @default(now())
+
+  search OpportunitySearch @relation(fields: [searchId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([searchId])
+}
+
+/// A hotel rate observation. Private ones are user-scoped and never shared.
+model HotelRateQuote {
+  id           String   @id @default(cuid())
+  userId       String
+  /// "hilton"
+  provider     String
+  propertyCode String
+  propertyName String
+  brand        String?
+  /// BUDGET | MID | UPSCALE | LUXURY, from DestinationProfile or a brand map
+  tier         String?
+  lat          Float?
+  lng          Float?
+  checkIn      DateTime @db.Date
+  checkOut     DateTime @db.Date
+  /// PRIVATE_HILTON_GO | PUBLIC
+  rateKind     String
+  nightlyRate  Float
+  totalRate    Float
+  currency     String   @default("USD")
+  roomType     String?
+  available    Boolean
+  /// → PrivateRateSession id for private quotes. Plain id, no FK.
+  sessionId    String?
+  retrievedAt  DateTime @default(now())
+  /// Default retrievedAt + 24h; the UI shows staleness
+  expiresAt    DateTime
+
+  @@index([userId, propertyCode, checkIn])
+}
+
+/// Per-destination knowledge, generated once by the AI layer, cached, refreshed manually.
+model DestinationProfile {
+  id                  String   @id @default(cuid())
+  iata                String   @unique
+  name                String
+  lat                 Float
+  lng                 Float
+  /// BUDGET | MID | UPSCALE | LUXURY (dominant hotel stock)
+  tier                String
+  idealNightsMin      Int
+  idealNightsMax      Int
+  walkable            Boolean
+  carNeeded           Boolean
+  airportToCenterKm   Float
+  /// FREE | CHEAP | EXPENSIVE
+  parkingTypical      String
+  activitiesDispersed Boolean
+  /// { tags: string[], byAgeBand: {...}, indoorRatio }
+  familyFit           Json
+  /// [{ title, kind, months: number[], weatherDependent }]
+  anchors             Json
+  /// Monthly typical highs/lows/precip for fast stage-1 checks
+  climate             Json?
+  /// Model id that generated this profile
+  generatedBy         String
+  refreshedAt         DateTime @default(now())
+}
+
+/// Nonstop service between two airports. Seeds stage 0 with zero paid calls.
+model NonstopRoute {
+  id                  String   @id @default(cuid())
+  originIata          String
+  destIata            String
+  carriers            String[]
+  weeklyFrequency     Int?
+  typicalDurationMins Int
+  /// "EARLY" | "MORNING" | "MIDDAY" | "EVENING"
+  departureBuckets    String[]
+  /// "OPENFLIGHTS_SEED" | "OBSERVED_OFFER" | "SCHEDULE_API"
+  source              String
+  lastVerifiedAt      DateTime
+
+  @@unique([originIata, destIata])
+  @@index([originIata])
+}
+
+// ─── Private Rates (Hilton Go) ─────────────────────────────────────────────
+// See docs/plans/opportunity-discovery-engine.md §6. JourneyPerfect never sees,
+// stores or transmits credentials; Postgres holds session metadata only.
+
+/// The user's authenticated browser session for a private rate program. No credentials, ever.
+model PrivateRateSession {
+  id              String    @id @default(cuid())
+  userId          String
+  /// "hilton"
+  provider        String
+  /// NONE | AWAITING_LOGIN | ACTIVE | NEEDS_USER | EXPIRED | REVOKED
+  status          String
+  /// CAPTCHA | MFA | SECURITY_VERIFY | SIGNED_OUT | UNKNOWN_INTERSTITIAL
+  challengeKind   String?
+  /// Path/key of the sealed profile on the runner volume; never the blob itself
+  sealedBlobRef   String?
+  /// HKDF key version, to allow master-key rotation
+  keyVersion      Int       @default(1)
+  lastValidatedAt DateTime?
+  lastUsedAt      DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, provider])
+}
+
+/// Admin-granted, per-user. Not a plan tier. Not purchasable.
+model PrivateRateEntitlement {
+  id        String    @id @default(cuid())
+  userId    String
+  /// "hilton"
+  provider  String
+  /// Admin user id
+  grantedBy String
+  grantedAt DateTime  @default(now())
+  revokedAt DateTime?
+  notes     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, provider])
+}
+
+/// Every private-rate action, for audit. Append-only.
+model PrivateRateAuditLog {
+  id        String   @id @default(cuid())
+  userId    String
+  /// "hilton"
+  provider  String
+  /// CONNECT | CHECK_RATES | CHALLENGE | DISCONNECT | REVOKE | KILL_SWITCH
+  action    String
+  /// → OpportunitySearch id when the action belongs to a search. Plain id, no FK.
+  searchId  String?
+  detail    Json?
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
+
+// ─── API Keys (MCP server / external agents) ───────────────────────────────
+
+/// A bearer credential for the MCP server. Only the hash is stored; the plain
+/// key is shown once at creation. `prefix` is the first few characters, kept
+/// so the user can recognise a key in a list without us holding the secret.
+model ApiKey {
+  id         String    @id @default(cuid())
+  userId     String
+  name       String
+  keyHash    String    @unique
+  prefix     String
+  lastUsedAt DateTime?
+  revokedAt  DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
 }

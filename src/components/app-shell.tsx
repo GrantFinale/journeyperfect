@@ -22,6 +22,9 @@ import {
   Navigation,
   ClipboardList,
   CircleAlert,
+  Plane,
+  Sparkles,
+  KeyRound,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { signOut } from "next-auth/react"
@@ -64,10 +67,14 @@ function NavBadge({ count, className }: { count: number; className?: string }) {
 
 const NAV_ITEMS: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  // Not trip-scoped: exists before a trip does. The page gates itself on the
+  // `opportunityDiscovery` feature; the shell does not.
+  { href: "/opportunities", label: "Opportunities", icon: Sparkles },
   { href: "/settings", label: "Settings", icon: Settings },
   { href: "/settings/travelers", label: "Traveler Profiles", icon: Users },
   { href: "/settings/stats", label: "Travel Stats", icon: BarChart3 },
   { href: "/settings/referrals", label: "Refer a Friend", icon: Gift },
+  { href: "/settings/api-keys", label: "API Keys", icon: KeyRound },
 ]
 
 /** The To Do entry only exists while something actually needs doing. */
@@ -80,6 +87,7 @@ const TRIP_NAV_PRIMARY = (tripId: string, todoCount = 0): NavItem[] => [
   { href: `/trip/${tripId}`, label: "Overview", icon: Map, exact: true },
   { href: `/trip/${tripId}/itinerary`, label: "Plan", icon: ClipboardList },
   ...todoNavItem(tripId, todoCount),
+  { href: `/trip/${tripId}/flights`, label: "Flights", icon: Plane },
   { href: `/trip/${tripId}/map`, label: "Map", icon: Navigation },
   { href: `/trip/${tripId}/discover`, label: "Discover", icon: Compass },
 ]
@@ -117,12 +125,14 @@ export function AppShell({ children, user }: AppShellProps) {
         { href: `/trip/${currentTripId}`, label: "Overview", icon: Map },
         { href: `/trip/${currentTripId}/itinerary`, label: "Plan", icon: ClipboardList },
         ...todoNavItem(currentTripId, todoCount),
+        { href: `/trip/${currentTripId}/flights`, label: "Flights", icon: Plane },
         { href: `/trip/${currentTripId}/discover`, label: "Discover", icon: Compass },
         { href: `/trip/${currentTripId}/budget`, label: "Budget", icon: DollarSign },
         { href: `/trip/${currentTripId}/packing`, label: "Packing", icon: Package },
       ]
     : [
         { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+        { href: "/opportunities", label: "Opportunities", icon: Sparkles },
         { href: "/settings", label: "Settings", icon: Settings },
       ]
 

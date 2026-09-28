@@ -3,7 +3,14 @@
 import { cache } from "react"
 import { prisma } from "@/lib/db"
 import { requireTripAccess } from "@/lib/auth-trip"
-import { computeTripTasks, type TaskSubject, type TripTask } from "@/lib/trip-tasks"
+import {
+  computeTripTasks,
+  sortTripTasks,
+  tripLevelTasks,
+  type TaskSubject,
+  type TripLevelContext,
+  type TripTask,
+} from "@/lib/trip-tasks"
 
 /**
  * A `@db.Date` column comes back from Prisma as UTC midnight, so slicing the ISO
@@ -94,10 +101,46 @@ const loadTaskSubjects = cache(async (tripId: string): Promise<TaskSubject[]> =>
   }))
 })
 
+/**
+ * Facts about the trip as a whole, for the trip-level tasks (currently just
+ * "book flights"). Memoised like `loadTaskSubjects` and run after it so the
+ * access check has already passed; a missing trip yields a context that raises
+ * nothing rather than a second error path.
+ */
+const loadTripLevelContext = cache(async (tripId: string): Promise<TripLevelContext> => {
+  const trip = await prisma.trip.findUnique({
+    where: { id: tripId },
+    select: {
+      originLat: true,
+      originLng: true,
+      destinationLat: true,
+      destinationLng: true,
+      startDate: true,
+      endDate: true,
+      _count: { select: { flights: true } },
+    },
+  })
+
+  if (!trip) {
+    return { hasOrigin: false, hasDestination: false, hasDates: false, flightCount: 0, startDate: null }
+  }
+
+  return {
+    hasOrigin: trip.originLat != null && trip.originLng != null,
+    hasDestination: trip.destinationLat != null && trip.destinationLng != null,
+    hasDates: Boolean(trip.startDate && trip.endDate),
+    flightCount: trip._count.flights,
+    startDate: trip.startDate ? toDateKey(trip.startDate) : null,
+  }
+})
+
 /** Everything still outstanding on this trip, most urgent first. */
 export async function getTripTasks(tripId: string): Promise<TripTask[]> {
+  // Subjects first: it performs the access check.
   const subjects = await loadTaskSubjects(tripId)
-  return computeTripTasks(subjects, new Date())
+  const ctx = await loadTripLevelContext(tripId)
+  const now = new Date()
+  return sortTripTasks([...computeTripTasks(subjects, now), ...tripLevelTasks(ctx, now)])
 }
 
 /**

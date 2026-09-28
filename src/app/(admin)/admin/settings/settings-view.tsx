@@ -5,7 +5,24 @@ import { updateAdminConfig, deleteAdminConfig } from "@/lib/actions/admin"
 
 type Config = { key: string; value: string }
 
-export function SettingsView({ configs: initialConfigs }: { configs: Config[] }) {
+/** Serialised from CONFIG_KEYS on the server (see page.tsx). */
+export type KnownConfigKey = { key: string; default: string; group: string; desc: string; secret: boolean }
+
+const GROUP_LABELS: Record<string, string> = {
+  flights: "Flights",
+  api: "External API credentials",
+  opportunities: "Opportunity Discovery",
+  privateRates: "Private Rates (Hilton Go)",
+  ai: "AI models",
+}
+
+export function SettingsView({
+  configs: initialConfigs,
+  knownKeys = [],
+}: {
+  configs: Config[]
+  knownKeys?: KnownConfigKey[]
+}) {
   const [configs, setConfigs] = useState(initialConfigs)
   const [newKey, setNewKey] = useState("")
   const [newValue, setNewValue] = useState("")
@@ -52,13 +69,67 @@ export function SettingsView({ configs: initialConfigs }: { configs: Config[] })
     { key: "affiliate.amazon.tag", desc: "Amazon Associates tag", example: "journeyperfect-20" },
   ]
 
-  function handleQuickAdd(key: string) {
+  function handleQuickAdd(key: string, defaultValue = "") {
     setNewKey(key)
-    setNewValue("")
+    setNewValue(defaultValue)
   }
+
+  const knownGroups = Array.from(new Set(knownKeys.map((k) => k.group)))
 
   return (
     <div className="space-y-6">
+      {/* Known runtime keys: flights + opportunities plans */}
+      {knownKeys.length > 0 && (
+        <div className="bg-slate-50 rounded-lg border border-slate-200 p-5">
+          <h2 className="text-sm font-semibold text-slate-900 mb-1">Known keys</h2>
+          <p className="text-xs text-slate-600 mb-3">
+            Runtime keys read by the flights, opportunity discovery and private-rates features. An unset key uses the
+            default shown. Changes take effect within a minute, no deploy needed.
+          </p>
+          <div className="space-y-4">
+            {knownGroups.map((group) => (
+              <div key={group}>
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-1.5">
+                  {GROUP_LABELS[group] ?? group}
+                </h3>
+                <div className="space-y-1.5">
+                  {knownKeys
+                    .filter((k) => k.group === group)
+                    .map((k) => {
+                      const current = configs.find((c) => c.key === k.key)
+                      const isSet = current !== undefined
+                      return (
+                        <div key={k.key} className="flex items-start gap-2 text-xs">
+                          <span className={`mt-1 w-2 h-2 shrink-0 rounded-full ${isSet ? "bg-green-500" : "bg-gray-300"}`} />
+                          <code className="font-mono text-slate-800 bg-slate-200/70 px-1.5 py-0.5 rounded shrink-0">{k.key}</code>
+                          <span className="text-slate-600 flex-1">
+                            {k.desc}{" "}
+                            <span className="text-slate-400">
+                              default: <code className="font-mono">{k.default === "" ? '""' : k.default}</code>
+                            </span>
+                          </span>
+                          {isSet ? (
+                            <span className="ml-auto shrink-0 text-green-700 font-medium">
+                              {k.secret ? "Configured" : `= ${current.value}`}
+                            </span>
+                          ) : (
+                            <button
+                              onClick={() => handleQuickAdd(k.key, k.secret ? "" : k.default)}
+                              className="ml-auto shrink-0 text-slate-700 hover:text-slate-900 font-medium"
+                            >
+                              + Add
+                            </button>
+                          )}
+                        </div>
+                      )
+                    })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Affiliate config reference */}
       <div className="bg-indigo-50 rounded-lg border border-indigo-100 p-5">
         <h2 className="text-sm font-semibold text-indigo-900 mb-1">Affiliate Link Configuration</h2>

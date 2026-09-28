@@ -3,7 +3,7 @@ import { NextResponse } from "next/server"
 
 // The middleware matcher regex from src/middleware.ts
 const MATCHER_REGEX =
-  /^\/((?!$|login|shared\/.*|api\/auth\/.*|api\/health|_next\/static|_next\/image|favicon\.ico|.*\.(?:svg|png|jpg|jpeg|gif|webp)$).*)/
+  /^\/((?!$|login|shared\/.*|api\/auth\/.*|api\/health|api\/mcp$|api\/cron\/.*|_next\/static|_next\/image|favicon\.ico|.*\.(?:svg|png|jpg|jpeg|gif|webp)$).*)/
 
 function matchesMiddleware(pathname: string): boolean {
   return MATCHER_REGEX.test(pathname)
@@ -20,6 +20,8 @@ describe("middleware route matcher", () => {
       ["/api/auth/callback/google", "auth provider callback"],
       ["/api/auth/session", "auth session"],
       ["/api/health", "health check"],
+      ["/api/mcp", "MCP endpoint (API-key auth)"],
+      ["/api/cron/flight-prices", "cron endpoint (CRON_SECRET auth)"],
     ])("%s (%s) should not be matched", (pathname) => {
       expect(matchesMiddleware(pathname)).toBe(false)
     })
@@ -33,6 +35,8 @@ describe("middleware route matcher", () => {
       ["/settings", "settings"],
       ["/profile", "profile"],
       ["/api/trips", "API trips endpoint"],
+      ["/api/mcpx", "lookalike of the MCP endpoint"],
+      ["/api/cron", "bare cron prefix"],
     ])("%s (%s) should be matched", (pathname) => {
       expect(matchesMiddleware(pathname)).toBe(true)
     })

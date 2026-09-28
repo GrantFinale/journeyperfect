@@ -10,6 +10,8 @@ const compat = new FlatCompat({
 })
 
 const eslintConfig = [
+  // Build output and agent worktrees are not source.
+  { ignores: [".next/**", ".claude/**", "services/**/dist/**"] },
   ...compat.extends("next/core-web-vitals", "next/typescript"),
 ]
 

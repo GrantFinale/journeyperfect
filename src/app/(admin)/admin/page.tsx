@@ -52,6 +52,8 @@ export default async function AdminOverviewPage() {
     { label: "Users", description: "View and manage user accounts", href: "/admin/users" },
     { label: "Settings", description: "Feature flags and app configuration", href: "/admin/settings" },
     { label: "Billing", description: "Stripe configuration and subscription setup", href: "/admin/billing" },
+    { label: "Private Rates", description: "Hilton Go kill switch, entitlements, sessions and audit", href: "/admin/private-rates" },
+    { label: "Opportunities", description: "Seed destination profiles and nonstop routes", href: "/admin/opportunities" },
   ]
 
   const configuredCount = apiStatuses.filter((s) => s.configured).length

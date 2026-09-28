@@ -23,6 +23,30 @@ export async function logAIUsage(data: {
   }).catch(() => {}) // non-critical, don't fail the request
 }
 
+/**
+ * Write the usage row BEFORE a run so a per-user cap that counts rows cannot
+ * be raced by concurrent requests. Returns the row id (null when the write
+ * failed; usage logging is non-critical). Settle with `settleAIUsage`.
+ */
+export async function reserveAIUsage(data: { userId: string; feature: string; model: string }): Promise<string | null> {
+  try {
+    const row = await prisma.aIUsage.create({
+      data: { userId: data.userId, feature: data.feature, model: data.model, tokens: 0, costUsd: 0 },
+      select: { id: true },
+    })
+    return row.id
+  } catch {
+    return null
+  }
+}
+
+export async function settleAIUsage(id: string | null, data: { model: string; promptTokens: number; completionTokens: number }) {
+  if (!id) return
+  const totalTokens = data.promptTokens + data.completionTokens
+  const costUsd = (totalTokens / 1_000_000) * getModelCostPer1M(data.model)
+  await prisma.aIUsage.update({ where: { id }, data: { tokens: totalTokens, costUsd } }).catch(() => {})
+}
+
 function getModelCostPer1M(model: string): number {
   // Rough estimates per 1M tokens (prompt + completion averaged)
   if (model.includes("haiku")) return 0.50

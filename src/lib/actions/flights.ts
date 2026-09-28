@@ -8,26 +8,9 @@ import { parseFlightTextWithAI } from "@/lib/flight-parser-ai"
 import { z } from "zod"
 import { hasFeature } from "@/lib/features"
 import { formatDateInTimezone } from "@/lib/utils"
+import { createFlightWithItinerary, flightRecordSchema } from "@/lib/flight-records"
 
-const flightSchema = z.object({
-  airline: z.string().optional(),
-  flightNumber: z.string().optional(),
-  departureAirport: z.string().optional(),
-  departureCity: z.string().optional(),
-  departureTime: z.string(),
-  departureTimezone: z.string().default("UTC"),
-  arrivalAirport: z.string().optional(),
-  arrivalCity: z.string().optional(),
-  arrivalTime: z.string(),
-  arrivalTimezone: z.string().default("UTC"),
-  confirmationNumber: z.string().optional(),
-  bookingLink: z.string().optional(),
-  cabin: z.string().optional(),
-  notes: z.string().optional(),
-  durationMins: z.number().optional(),
-  price: z.number().optional(),
-  priceCurrency: z.string().optional(),
-})
+const flightSchema = flightRecordSchema
 
 export async function parseAndPreviewFlight(text: string) {
   const session = await auth()
@@ -56,70 +39,12 @@ export async function parseAndPreviewFlight(text: string) {
   throw new Error("PARSE_FAILED:Could not parse flight details. Please enter them manually.")
 }
 
-export async function createFlight(tripId: string, data: z.infer<typeof flightSchema>) {
+export async function createFlight(tripId: string, data: z.input<typeof flightSchema>) {
   await requireTripAccess(tripId, "EDITOR")
 
-  const parsed = flightSchema.parse(data)
-  const flight = await prisma.flight.create({
-    data: {
-      tripId,
-      ...parsed,
-      departureTime: new Date(parsed.departureTime),
-      arrivalTime: new Date(parsed.arrivalTime),
-    },
-  })
-
-  // Auto-create itinerary item
-  const depTime = new Date(parsed.departureTime)
-  const arrTime = new Date(parsed.arrivalTime)
-  const calcDuration = Math.ceil((arrTime.getTime() - depTime.getTime()) / 60000)
-  const durationMins = parsed.durationMins || calcDuration
-  const route = [parsed.departureAirport, parsed.arrivalAirport].filter(Boolean).join(" \u2192 ")
-  // Use departure timezone for the itinerary date so it shows on the correct day
-  const depTz = parsed.departureTimezone || "UTC"
-  const localDate = formatDateInTimezone(depTime, "yyyy-MM-dd", depTz)
-  const localTime = formatDateInTimezone(depTime, "HH:mm", depTz)
-  const localEndTime = formatDateInTimezone(arrTime, "HH:mm", depTz)
-  await prisma.itineraryItem.createMany({
-    data: [
-      {
-        tripId,
-        flightId: flight.id,
-        date: new Date(localDate + "T00:00:00Z"),
-        startTime: localTime,
-        endTime: localEndTime,
-        type: "FLIGHT",
-        title: `${parsed.airline || ""} ${parsed.flightNumber || "Flight"}${route ? ` \u00B7 ${route}` : ""}`.trim(),
-        durationMins,
-        position: 0,
-        isConfirmed: true,
-      },
-    ],
-  })
-
-  // Auto-create BudgetItem for flight cost
-  if (parsed.price) {
-    await prisma.budgetItem.create({
-      data: {
-        tripId,
-        category: "FLIGHTS",
-        title: `${parsed.airline || ""} ${parsed.flightNumber || "Flight"} ${[parsed.departureAirport, parsed.arrivalAirport].filter(Boolean).join(" → ")}`.trim(),
-        amount: parsed.price,
-        currency: parsed.priceCurrency || "USD",
-        isEstimate: false,
-      },
-    })
-  }
-
-  // Auto-update trip end date if flight arrival extends beyond current end
-  const latestArrival = new Date(parsed.arrivalTime)
-  const trip = await prisma.trip.findUnique({ where: { id: tripId }, select: { endDate: true } })
-  if (trip && latestArrival > trip.endDate) {
-    await prisma.trip.update({
-      where: { id: tripId },
-      data: { endDate: latestArrival },
-    })
-  }
+  // Flight row + itinerary item + budget item + trip end-date extension all
+  // live in one place so the MCP `add_flight` tool and this action cannot drift.
+  const { flight } = await createFlightWithItinerary(tripId, data)
 
   revalidatePath(`/trip/${tripId}`)
   revalidatePath(`/trip/${tripId}/itinerary`)

@@ -8,6 +8,7 @@ import {
   ChevronRight,
   CreditCard,
   FileWarning,
+  Plane,
   PlaneTakeoff,
 } from "lucide-react"
 import { TRIP_TASK_LABELS, type TripTask, type TripTaskKind } from "@/lib/trip-tasks"
@@ -18,6 +19,7 @@ const KIND_ICON: Record<TripTaskKind, typeof CalendarPlus> = {
   MAKE_PAYMENT: CreditCard,
   MAKE_RESERVATION: CalendarPlus,
   ADD_CONFIRMATION: FileWarning,
+  BOOK_FLIGHTS: Plane,
 }
 
 /** One-line hint about what to do, under the group heading. */
@@ -26,6 +28,17 @@ const KIND_HINT: Record<TripTaskKind, string> = {
   MAKE_PAYMENT: "A balance is still owed on these bookings.",
   MAKE_RESERVATION: "You flagged these as still needing to be booked.",
   ADD_CONFIRMATION: "Add the confirmation number or attach the voucher.",
+  BOOK_FLIGHTS: "This trip has dates and a destination but no flights yet.",
+}
+
+/**
+ * Where a task row goes. Item tasks deep-link into the plan; trip-level tasks
+ * (no itinerary item) go to the screen that resolves them.
+ */
+function taskHref(tripId: string, task: TripTask): string {
+  if (task.itineraryItemId) return `/trip/${tripId}/itinerary?item=${task.itineraryItemId}`
+  if (task.kind === "BOOK_FLIGHTS") return `/trip/${tripId}/flights`
+  return `/trip/${tripId}`
 }
 
 /**
@@ -109,9 +122,9 @@ export function TodoView({ tripId, tasks }: TodoViewProps) {
                   {group.tasks.map((task) => {
                     const due = task.dueAt ? formatDueAt(task.dueAt) : null
                     return (
-                      <li key={`${task.kind}-${task.itineraryItemId}`}>
+                      <li key={`${task.kind}-${task.itineraryItemId ?? "trip"}`}>
                         <Link
-                          href={`/trip/${tripId}/itinerary?item=${task.itineraryItemId}`}
+                          href={taskHref(tripId, task)}
                           className="flex items-start gap-3 px-4 py-3 hover:bg-accent transition-colors"
                         >
                           <div className="flex-1 min-w-0">

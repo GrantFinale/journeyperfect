@@ -287,6 +287,32 @@ export default async function TripOverviewPage({ params }: { params: Promise<{ t
         </div>
       )}
 
+      {/* Find flights — only while the route and dates are known and nothing is booked yet */}
+      {trip.flights.length === 0 &&
+        trip.originLat != null &&
+        trip.originLng != null &&
+        trip.destinationLat != null &&
+        trip.destinationLng != null &&
+        trip.startDate &&
+        trip.endDate && (
+          <Link
+            href={`/trip/${tripId}/flights`}
+            className="flex items-center gap-3 bg-white border border-indigo-100 rounded-2xl p-4 mb-6 hover:border-indigo-200 hover:shadow-sm transition-all group"
+          >
+            <div className="w-9 h-9 rounded-xl bg-indigo-50 flex items-center justify-center shrink-0">
+              <Plane className="w-4 h-4 text-indigo-600" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="font-medium text-gray-900 text-sm">Find flights</div>
+              <div className="text-xs text-gray-500 truncate">
+                {trip.originLabel || "Home"} &rarr; {trip.destination} &middot;{" "}
+                {formatDate(trip.startDate, "MMM d")}&ndash;{formatDate(trip.endDate, "MMM d")}
+              </div>
+            </div>
+            <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-indigo-500 transition-colors shrink-0" />
+          </Link>
+        )}
+
       {/* Flight/Hotel/Car summary cards - each tile is fully clickable */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
         <Link

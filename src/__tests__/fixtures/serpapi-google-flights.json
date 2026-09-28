@@ -1,0 +1,100 @@
+{
+  "search_metadata": { "status": "Success" },
+  "best_flights": [
+    {
+      "flights": [
+        {
+          "departure_airport": { "name": "Detroit Metropolitan Wayne County Airport", "id": "DTW", "time": "2026-12-01 07:15" },
+          "arrival_airport": { "name": "Orlando International Airport", "id": "MCO", "time": "2026-12-01 10:05" },
+          "duration": 170,
+          "airplane": "Airbus A321",
+          "airline": "Delta",
+          "airline_logo": "https://www.gstatic.com/flights/airline_logos/70px/DL.png",
+          "travel_class": "Economy",
+          "flight_number": "DL 1502",
+          "legroom": "31 in"
+        }
+      ],
+      "total_duration": 170,
+      "carbon_emissions": { "this_flight": 142000 },
+      "price": 318,
+      "type": "Round trip",
+      "airline_logo": "https://www.gstatic.com/flights/airline_logos/70px/DL.png",
+      "departure_token": "tok_best_1"
+    },
+    {
+      "flights": [
+        {
+          "departure_airport": { "name": "Detroit Metropolitan Wayne County Airport", "id": "DTW", "time": "2026-12-01 13:40" },
+          "arrival_airport": { "name": "Charlotte Douglas International Airport", "id": "CLT", "time": "2026-12-01 15:35" },
+          "duration": 115,
+          "airline": "American",
+          "travel_class": "Economy",
+          "flight_number": "AA 2211"
+        },
+        {
+          "departure_airport": { "name": "Charlotte Douglas International Airport", "id": "CLT", "time": "2026-12-01 16:50" },
+          "arrival_airport": { "name": "Orlando International Airport", "id": "MCO", "time": "2026-12-01 18:30" },
+          "duration": 100,
+          "airline": "American",
+          "travel_class": "Economy",
+          "flight_number": "AA 1876"
+        }
+      ],
+      "layovers": [{ "duration": 75, "name": "Charlotte Douglas International Airport", "id": "CLT" }],
+      "total_duration": 290,
+      "price": 264,
+      "type": "Round trip",
+      "departure_token": "tok_best_2"
+    }
+  ],
+  "other_flights": [
+    {
+      "flights": [
+        {
+          "departure_airport": { "name": "Detroit Metropolitan Wayne County Airport", "id": "DTW", "time": "2026-12-01 18:20" },
+          "arrival_airport": { "name": "Orlando International Airport", "id": "MCO", "time": "2026-12-01 21:10" },
+          "duration": 170,
+          "airline": "Spirit",
+          "travel_class": "Economy",
+          "flight_number": "NK 430"
+        }
+      ],
+      "total_duration": 170,
+      "price": 189,
+      "type": "Round trip",
+      "departure_token": "tok_other_1"
+    },
+    {
+      "flights": [
+        {
+          "departure_airport": { "name": "Detroit", "id": "DTW" },
+          "arrival_airport": { "name": "Orlando", "id": "MCO", "time": "2026-12-01 23:00" },
+          "airline": "Broken",
+          "flight_number": "ZZ 1"
+        }
+      ],
+      "price": 99,
+      "type": "Round trip"
+    },
+    {
+      "flights": [
+        {
+          "departure_airport": { "name": "Detroit", "id": "DTW", "time": "2026-12-01 06:00" },
+          "arrival_airport": { "name": "Orlando", "id": "MCO", "time": "2026-12-01 08:50" },
+          "duration": 170,
+          "airline": "Frontier",
+          "flight_number": "F9 1001"
+        }
+      ],
+      "total_duration": 170,
+      "type": "Round trip"
+    }
+  ],
+  "price_insights": {
+    "lowest_price": 189,
+    "price_level": "low",
+    "typical_price_range": [230, 420],
+    "price_history": [[1764201600, 310], [1764288000, 289]]
+  }
+}

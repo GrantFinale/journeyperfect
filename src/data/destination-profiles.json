@@ -1,0 +1,1638 @@
+[
+  {
+    "iata": "MCO",
+    "name": "Orlando",
+    "lat": 28.4312,
+    "lng": -81.3081,
+    "tier": "MID",
+    "idealNightsMin": 4,
+    "idealNightsMax": 7,
+    "walkable": false,
+    "carNeeded": false,
+    "airportToCenterKm": 25,
+    "parkingTypical": "EXPENSIVE",
+    "activitiesDispersed": true,
+    "familyFit": {
+      "tags": ["theme-parks", "water", "interactive", "zoo-aquarium"],
+      "byAgeBand": { "0-5": 3, "6-12": 3, "13-17": 3, "adult": 2 },
+      "indoorRatio": 0.3
+    },
+    "anchors": [
+      { "title": "Walt Disney World", "kind": "THEME_PARK", "months": [1,2,3,4,5,6,7,8,9,10,11,12], "weatherDependent": false },
+      { "title": "Universal Orlando Resort & Epic Universe", "kind": "THEME_PARK", "months": [1,2,3,4,5,6,7,8,9,10,11,12], "weatherDependent": false },
+      { "title": "EPCOT International Flower & Garden Festival", "kind": "FESTIVAL", "months": [3,4,5], "weatherDependent": false },
+      { "title": "Mickey's Very Merry Christmas Party", "kind": "EVENT", "months": [11,12], "weatherDependent": false }
+    ],
+    "climate": { "monthly": [
+      { "m": 1, "highF": 71, "lowF": 50, "precipDays": 7 }, { "m": 2, "highF": 74, "lowF": 52, "precipDays": 7 }, { "m": 3, "highF": 79, "lowF": 57, "precipDays": 7 },
+      { "m": 4, "highF": 84, "lowF": 61, "precipDays": 6 }, { "m": 5, "highF": 89, "lowF": 67, "precipDays": 8 }, { "m": 6, "highF": 91, "lowF": 72, "precipDays": 14 },
+      { "m": 7, "highF": 92, "lowF": 74, "precipDays": 15 }, { "m": 8, "highF": 92, "lowF": 74, "precipDays": 15 }, { "m": 9, "highF": 90, "lowF": 73, "precipDays": 12 },
+      { "m": 10, "highF": 85, "lowF": 66, "precipDays": 7 }, { "m": 11, "highF": 78, "lowF": 59, "precipDays": 6 }, { "m": 12, "highF": 73, "lowF": 53, "precipDays": 7 }
+    ] },
+    "generatedBy": "HAND_AUTHORED_2026_09"
+  },
+  {
+    "iata": "LAS",
+    "name": "Las Vegas",
+    "lat": 36.084,
+    "lng": -115.1537,
+    "tier": "UPSCALE",
+    "idealNightsMin": 2,
+    "idealNightsMax": 4,
+    "walkable": true,
+    "carNeeded": false,
+    "airportToCenterKm": 5,
+    "parkingTypical": "EXPENSIVE",
+    "activitiesDispersed": false,
+    "familyFit": {
+      "tags": ["nightlife-heavy", "interactive", "sports", "hiking"],
+      "byAgeBand": { "0-5": 1, "6-12": 1, "13-17": 2, "adult": 3 },
+      "indoorRatio": 0.8
+    },
+    "anchors": [
+      { "title": "Strip resorts, shows & Sphere", "kind": "ATTRACTION", "months": [1,2,3,4,5,6,7,8,9,10,11,12], "weatherDependent": false },
+      { "title": "Red Rock Canyon & Valley of Fire", "kind": "NATURE", "months": [1,2,3,4,10,11,12], "weatherDependent": true },
+      { "title": "Las Vegas Grand Prix (F1)", "kind": "SPORTS", "months": [11], "weatherDependent": false },
+      { "title": "NFR & major fights/residencies", "kind": "EVENT", "months": [12], "weatherDependent": false }
+    ],
+    "climate": { "monthly": [
+      { "m": 1, "highF": 58, "lowF": 39, "precipDays": 3 }, { "m": 2, "highF": 63, "lowF": 43, "precipDays": 3 }, { "m": 3, "highF": 71, "lowF": 49, "precipDays": 3 },
+      { "m": 4, "highF": 79, "lowF": 56, "precipDays": 2 }, { "m": 5, "highF": 89, "lowF": 66, "precipDays": 1 }, { "m": 6, "highF": 100, "lowF": 75, "precipDays": 1 },
+      { "m": 7, "highF": 105, "lowF": 81, "precipDays": 3 }, { "m": 8, "highF": 103, "lowF": 79, "precipDays": 3 }, { "m": 9, "highF": 95, "lowF": 71, "precipDays": 2 },
+      { "m": 10, "highF": 81, "lowF": 58, "precipDays": 2 }, { "m": 11, "highF": 67, "lowF": 47, "precipDays": 2 }, { "m": 12, "highF": 57, "lowF": 39, "precipDays": 3 }
+    ] },
+    "generatedBy": "HAND_AUTHORED_2026_09"
+  },
+  {
+    "iata": "MIA",
+    "name": "Miami",
+    "lat": 25.7959,
+    "lng": -80.287,
+    "tier": "UPSCALE",
+    "idealNightsMin": 3,
+    "idealNightsMax": 5,
+    "walkable": true,
+    "carNeeded": false,
+    "airportToCenterKm": 15,
+    "parkingTypical": "EXPENSIVE",
+    "activitiesDispersed": true,
+    "familyFit": {
+      "tags": ["beach", "water", "nightlife-heavy", "zoo-aquarium", "museums"],
+      "byAgeBand": { "0-5": 2, "6-12": 2, "13-17": 2, "adult": 3 },
+      "indoorRatio": 0.3
+    },
+    "anchors": [
+      { "title": "South Beach & Art Deco District", "kind": "ATTRACTION", "months": [1,2,3,4,5,10,11,12], "weatherDependent": true },
+      { "title": "Everglades National Park day trip", "kind": "NATURE", "months": [11,12,1,2,3,4], "weatherDependent": true },
+      { "title": "Art Basel Miami Beach", "kind": "FESTIVAL", "months": [12], "weatherDependent": false },
+      { "title": "Miami Open (tennis)", "kind": "SPORTS", "months": [3], "weatherDependent": true }
+    ],
+    "climate": { "monthly": [
+      { "m": 1, "highF": 76, "lowF": 61, "precipDays": 7 }, { "m": 2, "highF": 78, "lowF": 63, "precipDays": 6 }, { "m": 3, "highF": 80, "lowF": 66, "precipDays": 6 },
+      { "m": 4, "highF": 83, "lowF": 69, "precipDays": 6 }, { "m": 5, "highF": 87, "lowF": 73, "precipDays": 10 }, { "m": 6, "highF": 89, "lowF": 76, "precipDays": 15 },
+      { "m": 7, "highF": 91, "lowF": 77, "precipDays": 16 }, { "m": 8, "highF": 91, "lowF": 78, "precipDays": 17 }, { "m": 9, "highF": 89, "lowF": 77, "precipDays": 17 },
+      { "m": 10, "highF": 86, "lowF": 74, "precipDays": 12 }, { "m": 11, "highF": 81, "lowF": 68, "precipDays": 8 }, { "m": 12, "highF": 78, "lowF": 64, "precipDays": 7 }
+    ] },
+    "generatedBy": "HAND_AUTHORED_2026_09"
+  },
+  {
+    "iata": "FLL",
+    "name": "Fort Lauderdale",
+    "lat": 26.0742,
+    "lng": -80.1506,
+    "tier": "MID",
+    "idealNightsMin": 3,
+    "idealNightsMax": 6,
+    "walkable": true,
+    "carNeeded": false,
+    "airportToCenterKm": 8,
+    "parkingTypical": "CHEAP",
+    "activitiesDispersed": false,
+    "familyFit": {
+      "tags": ["beach", "water", "zoo-aquarium", "interactive"],
+      "byAgeBand": { "0-5": 3, "6-12": 3, "13-17": 2, "adult": 2 },
+      "indoorRatio": 0.25
+    },
+    "anchors": [
+      { "title": "Fort Lauderdale Beach & Las Olas", "kind": "ATTRACTION", "months": [1,2,3,4,5,10,11,12], "weatherDependent": true },
+      { "title": "Cruise port pre/post stays (Port Everglades)", "kind": "ATTRACTION", "months": [1,2,3,4,11,12], "weatherDependent": false },
+      { "title": "Fort Lauderdale International Boat Show", "kind": "EVENT", "months": [10,11], "weatherDependent": true }
+    ],
+    "climate": { "monthly": [
+      { "m": 1, "highF": 76, "lowF": 60, "precipDays": 7 }, { "m": 2, "highF": 77, "lowF": 62, "precipDays": 7 }, { "m": 3, "highF": 80, "lowF": 65, "precipDays": 7 },
+      { "m": 4, "highF": 83, "lowF": 68, "precipDays": 7 }, { "m": 5, "highF": 86, "lowF": 73, "precipDays": 10 }, { "m": 6, "highF": 89, "lowF": 76, "precipDays": 15 },
+      { "m": 7, "highF": 91, "lowF": 77, "precipDays": 15 }, { "m": 8, "highF": 91, "lowF": 77, "precipDays": 16 }, { "m": 9, "highF": 89, "lowF": 76, "precipDays": 16 },
+      { "m": 10, "highF": 86, "lowF": 73, "precipDays": 12 }, { "m": 11, "highF": 81, "lowF": 67, "precipDays": 8 }, { "m": 12, "highF": 78, "lowF": 63, "precipDays": 7 }
+    ] },
+    "generatedBy": "HAND_AUTHORED_2026_09"
+  },
+  {
+    "iata": "TPA",
+    "name": "Tampa / St. Pete",
+    "lat": 27.9755,
+    "lng": -82.5332,
+    "tier": "MID",
+    "idealNightsMin": 3,
+    "idealNightsMax": 6,
+    "walkable": false,
+    "carNeeded": true,
+    "airportToCenterKm": 10,
+    "parkingTypical": "CHEAP",
+    "activitiesDispersed": true,
+    "familyFit": {
+      "tags": ["beach", "theme-parks", "zoo-aquarium", "water", "sports"],
+      "byAgeBand": { "0-5": 3, "6-12": 3, "13-17": 2, "adult": 2 },
+      "indoorRatio": 0.3
+    },
+    "anchors": [
+      { "title": "Busch Gardens Tampa Bay", "kind": "THEME_PARK", "months": [1,2,3,4,5,6,7,8,9,10,11,12], "weatherDependent": true },
+      { "title": "Clearwater & St. Pete beaches", "kind": "NATURE", "months": [3,4,5,6,9,10,11], "weatherDependent": true },
+      { "title": "Gasparilla Pirate Festival", "kind": "FESTIVAL", "months": [1], "weatherDependent": true },
+      { "title": "MLB Spring Training (Yankees, Phillies, Blue Jays, Pirates)", "kind": "SPORTS", "months": [2,3], "weatherDependent": true }
+    ],
+    "climate": { "monthly": [
+      { "m": 1, "highF": 71, "lowF": 52, "precipDays": 6 }, { "m": 2, "highF": 73, "lowF": 55, "precipDays": 6 }, { "m": 3, "highF": 77, "lowF": 59, "precipDays": 6 },
+      { "m": 4, "highF": 82, "lowF": 63, "precipDays": 4 }, { "m": 5, "highF": 88, "lowF": 70, "precipDays": 5 }, { "m": 6, "highF": 90, "lowF": 75, "precipDays": 11 },
+      { "m": 7, "highF": 90, "lowF": 76, "precipDays": 15 }, { "m": 8, "highF": 91, "lowF": 77, "precipDays": 15 }, { "m": 9, "highF": 89, "lowF": 75, "precipDays": 11 },
+      { "m": 10, "highF": 85, "lowF": 68, "precipDays": 6 }, { "m": 11, "highF": 78, "lowF": 60, "precipDays": 5 }, { "m": 12, "highF": 73, "lowF": 55, "precipDays": 6 }
+    ] },
+    "generatedBy": "HAND_AUTHORED_2026_09"
+  },
+  {
+    "iata": "RSW",
+    "name": "Fort Myers / Sanibel / Naples",
+    "lat": 26.5362,
+    "lng": -81.7552,
+    "tier": "UPSCALE",
+    "idealNightsMin": 4,
+    "idealNightsMax": 7,
+    "walkable": false,
+    "carNeeded": true,
+    "airportToCenterKm": 30,
+    "parkingTypical": "FREE",
+    "activitiesDispersed": true,
+    "familyFit": {
+      "tags": ["beach", "water", "hiking", "zoo-aquarium"],
+      "byAgeBand": { "0-5": 3, "6-12": 3, "13-17": 1, "adult": 3 },
+      "indoorRatio": 0.15
+    },
+    "anchors": [
+      { "title": "Sanibel & Captiva shelling beaches", "kind": "NATURE", "months": [1,2,3,4,5,11,12], "weatherDependent": true },
+      { "title": "J.N. Ding Darling National Wildlife Refuge", "kind": "NATURE", "months": [11,12,1,2,3,4], "weatherDependent": true },
+      { "title": "MLB Spring Training (Red Sox, Twins)", "kind": "SPORTS", "months": [2,3], "weatherDependent": true }
+    ],
+    "climate": { "monthly": [
+      { "m": 1, "highF": 76, "lowF": 54, "precipDays": 6 }, { "m": 2, "highF": 78, "lowF": 56, "precipDays": 5 }, { "m": 3, "highF": 81, "lowF": 59, "precipDays": 5 },
+      { "m": 4, "highF": 85, "lowF": 63, "precipDays": 4 }, { "m": 5, "highF": 89, "lowF": 68, "precipDays": 7 }, { "m": 6, "highF": 91, "lowF": 73, "precipDays": 14 },
+      { "m": 7, "highF": 92, "lowF": 75, "precipDays": 16 }, { "m": 8, "highF": 92, "lowF": 75, "precipDays": 17 }, { "m": 9, "highF": 90, "lowF": 74, "precipDays": 14 },
+      { "m": 10, "highF": 87, "lowF": 68, "precipDays": 7 }, { "m": 11, "highF": 82, "lowF": 61, "precipDays": 5 }, { "m": 12, "highF": 78, "lowF": 56, "precipDays": 5 }
+    ] },
+    "generatedBy": "HAND_AUTHORED_2026_09"
+  },
+  {
+    "iata": "SAN",
+    "name": "San Diego",
+    "lat": 32.7338,
+    "lng": -117.1933,
+    "tier": "UPSCALE",
+    "idealNightsMin": 3,
+    "idealNightsMax": 6,
+    "walkable": true,
+    "carNeeded": true,
+    "airportToCenterKm": 5,
+    "parkingTypical": "EXPENSIVE",
+    "activitiesDispersed": true,
+    "familyFit": {
+      "tags": ["beach", "zoo-aquarium", "theme-parks", "museums", "water", "hiking"],
+      "byAgeBand": { "0-5": 3, "6-12": 3, "13-17": 2, "adult": 3 },
+      "indoorRatio": 0.25
+    },
+    "anchors": [
+      { "title": "San Diego Zoo & Safari Park", "kind": "ATTRACTION", "months": [1,2,3,4,5,6,7,8,9,10,11,12], "weatherDependent": true },
+      { "title": "LEGOLAND California (Carlsbad)", "kind": "THEME_PARK", "months": [1,2,3,4,5,6,7,8,9,10,11,12], "weatherDependent": true },
+      { "title": "Balboa Park museums", "kind": "ATTRACTION", "months": [1,2,3,4,5,6,7,8,9,10,11,12], "weatherDependent": false },
+      { "title": "Comic-Con International", "kind": "FESTIVAL", "months": [7], "weatherDependent": false }
+    ],
+    "climate": { "monthly": [
+      { "m": 1, "highF": 66, "lowF": 50, "precipDays": 6 }, { "m": 2, "highF": 66, "lowF": 51, "precipDays": 6 }, { "m": 3, "highF": 67, "lowF": 54, "precipDays": 5 },
+      { "m": 4, "highF": 69, "lowF": 56, "precipDays": 3 }, { "m": 5, "highF": 70, "lowF": 60, "precipDays": 2 }, { "m": 6, "highF": 73, "lowF": 63, "precipDays": 1 },
+      { "m": 7, "highF": 76, "lowF": 66, "precipDays": 0 }, { "m": 8, "highF": 78, "lowF": 68, "precipDays": 0 }, { "m": 9, "highF": 78, "lowF": 66, "precipDays": 1 },
+      { "m": 10, "highF": 74, "lowF": 61, "precipDays": 2 }, { "m": 11, "highF": 70, "lowF": 54, "precipDays": 4 }, { "m": 12, "highF": 66, "lowF": 49, "precipDays": 5 }
+    ] },
+    "generatedBy": "HAND_AUTHORED_2026_09"
+  },
+  {
+    "iata": "LAX",
+    "name": "Los Angeles",
+    "lat": 33.9416,
+    "lng": -118.4085,
+    "tier": "UPSCALE",
+    "idealNightsMin": 3,
+    "idealNightsMax": 6,
+    "walkable": false,
+    "carNeeded": true,
+    "airportToCenterKm": 25,
+    "parkingTypical": "EXPENSIVE",
+    "activitiesDispersed": true,
+    "familyFit": {
+      "tags": ["theme-parks", "beach", "museums", "interactive", "hiking", "nightlife-heavy"],
+      "byAgeBand": { "0-5": 2, "6-12": 3, "13-17": 3, "adult": 3 },
+      "indoorRatio": 0.35
+    },
+    "anchors": [
+      { "title": "Disneyland Resort (Anaheim)", "kind": "THEME_PARK", "months": [1,2,3,4,5,6,7,8,9,10,11,12], "weatherDependent": false },
+      { "title": "Universal Studios Hollywood", "kind": "THEME_PARK", "months": [1,2,3,4,5,6,7,8,9,10,11,12], "weatherDependent": false },
+      { "title": "Santa Monica Pier & beaches", "kind": "ATTRACTION", "months": [4,5,6,7,8,9,10], "weatherDependent": true },
+      { "title": "Griffith Observatory & Hollywood", "kind": "ATTRACTION", "months": [1,2,3,4,5,6,7,8,9,10,11,12], "weatherDependent": false }
+    ],
+    "climate": { "monthly": [
+      { "m": 1, "highF": 68, "lowF": 49, "precipDays": 6 }, { "m": 2, "highF": 68, "lowF": 50, "precipDays": 6 }, { "m": 3, "highF": 70, "lowF": 52, "precipDays": 5 },
+      { "m": 4, "highF": 72, "lowF": 55, "precipDays": 3 }, { "m": 5, "highF": 74, "lowF": 59, "precipDays": 1 }, { "m": 6, "highF": 78, "lowF": 62, "precipDays": 1 },
+      { "m": 7, "highF": 83, "lowF": 65, "precipDays": 0 }, { "m": 8, "highF": 84, "lowF": 66, "precipDays": 0 }, { "m": 9, "highF": 83, "lowF": 65, "precipDays": 1 },
+      { "m": 10, "highF": 79, "lowF": 60, "precipDays": 2 }, { "m": 11, "highF": 73, "lowF": 53, "precipDays": 3 }, { "m": 12, "highF": 68, "lowF": 48, "precipDays": 5 }
+    ] },
+    "generatedBy": "HAND_AUTHORED_2026_09"
+  },
+  {
+    "iata": "SFO",
+    "name": "San Francisco",
+    "lat": 37.6213,
+    "lng": -122.379,
+    "tier": "UPSCALE",
+    "idealNightsMin": 3,
+    "idealNightsMax": 5,
+    "walkable": true,
+    "carNeeded": false,
+    "airportToCenterKm": 21,
+    "parkingTypical": "EXPENSIVE",
+    "activitiesDispersed": false,
+    "familyFit": {
+      "tags": ["museums", "interactive", "zoo-aquarium", "hiking", "water"],
+      "byAgeBand": { "0-5": 2, "6-12": 3, "13-17": 3, "adult": 3 },
+      "indoorRatio": 0.5
+    },
+    "anchors": [
+      { "title": "Golden Gate Bridge, Alcatraz & Fisherman's Wharf", "kind": "ATTRACTION", "months": [1,2,3,4,5,6,7,8,9,10,11,12], "weatherDependent": true },
+      { "title": "Exploratorium & California Academy of Sciences", "kind": "ATTRACTION", "months": [1,2,3,4,5,6,7,8,9,10,11,12], "weatherDependent": false },
+      { "title": "Muir Woods & Marin Headlands", "kind": "NATURE", "months": [1,2,3,4,5,6,7,8,9,10,11,12], "weatherDependent": true },
+      { "title": "Fleet Week", "kind": "EVENT", "months": [10], "weatherDependent": true }
+    ],
+    "climate": { "monthly": [
+      { "m": 1, "highF": 58, "lowF": 47, "precipDays": 11 }, { "m": 2, "highF": 61, "lowF": 49, "precipDays": 10 }, { "m": 3, "highF": 63, "lowF": 50, "precipDays": 10 },
+      { "m": 4, "highF": 65, "lowF": 51, "precipDays": 6 }, { "m": 5, "highF": 67, "lowF": 53, "precipDays": 3 }, { "m": 6, "highF": 70, "lowF": 55, "precipDays": 1 },
+      { "m": 7, "highF": 71, "lowF": 56, "precipDays": 0 }, { "m": 8, "highF": 72, "lowF": 58, "precipDays": 0 }, { "m": 9, "highF": 74, "lowF": 58, "precipDays": 1 },
+      { "m": 10, "highF": 71, "lowF": 56, "precipDays": 3 }, { "m": 11, "highF": 64, "lowF": 51, "precipDays": 8 }, { "m": 12, "highF": 58, "lowF": 47, "precipDays": 11 }
+    ] },
+    "generatedBy": "HAND_AUTHORED_2026_09"
+  },
+  {
+    "iata": "SEA",
+    "name": "Seattle",
+    "lat": 47.4502,
+    "lng": -122.3088,
+    "tier": "UPSCALE",
+    "idealNightsMin": 3,
+    "idealNightsMax": 5,
+    "walkable": true,
+    "carNeeded": false,
+    "airportToCenterKm": 22,
+    "parkingTypical": "EXPENSIVE",
+    "activitiesDispersed": false,
+    "familyFit": {
+      "tags": ["museums", "interactive", "zoo-aquarium", "hiking", "water"],
+      "byAgeBand": { "0-5": 2, "6-12": 3, "13-17": 2, "adult": 3 },
+      "indoorRatio": 0.5
+    },
+    "anchors": [
+      { "title": "Pike Place Market, Space Needle & MoPOP", "kind": "ATTRACTION", "months": [1,2,3,4,5,6,7,8,9,10,11,12], "weatherDependent": false },
+      { "title": "Mount Rainier & Olympic day trips", "kind": "NATURE", "months": [6,7,8,9], "weatherDependent": true },
+      { "title": "Alaska cruise embarkation", "kind": "ATTRACTION", "months": [5,6,7,8,9], "weatherDependent": false },
+      { "title": "Seafair", "kind": "FESTIVAL", "months": [7,8], "weatherDependent": true }
+    ],
+    "climate": { "monthly": [
+      { "m": 1, "highF": 48, "lowF": 37, "precipDays": 19 }, { "m": 2, "highF": 50, "lowF": 38, "precipDays": 15 }, { "m": 3, "highF": 54, "lowF": 41, "precipDays": 17 },
+      { "m": 4, "highF": 59, "lowF": 44, "precipDays": 14 }, { "m": 5, "highF": 66, "lowF": 50, "precipDays": 10 }, { "m": 6, "highF": 71, "lowF": 54, "precipDays": 8 },
+      { "m": 7, "highF": 77, "lowF": 58, "precipDays": 4 }, { "m": 8, "highF": 77, "lowF": 59, "precipDays": 4 }, { "m": 9, "highF": 71, "lowF": 54, "precipDays": 7 },
+      { "m": 10, "highF": 60, "lowF": 47, "precipDays": 14 }, { "m": 11, "highF": 52, "lowF": 41, "precipDays": 19 }, { "m": 12, "highF": 46, "lowF": 36, "precipDays": 20 }
+    ] },
+    "generatedBy": "HAND_AUTHORED_2026_09"
+  },
+  {
+    "iata": "PDX",
+    "name": "Portland",
+    "lat": 45.5898,
+    "lng": -122.5951,
+    "tier": "MID",
+    "idealNightsMin": 3,
+    "idealNightsMax": 5,
+    "walkable": true,
+    "carNeeded": true,
+    "airportToCenterKm": 15,
+    "parkingTypical": "CHEAP",
+    "activitiesDispersed": true,
+    "familyFit": {
+      "tags": ["hiking", "museums", "zoo-aquarium", "water", "interactive"],
+      "byAgeBand": { "0-5": 2, "6-12": 2, "13-17": 2, "adult": 3 },
+      "indoorRatio": 0.4
+    },
+    "anchors": [
+      { "title": "Columbia River Gorge & Multnomah Falls", "kind": "NATURE", "months": [4,5,6,7,8,9,10], "weatherDependent": true },
+      { "title": "Oregon Coast (Cannon Beach) day trip", "kind": "NATURE", "months": [5,6,7,8,9], "weatherDependent": true },
+      { "title": "Mount Hood skiing", "kind": "NATURE", "months": [12,1,2,3], "weatherDependent": true },
+      { "title": "Portland Rose Festival", "kind": "FESTIVAL", "months": [5,6], "weatherDependent": true }
+    ],
+    "climate": { "monthly": [
+      { "m": 1, "highF": 47, "lowF": 36, "precipDays": 18 }, { "m": 2, "highF": 51, "lowF": 37, "precipDays": 15 }, { "m": 3, "highF": 57, "lowF": 41, "precipDays": 17 },
+      { "m": 4, "highF": 62, "lowF": 44, "precipDays": 14 }, { "m": 5, "highF": 69, "lowF": 50, "precipDays": 11 }, { "m": 6, "highF": 74, "lowF": 55, "precipDays": 7 },
+      { "m": 7, "highF": 82, "lowF": 59, "precipDays": 3 }, { "m": 8, "highF": 83, "lowF": 60, "precipDays": 3 }, { "m": 9, "highF": 77, "lowF": 55, "precipDays": 6 },
+      { "m": 10, "highF": 64, "lowF": 47, "precipDays": 13 }, { "m": 11, "highF": 53, "lowF": 41, "precipDays": 19 }, { "m": 12, "highF": 46, "lowF": 36, "precipDays": 19 }
+    ] },
+    "generatedBy": "HAND_AUTHORED_2026_09"
+  },
+  {
+    "iata": "DEN",
+    "name": "Denver / Front Range",
+    "lat": 39.8561,
+    "lng": -104.6737,
+    "tier": "MID",
+    "idealNightsMin": 3,
+    "idealNightsMax": 6,
+    "walkable": true,
+    "carNeeded": true,
+    "airportToCenterKm": 40,
+    "parkingTypical": "CHEAP",
+    "activitiesDispersed": true,
+    "familyFit": {
+      "tags": ["hiking", "snow", "museums", "zoo-aquarium", "sports", "interactive"],
+      "byAgeBand": { "0-5": 2, "6-12": 3, "13-17": 3, "adult": 3 },
+      "indoorRatio": 0.35
+    },
+    "anchors": [
+      { "title": "Rocky Mountain National Park", "kind": "NATURE", "months": [6,7,8,9], "weatherDependent": true },
+      { "title": "Front Range skiing (Winter Park, Loveland, Breckenridge)", "kind": "NATURE", "months": [12,1,2,3,4], "weatherDependent": true },
+      { "title": "Red Rocks Amphitheatre concerts", "kind": "EVENT", "months": [5,6,7,8,9], "weatherDependent": true },
+      { "title": "Denver Museum of Nature & Science / Zoo", "kind": "ATTRACTION", "months": [1,2,3,4,5,6,7,8,9,10,11,12], "weatherDependent": false }
+    ],
+    "climate": { "monthly": [
+      { "m": 1, "highF": 45, "lowF": 18, "precipDays": 5 }, { "m": 2, "highF": 47, "lowF": 20, "precipDays": 6 }, { "m": 3, "highF": 55, "lowF": 27, "precipDays": 7 },
+      { "m": 4, "highF": 61, "lowF": 34, "precipDays": 9 }, { "m": 5, "highF": 71, "lowF": 44, "precipDays": 10 }, { "m": 6, "highF": 82, "lowF": 53, "precipDays": 8 },
+      { "m": 7, "highF": 89, "lowF": 60, "precipDays": 9 }, { "m": 8, "highF": 87, "lowF": 58, "precipDays": 9 }, { "m": 9, "highF": 79, "lowF": 49, "precipDays": 6 },
+      { "m": 10, "highF": 65, "lowF": 36, "precipDays": 6 }, { "m": 11, "highF": 53, "lowF": 26, "precipDays": 5 }, { "m": 12, "highF": 44, "lowF": 18, "precipDays": 5 }
+    ] },
+    "generatedBy": "HAND_AUTHORED_2026_09"
+  },
+  {
+    "iata": "PHX",
+    "name": "Phoenix / Scottsdale",
+    "lat": 33.4352,
+    "lng": -112.0101,
+    "tier": "UPSCALE",
+    "idealNightsMin": 3,
+    "idealNightsMax": 6,
+    "walkable": false,
+    "carNeeded": true,
+    "airportToCenterKm": 20,
+    "parkingTypical": "FREE",
+    "activitiesDispersed": true,
+    "familyFit": {
+      "tags": ["water", "hiking", "sports", "zoo-aquarium", "museums"],
+      "byAgeBand": { "0-5": 2, "6-12": 2, "13-17": 2, "adult": 3 },
+      "indoorRatio": 0.3
+    },
+    "anchors": [
+      { "title": "Resort pools & Sonoran Desert hiking", "kind": "NATURE", "months": [10,11,12,1,2,3,4], "weatherDependent": true },
+      { "title": "Cactus League Spring Training", "kind": "SPORTS", "months": [2,3], "weatherDependent": true },
+      { "title": "WM Phoenix Open (golf)", "kind": "SPORTS", "months": [2], "weatherDependent": true },
+      { "title": "Sedona & Grand Canyon day trips", "kind": "NATURE", "months": [3,4,5,9,10,11], "weatherDependent": true }
+    ],
+    "climate": { "monthly": [
+      { "m": 1, "highF": 67, "lowF": 46, "precipDays": 3 }, { "m": 2, "highF": 71, "lowF": 49, "precipDays": 3 }, { "m": 3, "highF": 77, "lowF": 53, "precipDays": 3 },
+      { "m": 4, "highF": 85, "lowF": 60, "precipDays": 1 }, { "m": 5, "highF": 95, "lowF": 69, "precipDays": 1 }, { "m": 6, "highF": 104, "lowF": 78, "precipDays": 1 },
+      { "m": 7, "highF": 106, "lowF": 84, "precipDays": 4 }, { "m": 8, "highF": 105, "lowF": 83, "precipDays": 5 }, { "m": 9, "highF": 100, "lowF": 77, "precipDays": 3 },
+      { "m": 10, "highF": 89, "lowF": 65, "precipDays": 2 }, { "m": 11, "highF": 76, "lowF": 53, "precipDays": 2 }, { "m": 12, "highF": 66, "lowF": 45, "precipDays": 3 }
+    ] },
+    "generatedBy": "HAND_AUTHORED_2026_09"
+  },
+  {
+    "iata": "AUS",
+    "name": "Austin",
+    "lat": 30.1975,
+    "lng": -97.6664,
+    "tier": "MID",
+    "idealNightsMin": 2,
+    "idealNightsMax": 4,
+    "walkable": true,
+    "carNeeded": true,
+    "airportToCenterKm": 12,
+    "parkingTypical": "CHEAP",
+    "activitiesDispersed": true,
+    "familyFit": {
+      "tags": ["nightlife-heavy", "water", "hiking", "museums", "sports"],
+      "byAgeBand": { "0-5": 1, "6-12": 2, "13-17": 2, "adult": 3 },
+      "indoorRatio": 0.35
+    },
+    "anchors": [
+      { "title": "Live music, 6th Street & Rainey Street", "kind": "ATTRACTION", "months": [1,2,3,4,5,6,7,8,9,10,11,12], "weatherDependent": false },
+      { "title": "Barton Springs & Lady Bird Lake", "kind": "NATURE", "months": [4,5,6,7,8,9,10], "weatherDependent": true },
+      { "title": "SXSW", "kind": "FESTIVAL", "months": [3], "weatherDependent": false },
+      { "title": "Austin City Limits Music Festival", "kind": "FESTIVAL", "months": [10], "weatherDependent": true },
+      { "title": "US Grand Prix (F1) at COTA", "kind": "SPORTS", "months": [10], "weatherDependent": true }
+    ],
+    "climate": { "monthly": [
+      { "m": 1, "highF": 62, "lowF": 42, "precipDays": 7 }, { "m": 2, "highF": 66, "lowF": 46, "precipDays": 7 }, { "m": 3, "highF": 73, "lowF": 52, "precipDays": 8 },
+      { "m": 4, "highF": 80, "lowF": 59, "precipDays": 7 }, { "m": 5, "highF": 87, "lowF": 67, "precipDays": 8 }, { "m": 6, "highF": 93, "lowF": 73, "precipDays": 7 },
+      { "m": 7, "highF": 97, "lowF": 75, "precipDays": 4 }, { "m": 8, "highF": 98, "lowF": 75, "precipDays": 5 }, { "m": 9, "highF": 91, "lowF": 70, "precipDays": 7 },
+      { "m": 10, "highF": 82, "lowF": 60, "precipDays": 7 }, { "m": 11, "highF": 71, "lowF": 50, "precipDays": 7 }, { "m": 12, "highF": 63, "lowF": 43, "precipDays": 7 }
+    ] },
+    "generatedBy": "HAND_AUTHORED_2026_09"
+  },
+  {
+    "iata": "SAT",
+    "name": "San Antonio",
+    "lat": 29.5337,
+    "lng": -98.4698,
+    "tier": "MID",
+    "idealNightsMin": 2,
+    "idealNightsMax": 4,
+    "walkable": true,
+    "carNeeded": true,
+    "airportToCenterKm": 13,
+    "parkingTypical": "CHEAP",
+    "activitiesDispersed": true,
+    "familyFit": {
+      "tags": ["theme-parks", "water", "museums", "zoo-aquarium", "interactive"],
+      "byAgeBand": { "0-5": 3, "6-12": 3, "13-17": 2, "adult": 2 },
+      "indoorRatio": 0.35
+    },
+    "anchors": [
+      { "title": "River Walk & The Alamo", "kind": "ATTRACTION", "months": [1,2,3,4,5,6,7,8,9,10,11,12], "weatherDependent": false },
+      { "title": "SeaWorld San Antonio & Six Flags Fiesta Texas", "kind": "THEME_PARK", "months": [3,4,5,6,7,8,9,10], "weatherDependent": true },
+      { "title": "Fiesta San Antonio", "kind": "FESTIVAL", "months": [4], "weatherDependent": true },
+      { "title": "Texas Hill Country (Fredericksburg) day trips", "kind": "NATURE", "months": [3,4,5,10,11], "weatherDependent": true }
+    ],
+    "climate": { "monthly": [
+      { "m": 1, "highF": 64, "lowF": 42, "precipDays": 7 }, { "m": 2, "highF": 68, "lowF": 46, "precipDays": 7 }, { "m": 3, "highF": 75, "lowF": 52, "precipDays": 7 },
+      { "m": 4, "highF": 81, "lowF": 59, "precipDays": 6 }, { "m": 5, "highF": 88, "lowF": 67, "precipDays": 8 }, { "m": 6, "highF": 94, "lowF": 73, "precipDays": 6 },
+      { "m": 7, "highF": 97, "lowF": 75, "precipDays": 4 }, { "m": 8, "highF": 98, "lowF": 75, "precipDays": 5 }, { "m": 9, "highF": 91, "lowF": 70, "precipDays": 6 },
+      { "m": 10, "highF": 83, "lowF": 60, "precipDays": 6 }, { "m": 11, "highF": 72, "lowF": 50, "precipDays": 6 }, { "m": 12, "highF": 64, "lowF": 43, "precipDays": 7 }
+    ] },
+    "generatedBy": "HAND_AUTHORED_2026_09"
+  },
+  {
+    "iata": "MSY",
+    "name": "New Orleans",
+    "lat": 29.9934,
+    "lng": -90.2581,
+    "tier": "UPSCALE",
+    "idealNightsMin": 2,
+    "idealNightsMax": 4,
+    "walkable": true,
+    "carNeeded": false,
+    "airportToCenterKm": 22,
+    "parkingTypical": "EXPENSIVE",
+    "activitiesDispersed": false,
+    "familyFit": {
+      "tags": ["nightlife-heavy", "museums", "zoo-aquarium", "interactive"],
+      "byAgeBand": { "0-5": 1, "6-12": 2, "13-17": 2, "adult": 3 },
+      "indoorRatio": 0.45
+    },
+    "anchors": [
+      { "title": "French Quarter, Garden District & live jazz", "kind": "ATTRACTION", "months": [1,2,3,4,5,10,11,12], "weatherDependent": false },
+      { "title": "Mardi Gras", "kind": "FESTIVAL", "months": [1,2,3], "weatherDependent": true },
+      { "title": "Jazz & Heritage Festival", "kind": "FESTIVAL", "months": [4,5], "weatherDependent": true },
+      { "title": "National WWII Museum & Audubon Aquarium", "kind": "ATTRACTION", "months": [1,2,3,4,5,6,7,8,9,10,11,12], "weatherDependent": false }
+    ],
+    "climate": { "monthly": [
+      { "m": 1, "highF": 63, "lowF": 46, "precipDays": 9 }, { "m": 2, "highF": 66, "lowF": 49, "precipDays": 9 }, { "m": 3, "highF": 72, "lowF": 55, "precipDays": 9 },
+      { "m": 4, "highF": 78, "lowF": 61, "precipDays": 7 }, { "m": 5, "highF": 85, "lowF": 68, "precipDays": 8 }, { "m": 6, "highF": 90, "lowF": 74, "precipDays": 13 },
+      { "m": 7, "highF": 91, "lowF": 76, "precipDays": 15 }, { "m": 8, "highF": 91, "lowF": 76, "precipDays": 14 }, { "m": 9, "highF": 88, "lowF": 73, "precipDays": 10 },
+      { "m": 10, "highF": 81, "lowF": 63, "precipDays": 7 }, { "m": 11, "highF": 71, "lowF": 53, "precipDays": 7 }, { "m": 12, "highF": 64, "lowF": 48, "precipDays": 9 }
+    ] },
+    "generatedBy": "HAND_AUTHORED_2026_09"
+  },
+  {
+    "iata": "BNA",
+    "name": "Nashville",
+    "lat": 36.1263,
+    "lng": -86.6774,
+    "tier": "UPSCALE",
+    "idealNightsMin": 2,
+    "idealNightsMax": 4,
+    "walkable": true,
+    "carNeeded": true,
+    "airportToCenterKm": 12,
+    "parkingTypical": "EXPENSIVE",
+    "activitiesDispersed": true,
+    "familyFit": {
+      "tags": ["nightlife-heavy", "museums", "interactive", "sports"],
+      "byAgeBand": { "0-5": 1, "6-12": 2, "13-17": 2, "adult": 3 },
+      "indoorRatio": 0.5
+    },
+    "anchors": [
+      { "title": "Broadway honky-tonks & Grand Ole Opry", "kind": "ATTRACTION", "months": [1,2,3,4,5,6,7,8,9,10,11,12], "weatherDependent": false },
+      { "title": "Country Music Hall of Fame & Ryman", "kind": "ATTRACTION", "months": [1,2,3,4,5,6,7,8,9,10,11,12], "weatherDependent": false },
+      { "title": "CMA Fest", "kind": "FESTIVAL", "months": [6], "weatherDependent": true },
+      { "title": "Gaylord Opryland ICE! & holiday season", "kind": "EVENT", "months": [11,12], "weatherDependent": false }
+    ],
+    "climate": { "monthly": [
+      { "m": 1, "highF": 48, "lowF": 30, "precipDays": 11 }, { "m": 2, "highF": 53, "lowF": 33, "precipDays": 11 }, { "m": 3, "highF": 62, "lowF": 40, "precipDays": 12 },
+      { "m": 4, "highF": 72, "lowF": 49, "precipDays": 11 }, { "m": 5, "highF": 79, "lowF": 58, "precipDays": 11 }, { "m": 6, "highF": 87, "lowF": 66, "precipDays": 10 },
+      { "m": 7, "highF": 90, "lowF": 70, "precipDays": 10 }, { "m": 8, "highF": 89, "lowF": 69, "precipDays": 9 }, { "m": 9, "highF": 83, "lowF": 61, "precipDays": 8 },
+      { "m": 10, "highF": 72, "lowF": 49, "precipDays": 8 }, { "m": 11, "highF": 60, "lowF": 39, "precipDays": 10 }, { "m": 12, "highF": 50, "lowF": 32, "precipDays": 12 }
+    ] },
+    "generatedBy": "HAND_AUTHORED_2026_09"
+  },
+  {
+    "iata": "CHS",
+    "name": "Charleston",
+    "lat": 32.8986,
+    "lng": -80.0405,
+    "tier": "UPSCALE",
+    "idealNightsMin": 2,
+    "idealNightsMax": 4,
+    "walkable": true,
+    "carNeeded": false,
+    "airportToCenterKm": 18,
+    "parkingTypical": "EXPENSIVE",
+    "activitiesDispersed": false,
+    "familyFit": {
+      "tags": ["beach", "museums", "zoo-aquarium", "water"],
+      "byAgeBand": { "0-5": 1, "6-12": 2, "13-17": 2, "adult": 3 },
+      "indoorRatio": 0.35
+    },
+    "anchors": [
+      { "title": "Historic district, Rainbow Row & carriage tours", "kind": "ATTRACTION", "months": [1,2,3,4,5,9,10,11,12], "weatherDependent": true },
+      { "title": "Plantations & gardens (Magnolia, Middleton)", "kind": "NATURE", "months": [3,4,5], "weatherDependent": true },
+      { "title": "Spoleto Festival USA", "kind": "FESTIVAL", "months": [5,6], "weatherDependent": false },
+      { "title": "Folly Beach & Isle of Palms", "kind": "NATURE", "months": [5,6,7,8,9], "weatherDependent": true }
+    ],
+    "climate": { "monthly": [
+      { "m": 1, "highF": 60, "lowF": 39, "precipDays": 9 }, { "m": 2, "highF": 63, "lowF": 42, "precipDays": 8 }, { "m": 3, "highF": 70, "lowF": 48, "precipDays": 9 },
+      { "m": 4, "highF": 76, "lowF": 55, "precipDays": 7 }, { "m": 5, "highF": 83, "lowF": 64, "precipDays": 8 }, { "m": 6, "highF": 88, "lowF": 72, "precipDays": 12 },
+      { "m": 7, "highF": 91, "lowF": 75, "precipDays": 13 }, { "m": 8, "highF": 89, "lowF": 74, "precipDays": 13 }, { "m": 9, "highF": 85, "lowF": 69, "precipDays": 10 },
+      { "m": 10, "highF": 77, "lowF": 58, "precipDays": 7 }, { "m": 11, "highF": 69, "lowF": 48, "precipDays": 7 }, { "m": 12, "highF": 62, "lowF": 42, "precipDays": 9 }
+    ] },
+    "generatedBy": "HAND_AUTHORED_2026_09"
+  },
+  {
+    "iata": "SAV",
+    "name": "Savannah / Tybee Island",
+    "lat": 32.1276,
+    "lng": -81.2021,
+    "tier": "UPSCALE",
+    "idealNightsMin": 2,
+    "idealNightsMax": 4,
+    "walkable": true,
+    "carNeeded": false,
+    "airportToCenterKm": 15,
+    "parkingTypical": "CHEAP",
+    "activitiesDispersed": false,
+    "familyFit": {
+      "tags": ["museums", "beach", "interactive"],
+      "byAgeBand": { "0-5": 1, "6-12": 2, "13-17": 2, "adult": 3 },
+      "indoorRatio": 0.35
+    },
+    "anchors": [
+      { "title": "Historic squares, Forsyth Park & River Street", "kind": "ATTRACTION", "months": [1,2,3,4,5,9,10,11,12], "weatherDependent": true },
+      { "title": "Tybee Island beach", "kind": "NATURE", "months": [5,6,7,8,9], "weatherDependent": true },
+      { "title": "St. Patrick's Day festival", "kind": "FESTIVAL", "months": [3], "weatherDependent": true }
+    ],
+    "climate": { "monthly": [
+      { "m": 1, "highF": 61, "lowF": 40, "precipDays": 9 }, { "m": 2, "highF": 65, "lowF": 43, "precipDays": 8 }, { "m": 3, "highF": 71, "lowF": 49, "precipDays": 8 },
+      { "m": 4, "highF": 78, "lowF": 55, "precipDays": 7 }, { "m": 5, "highF": 85, "lowF": 63, "precipDays": 8 }, { "m": 6, "highF": 90, "lowF": 71, "precipDays": 12 },
+      { "m": 7, "highF": 92, "lowF": 74, "precipDays": 13 }, { "m": 8, "highF": 90, "lowF": 73, "precipDays": 13 }, { "m": 9, "highF": 86, "lowF": 68, "precipDays": 9 },
+      { "m": 10, "highF": 78, "lowF": 57, "precipDays": 7 }, { "m": 11, "highF": 70, "lowF": 48, "precipDays": 7 }, { "m": 12, "highF": 63, "lowF": 42, "precipDays": 9 }
+    ] },
+    "generatedBy": "HAND_AUTHORED_2026_09"
+  },
+  {
+    "iata": "ATL",
+    "name": "Atlanta",
+    "lat": 33.6407,
+    "lng": -84.4277,
+    "tier": "MID",
+    "idealNightsMin": 2,
+    "idealNightsMax": 4,
+    "walkable": false,
+    "carNeeded": true,
+    "airportToCenterKm": 16,
+    "parkingTypical": "CHEAP",
+    "activitiesDispersed": true,
+    "familyFit": {
+      "tags": ["zoo-aquarium", "museums", "interactive", "sports", "theme-parks"],
+      "byAgeBand": { "0-5": 2, "6-12": 3, "13-17": 2, "adult": 2 },
+      "indoorRatio": 0.6
+    },
+    "anchors": [
+      { "title": "Georgia Aquarium, World of Coca-Cola & Centennial Park", "kind": "ATTRACTION", "months": [1,2,3,4,5,6,7,8,9,10,11,12], "weatherDependent": false },
+      { "title": "Six Flags Over Georgia", "kind": "THEME_PARK", "months": [3,4,5,6,7,8,9,10], "weatherDependent": true },
+      { "title": "Stone Mountain Park", "kind": "NATURE", "months": [3,4,5,6,9,10,11], "weatherDependent": true },
+      { "title": "College Football Playoff / SEC Championship / Peach Bowl", "kind": "SPORTS", "months": [12,1], "weatherDependent": false }
+    ],
+    "climate": { "monthly": [
+      { "m": 1, "highF": 53, "lowF": 35, "precipDays": 11 }, { "m": 2, "highF": 57, "lowF": 38, "precipDays": 11 }, { "m": 3, "highF": 65, "lowF": 45, "precipDays": 11 },
+      { "m": 4, "highF": 73, "lowF": 52, "precipDays": 9 }, { "m": 5, "highF": 80, "lowF": 61, "precipDays": 10 }, { "m": 6, "highF": 87, "lowF": 69, "precipDays": 11 },
+      { "m": 7, "highF": 89, "lowF": 72, "precipDays": 12 }, { "m": 8, "highF": 88, "lowF": 71, "precipDays": 10 }, { "m": 9, "highF": 82, "lowF": 65, "precipDays": 8 },
+      { "m": 10, "highF": 73, "lowF": 54, "precipDays": 7 }, { "m": 11, "highF": 63, "lowF": 44, "precipDays": 9 }, { "m": 12, "highF": 55, "lowF": 38, "precipDays": 11 }
+    ] },
+    "generatedBy": "HAND_AUTHORED_2026_09"
+  },
+  {
+    "iata": "ORD",
+    "name": "Chicago",
+    "lat": 41.9742,
+    "lng": -87.9073,
+    "tier": "UPSCALE",
+    "idealNightsMin": 3,
+    "idealNightsMax": 5,
+    "walkable": true,
+    "carNeeded": false,
+    "airportToCenterKm": 28,
+    "parkingTypical": "EXPENSIVE",
+    "activitiesDispersed": false,
+    "familyFit": {
+      "tags": ["museums", "interactive", "zoo-aquarium", "sports", "water", "nightlife-heavy"],
+      "byAgeBand": { "0-5": 2, "6-12": 3, "13-17": 3, "adult": 3 },
+      "indoorRatio": 0.6
+    },
+    "anchors": [
+      { "title": "Museum Campus (Field, Shedd, Adler) & Art Institute", "kind": "ATTRACTION", "months": [1,2,3,4,5,6,7,8,9,10,11,12], "weatherDependent": false },
+      { "title": "Navy Pier, Millennium Park & Lakefront", "kind": "ATTRACTION", "months": [5,6,7,8,9,10], "weatherDependent": true },
+      { "title": "Wrigley Field Cubs games", "kind": "SPORTS", "months": [4,5,6,7,8,9], "weatherDependent": true },
+      { "title": "Lollapalooza", "kind": "FESTIVAL", "months": [7,8], "weatherDependent": true },
+      { "title": "Christkindlmarket & holiday windows", "kind": "EVENT", "months": [11,12], "weatherDependent": false }
+    ],
+    "climate": { "monthly": [
+      { "m": 1, "highF": 32, "lowF": 19, "precipDays": 11 }, { "m": 2, "highF": 36, "lowF": 22, "precipDays": 9 }, { "m": 3, "highF": 47, "lowF": 31, "precipDays": 11 },
+      { "m": 4, "highF": 59, "lowF": 41, "precipDays": 12 }, { "m": 5, "highF": 70, "lowF": 51, "precipDays": 12 }, { "m": 6, "highF": 80, "lowF": 61, "precipDays": 11 },
+      { "m": 7, "highF": 84, "lowF": 67, "precipDays": 10 }, { "m": 8, "highF": 82, "lowF": 66, "precipDays": 9 }, { "m": 9, "highF": 76, "lowF": 58, "precipDays": 8 },
+      { "m": 10, "highF": 63, "lowF": 46, "precipDays": 10 }, { "m": 11, "highF": 48, "lowF": 34, "precipDays": 10 }, { "m": 12, "highF": 36, "lowF": 23, "precipDays": 11 }
+    ] },
+    "generatedBy": "HAND_AUTHORED_2026_09"
+  },
+  {
+    "iata": "BOS",
+    "name": "Boston",
+    "lat": 42.3656,
+    "lng": -71.0096,
+    "tier": "UPSCALE",
+    "idealNightsMin": 3,
+    "idealNightsMax": 5,
+    "walkable": true,
+    "carNeeded": false,
+    "airportToCenterKm": 5,
+    "parkingTypical": "EXPENSIVE",
+    "activitiesDispersed": false,
+    "familyFit": {
+      "tags": ["museums", "interactive", "zoo-aquarium", "sports", "water"],
+      "byAgeBand": { "0-5": 2, "6-12": 3, "13-17": 3, "adult": 3 },
+      "indoorRatio": 0.55
+    },
+    "anchors": [
+      { "title": "Freedom Trail, Faneuil Hall & Harbor", "kind": "ATTRACTION", "months": [4,5,6,7,8,9,10], "weatherDependent": true },
+      { "title": "Museum of Science, Children's Museum & New England Aquarium", "kind": "ATTRACTION", "months": [1,2,3,4,5,6,7,8,9,10,11,12], "weatherDependent": false },
+      { "title": "Fenway Park Red Sox games", "kind": "SPORTS", "months": [4,5,6,7,8,9], "weatherDependent": true },
+      { "title": "Boston Marathon", "kind": "SPORTS", "months": [4], "weatherDependent": true },
+      { "title": "New England fall foliage", "kind": "NATURE", "months": [10], "weatherDependent": true }
+    ],
+    "climate": { "monthly": [
+      { "m": 1, "highF": 37, "lowF": 23, "precipDays": 12 }, { "m": 2, "highF": 39, "lowF": 25, "precipDays": 11 }, { "m": 3, "highF": 46, "lowF": 32, "precipDays": 12 },
+      { "m": 4, "highF": 56, "lowF": 41, "precipDays": 12 }, { "m": 5, "highF": 67, "lowF": 51, "precipDays": 12 }, { "m": 6, "highF": 76, "lowF": 61, "precipDays": 11 },
+      { "m": 7, "highF": 82, "lowF": 67, "precipDays": 10 }, { "m": 8, "highF": 80, "lowF": 66, "precipDays": 9 }, { "m": 9, "highF": 73, "lowF": 59, "precipDays": 9 },
+      { "m": 10, "highF": 62, "lowF": 48, "precipDays": 10 }, { "m": 11, "highF": 52, "lowF": 39, "precipDays": 11 }, { "m": 12, "highF": 42, "lowF": 29, "precipDays": 12 }
+    ] },
+    "generatedBy": "HAND_AUTHORED_2026_09"
+  },
+  {
+    "iata": "JFK",
+    "name": "New York City",
+    "lat": 40.6413,
+    "lng": -73.7781,
+    "tier": "LUXURY",
+    "idealNightsMin": 3,
+    "idealNightsMax": 5,
+    "walkable": true,
+    "carNeeded": false,
+    "airportToCenterKm": 25,
+    "parkingTypical": "EXPENSIVE",
+    "activitiesDispersed": false,
+    "familyFit": {
+      "tags": ["museums", "interactive", "zoo-aquarium", "sports", "nightlife-heavy"],
+      "byAgeBand": { "0-5": 2, "6-12": 3, "13-17": 3, "adult": 3 },
+      "indoorRatio": 0.6
+    },
+    "anchors": [
+      { "title": "Broadway shows & Times Square", "kind": "ATTRACTION", "months": [1,2,3,4,5,6,7,8,9,10,11,12], "weatherDependent": false },
+      { "title": "AMNH, Met, Intrepid & Statue of Liberty", "kind": "ATTRACTION", "months": [1,2,3,4,5,6,7,8,9,10,11,12], "weatherDependent": false },
+      { "title": "Central Park & High Line", "kind": "NATURE", "months": [4,5,6,7,8,9,10], "weatherDependent": true },
+      { "title": "Rockefeller Center tree, holiday windows & ice skating", "kind": "EVENT", "months": [11,12], "weatherDependent": false },
+      { "title": "US Open (tennis)", "kind": "SPORTS", "months": [8,9], "weatherDependent": true }
+    ],
+    "climate": { "monthly": [
+      { "m": 1, "highF": 40, "lowF": 27, "precipDays": 11 }, { "m": 2, "highF": 42, "lowF": 29, "precipDays": 10 }, { "m": 3, "highF": 50, "lowF": 35, "precipDays": 11 },
+      { "m": 4, "highF": 61, "lowF": 45, "precipDays": 11 }, { "m": 5, "highF": 71, "lowF": 54, "precipDays": 11 }, { "m": 6, "highF": 80, "lowF": 64, "precipDays": 11 },
+      { "m": 7, "highF": 85, "lowF": 70, "precipDays": 10 }, { "m": 8, "highF": 83, "lowF": 69, "precipDays": 9 }, { "m": 9, "highF": 76, "lowF": 62, "precipDays": 8 },
+      { "m": 10, "highF": 65, "lowF": 51, "precipDays": 9 }, { "m": 11, "highF": 54, "lowF": 41, "precipDays": 9 }, { "m": 12, "highF": 45, "lowF": 33, "precipDays": 11 }
+    ] },
+    "generatedBy": "HAND_AUTHORED_2026_09"
+  },
+  {
+    "iata": "DCA",
+    "name": "Washington, DC",
+    "lat": 38.8512,
+    "lng": -77.0402,
+    "tier": "UPSCALE",
+    "idealNightsMin": 3,
+    "idealNightsMax": 5,
+    "walkable": true,
+    "carNeeded": false,
+    "airportToCenterKm": 6,
+    "parkingTypical": "EXPENSIVE",
+    "activitiesDispersed": false,
+    "familyFit": {
+      "tags": ["museums", "interactive", "zoo-aquarium"],
+      "byAgeBand": { "0-5": 2, "6-12": 3, "13-17": 3, "adult": 3 },
+      "indoorRatio": 0.6
+    },
+    "anchors": [
+      { "title": "Smithsonian museums (free) & National Zoo", "kind": "ATTRACTION", "months": [1,2,3,4,5,6,7,8,9,10,11,12], "weatherDependent": false },
+      { "title": "National Mall monuments", "kind": "ATTRACTION", "months": [3,4,5,6,9,10,11], "weatherDependent": true },
+      { "title": "National Cherry Blossom Festival", "kind": "FESTIVAL", "months": [3,4], "weatherDependent": true },
+      { "title": "Fourth of July on the Mall", "kind": "EVENT", "months": [7], "weatherDependent": true }
+    ],
+    "climate": { "monthly": [
+      { "m": 1, "highF": 44, "lowF": 30, "precipDays": 10 }, { "m": 2, "highF": 48, "lowF": 32, "precipDays": 9 }, { "m": 3, "highF": 57, "lowF": 39, "precipDays": 11 },
+      { "m": 4, "highF": 68, "lowF": 49, "precipDays": 11 }, { "m": 5, "highF": 77, "lowF": 59, "precipDays": 12 }, { "m": 6, "highF": 86, "lowF": 69, "precipDays": 11 },
+      { "m": 7, "highF": 90, "lowF": 74, "precipDays": 11 }, { "m": 8, "highF": 88, "lowF": 72, "precipDays": 9 }, { "m": 9, "highF": 81, "lowF": 65, "precipDays": 8 },
+      { "m": 10, "highF": 69, "lowF": 53, "precipDays": 8 }, { "m": 11, "highF": 58, "lowF": 42, "precipDays": 9 }, { "m": 12, "highF": 48, "lowF": 34, "precipDays": 10 }
+    ] },
+    "generatedBy": "HAND_AUTHORED_2026_09"
+  },
+  {
+    "iata": "PHL",
+    "name": "Philadelphia",
+    "lat": 39.8744,
+    "lng": -75.2424,
+    "tier": "MID",
+    "idealNightsMin": 2,
+    "idealNightsMax": 4,
+    "walkable": true,
+    "carNeeded": false,
+    "airportToCenterKm": 12,
+    "parkingTypical": "EXPENSIVE",
+    "activitiesDispersed": false,
+    "familyFit": {
+      "tags": ["museums", "interactive", "zoo-aquarium", "sports", "theme-parks"],
+      "byAgeBand": { "0-5": 2, "6-12": 3, "13-17": 2, "adult": 3 },
+      "indoorRatio": 0.6
+    },
+    "anchors": [
+      { "title": "Independence Hall, Liberty Bell & Old City", "kind": "ATTRACTION", "months": [1,2,3,4,5,6,7,8,9,10,11,12], "weatherDependent": false },
+      { "title": "Franklin Institute, Please Touch Museum & Philadelphia Zoo", "kind": "ATTRACTION", "months": [1,2,3,4,5,6,7,8,9,10,11,12], "weatherDependent": false },
+      { "title": "Sesame Place (Langhorne)", "kind": "THEME_PARK", "months": [5,6,7,8,9,10], "weatherDependent": true },
+      { "title": "Reading Terminal Market & Philadelphia Museum of Art", "kind": "ATTRACTION", "months": [1,2,3,4,5,6,7,8,9,10,11,12], "weatherDependent": false }
+    ],
+    "climate": { "monthly": [
+      { "m": 1, "highF": 41, "lowF": 26, "precipDays": 11 }, { "m": 2, "highF": 45, "lowF": 28, "precipDays": 10 }, { "m": 3, "highF": 53, "lowF": 35, "precipDays": 11 },
+      { "m": 4, "highF": 65, "lowF": 45, "precipDays": 11 }, { "m": 5, "highF": 75, "lowF": 55, "precipDays": 11 }, { "m": 6, "highF": 84, "lowF": 65, "precipDays": 10 },
+      { "m": 7, "highF": 88, "lowF": 70, "precipDays": 10 }, { "m": 8, "highF": 86, "lowF": 69, "precipDays": 9 }, { "m": 9, "highF": 79, "lowF": 61, "precipDays": 8 },
+      { "m": 10, "highF": 67, "lowF": 49, "precipDays": 9 }, { "m": 11, "highF": 56, "lowF": 39, "precipDays": 9 }, { "m": 12, "highF": 46, "lowF": 31, "precipDays": 11 }
+    ] },
+    "generatedBy": "HAND_AUTHORED_2026_09"
+  },
+  {
+    "iata": "MCI",
+    "name": "Kansas City",
+    "lat": 39.2976,
+    "lng": -94.7139,
+    "tier": "MID",
+    "idealNightsMin": 2,
+    "idealNightsMax": 3,
+    "walkable": false,
+    "carNeeded": true,
+    "airportToCenterKm": 28,
+    "parkingTypical": "FREE",
+    "activitiesDispersed": true,
+    "familyFit": {
+      "tags": ["museums", "interactive", "zoo-aquarium", "sports", "theme-parks"],
+      "byAgeBand": { "0-5": 2, "6-12": 3, "13-17": 2, "adult": 2 },
+      "indoorRatio": 0.5
+    },
+    "anchors": [
+      { "title": "Worlds of Fun & Oceans of Fun", "kind": "THEME_PARK", "months": [5,6,7,8,9,10], "weatherDependent": true },
+      { "title": "Kansas City Zoo, Science City & Nelson-Atkins", "kind": "ATTRACTION", "months": [1,2,3,4,5,6,7,8,9,10,11,12], "weatherDependent": false },
+      { "title": "BBQ trail & Country Club Plaza lights", "kind": "ATTRACTION", "months": [11,12], "weatherDependent": false },
+      { "title": "Chiefs & Royals games", "kind": "SPORTS", "months": [4,5,6,7,8,9,10,11,12], "weatherDependent": true }
+    ],
+    "climate": { "monthly": [
+      { "m": 1, "highF": 39, "lowF": 21, "precipDays": 7 }, { "m": 2, "highF": 44, "lowF": 25, "precipDays": 7 }, { "m": 3, "highF": 55, "lowF": 35, "precipDays": 9 },
+      { "m": 4, "highF": 66, "lowF": 46, "precipDays": 11 }, { "m": 5, "highF": 75, "lowF": 56, "precipDays": 12 }, { "m": 6, "highF": 84, "lowF": 66, "precipDays": 11 },
+      { "m": 7, "highF": 89, "lowF": 71, "precipDays": 9 }, { "m": 8, "highF": 87, "lowF": 69, "precipDays": 9 }, { "m": 9, "highF": 79, "lowF": 60, "precipDays": 8 },
+      { "m": 10, "highF": 67, "lowF": 48, "precipDays": 8 }, { "m": 11, "highF": 53, "lowF": 35, "precipDays": 7 }, { "m": 12, "highF": 41, "lowF": 25, "precipDays": 8 }
+    ] },
+    "generatedBy": "HAND_AUTHORED_2026_09"
+  },
+  {
+    "iata": "STL",
+    "name": "St. Louis",
+    "lat": 38.7487,
+    "lng": -90.37,
+    "tier": "MID",
+    "idealNightsMin": 2,
+    "idealNightsMax": 3,
+    "walkable": false,
+    "carNeeded": true,
+    "airportToCenterKm": 22,
+    "parkingTypical": "CHEAP",
+    "activitiesDispersed": true,
+    "familyFit": {
+      "tags": ["zoo-aquarium", "museums", "interactive", "theme-parks", "sports"],
+      "byAgeBand": { "0-5": 3, "6-12": 3, "13-17": 2, "adult": 2 },
+      "indoorRatio": 0.5
+    },
+    "anchors": [
+      { "title": "Gateway Arch & City Museum", "kind": "ATTRACTION", "months": [1,2,3,4,5,6,7,8,9,10,11,12], "weatherDependent": false },
+      { "title": "Saint Louis Zoo & Forest Park (free)", "kind": "ATTRACTION", "months": [3,4,5,6,9,10,11], "weatherDependent": true },
+      { "title": "Six Flags St. Louis", "kind": "THEME_PARK", "months": [4,5,6,7,8,9,10], "weatherDependent": true },
+      { "title": "Cardinals at Busch Stadium", "kind": "SPORTS", "months": [4,5,6,7,8,9], "weatherDependent": true }
+    ],
+    "climate": { "monthly": [
+      { "m": 1, "highF": 41, "lowF": 25, "precipDays": 9 }, { "m": 2, "highF": 46, "lowF": 29, "precipDays": 9 }, { "m": 3, "highF": 57, "lowF": 38, "precipDays": 11 },
+      { "m": 4, "highF": 68, "lowF": 49, "precipDays": 11 }, { "m": 5, "highF": 77, "lowF": 59, "precipDays": 12 }, { "m": 6, "highF": 86, "lowF": 69, "precipDays": 10 },
+      { "m": 7, "highF": 90, "lowF": 73, "precipDays": 9 }, { "m": 8, "highF": 88, "lowF": 71, "precipDays": 8 }, { "m": 9, "highF": 81, "lowF": 63, "precipDays": 8 },
+      { "m": 10, "highF": 69, "lowF": 51, "precipDays": 9 }, { "m": 11, "highF": 55, "lowF": 39, "precipDays": 9 }, { "m": 12, "highF": 44, "lowF": 29, "precipDays": 10 }
+    ] },
+    "generatedBy": "HAND_AUTHORED_2026_09"
+  },
+  {
+    "iata": "MSP",
+    "name": "Minneapolis / St. Paul",
+    "lat": 44.8848,
+    "lng": -93.2223,
+    "tier": "MID",
+    "idealNightsMin": 2,
+    "idealNightsMax": 4,
+    "walkable": true,
+    "carNeeded": true,
+    "airportToCenterKm": 15,
+    "parkingTypical": "CHEAP",
+    "activitiesDispersed": true,
+    "familyFit": {
+      "tags": ["theme-parks", "interactive", "museums", "water", "snow", "zoo-aquarium"],
+      "byAgeBand": { "0-5": 3, "6-12": 3, "13-17": 2, "adult": 2 },
+      "indoorRatio": 0.6
+    },
+    "anchors": [
+      { "title": "Mall of America & Nickelodeon Universe (indoor)", "kind": "THEME_PARK", "months": [1,2,3,4,5,6,7,8,9,10,11,12], "weatherDependent": false },
+      { "title": "Valleyfair", "kind": "THEME_PARK", "months": [5,6,7,8,9], "weatherDependent": true },
+      { "title": "Chain of Lakes & Minnehaha Falls", "kind": "NATURE", "months": [6,7,8,9], "weatherDependent": true },
+      { "title": "Minnesota State Fair", "kind": "FESTIVAL", "months": [8,9], "weatherDependent": true }
+    ],
+    "climate": { "monthly": [
+      { "m": 1, "highF": 24, "lowF": 8, "precipDays": 9 }, { "m": 2, "highF": 29, "lowF": 13, "precipDays": 8 }, { "m": 3, "highF": 42, "lowF": 25, "precipDays": 9 },
+      { "m": 4, "highF": 58, "lowF": 38, "precipDays": 11 }, { "m": 5, "highF": 70, "lowF": 50, "precipDays": 12 }, { "m": 6, "highF": 80, "lowF": 60, "precipDays": 12 },
+      { "m": 7, "highF": 84, "lowF": 66, "precipDays": 10 }, { "m": 8, "highF": 81, "lowF": 64, "precipDays": 10 }, { "m": 9, "highF": 73, "lowF": 54, "precipDays": 9 },
+      { "m": 10, "highF": 58, "lowF": 41, "precipDays": 9 }, { "m": 11, "highF": 41, "lowF": 27, "precipDays": 8 }, { "m": 12, "highF": 28, "lowF": 14, "precipDays": 9 }
+    ] },
+    "generatedBy": "HAND_AUTHORED_2026_09"
+  },
+  {
+    "iata": "SLC",
+    "name": "Salt Lake City / Park City",
+    "lat": 40.7899,
+    "lng": -111.9791,
+    "tier": "UPSCALE",
+    "idealNightsMin": 3,
+    "idealNightsMax": 6,
+    "walkable": false,
+    "carNeeded": true,
+    "airportToCenterKm": 10,
+    "parkingTypical": "FREE",
+    "activitiesDispersed": true,
+    "familyFit": {
+      "tags": ["snow", "hiking", "museums", "zoo-aquarium", "interactive"],
+      "byAgeBand": { "0-5": 2, "6-12": 3, "13-17": 3, "adult": 3 },
+      "indoorRatio": 0.3
+    },
+    "anchors": [
+      { "title": "Park City, Deer Valley, Snowbird & Alta skiing", "kind": "NATURE", "months": [12,1,2,3,4], "weatherDependent": true },
+      { "title": "Sundance Film Festival", "kind": "FESTIVAL", "months": [1], "weatherDependent": false },
+      { "title": "Wasatch hiking & Park City summer (alpine coaster, biking)", "kind": "NATURE", "months": [6,7,8,9], "weatherDependent": true },
+      { "title": "Utah's Mighty 5 gateway (Arches, Zion) road trips", "kind": "NATURE", "months": [4,5,9,10], "weatherDependent": true }
+    ],
+    "climate": { "monthly": [
+      { "m": 1, "highF": 38, "lowF": 23, "precipDays": 9 }, { "m": 2, "highF": 44, "lowF": 27, "precipDays": 9 }, { "m": 3, "highF": 54, "lowF": 35, "precipDays": 10 },
+      { "m": 4, "highF": 62, "lowF": 41, "precipDays": 9 }, { "m": 5, "highF": 73, "lowF": 49, "precipDays": 8 }, { "m": 6, "highF": 84, "lowF": 58, "precipDays": 5 },
+      { "m": 7, "highF": 93, "lowF": 66, "precipDays": 4 }, { "m": 8, "highF": 91, "lowF": 65, "precipDays": 5 }, { "m": 9, "highF": 80, "lowF": 55, "precipDays": 5 },
+      { "m": 10, "highF": 65, "lowF": 43, "precipDays": 6 }, { "m": 11, "highF": 49, "lowF": 32, "precipDays": 8 }, { "m": 12, "highF": 38, "lowF": 23, "precipDays": 9 }
+    ] },
+    "generatedBy": "HAND_AUTHORED_2026_09"
+  },
+  {
+    "iata": "ANC",
+    "name": "Anchorage",
+    "lat": 61.1743,
+    "lng": -149.9962,
+    "tier": "MID",
+    "idealNightsMin": 5,
+    "idealNightsMax": 9,
+    "walkable": false,
+    "carNeeded": true,
+    "airportToCenterKm": 8,
+    "parkingTypical": "FREE",
+    "activitiesDispersed": true,
+    "familyFit": {
+      "tags": ["hiking", "water", "zoo-aquarium", "snow", "museums"],
+      "byAgeBand": { "0-5": 1, "6-12": 3, "13-17": 3, "adult": 3 },
+      "indoorRatio": 0.2
+    },
+    "anchors": [
+      { "title": "Kenai Fjords & Seward glacier cruises", "kind": "NATURE", "months": [5,6,7,8,9], "weatherDependent": true },
+      { "title": "Denali National Park (Alaska Railroad)", "kind": "NATURE", "months": [6,7,8], "weatherDependent": true },
+      { "title": "Alaska Wildlife Conservation Center & Matanuska Glacier", "kind": "NATURE", "months": [5,6,7,8,9], "weatherDependent": true },
+      { "title": "Fur Rendezvous & Iditarod ceremonial start", "kind": "FESTIVAL", "months": [2,3], "weatherDependent": true },
+      { "title": "Northern lights season", "kind": "NATURE", "months": [9,10,11,12,1,2,3], "weatherDependent": true }
+    ],
+    "climate": { "monthly": [
+      { "m": 1, "highF": 24, "lowF": 13, "precipDays": 8 }, { "m": 2, "highF": 28, "lowF": 15, "precipDays": 7 }, { "m": 3, "highF": 35, "lowF": 21, "precipDays": 7 },
+      { "m": 4, "highF": 45, "lowF": 32, "precipDays": 6 }, { "m": 5, "highF": 56, "lowF": 42, "precipDays": 7 }, { "m": 6, "highF": 63, "lowF": 50, "precipDays": 8 },
+      { "m": 7, "highF": 66, "lowF": 54, "precipDays": 11 }, { "m": 8, "highF": 64, "lowF": 51, "precipDays": 14 }, { "m": 9, "highF": 56, "lowF": 44, "precipDays": 15 },
+      { "m": 10, "highF": 41, "lowF": 30, "precipDays": 12 }, { "m": 11, "highF": 29, "lowF": 18, "precipDays": 10 }, { "m": 12, "highF": 26, "lowF": 15, "precipDays": 10 }
+    ] },
+    "generatedBy": "HAND_AUTHORED_2026_09"
+  },
+  {
+    "iata": "HNL",
+    "name": "Honolulu / Oahu",
+    "lat": 21.3187,
+    "lng": -157.9224,
+    "tier": "UPSCALE",
+    "idealNightsMin": 5,
+    "idealNightsMax": 8,
+    "walkable": true,
+    "carNeeded": false,
+    "airportToCenterKm": 14,
+    "parkingTypical": "EXPENSIVE",
+    "activitiesDispersed": true,
+    "familyFit": {
+      "tags": ["beach", "water", "hiking", "zoo-aquarium", "museums", "interactive"],
+      "byAgeBand": { "0-5": 3, "6-12": 3, "13-17": 3, "adult": 3 },
+      "indoorRatio": 0.15
+    },
+    "anchors": [
+      { "title": "Waikiki Beach & Diamond Head", "kind": "NATURE", "months": [1,2,3,4,5,6,7,8,9,10,11,12], "weatherDependent": true },
+      { "title": "Pearl Harbor National Memorial", "kind": "ATTRACTION", "months": [1,2,3,4,5,6,7,8,9,10,11,12], "weatherDependent": false },
+      { "title": "Hanauma Bay snorkeling & North Shore", "kind": "NATURE", "months": [4,5,6,7,8,9,10], "weatherDependent": true },
+      { "title": "Aulani / Ko Olina lagoons", "kind": "ATTRACTION", "months": [1,2,3,4,5,6,7,8,9,10,11,12], "weatherDependent": true },
+      { "title": "North Shore big-wave surf season", "kind": "NATURE", "months": [11,12,1,2], "weatherDependent": true }
+    ],
+    "climate": { "monthly": [
+      { "m": 1, "highF": 80, "lowF": 66, "precipDays": 9 }, { "m": 2, "highF": 80, "lowF": 66, "precipDays": 8 }, { "m": 3, "highF": 81, "lowF": 68, "precipDays": 9 },
+      { "m": 4, "highF": 83, "lowF": 69, "precipDays": 9 }, { "m": 5, "highF": 85, "lowF": 71, "precipDays": 7 }, { "m": 6, "highF": 87, "lowF": 74, "precipDays": 6 },
+      { "m": 7, "highF": 88, "lowF": 75, "precipDays": 7 }, { "m": 8, "highF": 89, "lowF": 75, "precipDays": 6 }, { "m": 9, "highF": 88, "lowF": 75, "precipDays": 7 },
+      { "m": 10, "highF": 86, "lowF": 73, "precipDays": 8 }, { "m": 11, "highF": 84, "lowF": 71, "precipDays": 9 }, { "m": 12, "highF": 81, "lowF": 68, "precipDays": 10 }
+    ] },
+    "generatedBy": "HAND_AUTHORED_2026_09"
+  },
+  {
+    "iata": "OGG",
+    "name": "Maui",
+    "lat": 20.8986,
+    "lng": -156.4305,
+    "tier": "LUXURY",
+    "idealNightsMin": 5,
+    "idealNightsMax": 9,
+    "walkable": false,
+    "carNeeded": true,
+    "airportToCenterKm": 35,
+    "parkingTypical": "EXPENSIVE",
+    "activitiesDispersed": true,
+    "familyFit": {
+      "tags": ["beach", "water", "hiking", "zoo-aquarium"],
+      "byAgeBand": { "0-5": 3, "6-12": 3, "13-17": 3, "adult": 3 },
+      "indoorRatio": 0.1
+    },
+    "anchors": [
+      { "title": "Wailea & Ka'anapali resort beaches", "kind": "NATURE", "months": [1,2,3,4,5,6,7,8,9,10,11,12], "weatherDependent": true },
+      { "title": "Haleakala sunrise & Road to Hana", "kind": "NATURE", "months": [1,2,3,4,5,6,7,8,9,10,11,12], "weatherDependent": true },
+      { "title": "Molokini snorkel & Maui Ocean Center", "kind": "ATTRACTION", "months": [1,2,3,4,5,6,7,8,9,10,11,12], "weatherDependent": true },
+      { "title": "Humpback whale season", "kind": "NATURE", "months": [12,1,2,3,4], "weatherDependent": true }
+    ],
+    "climate": { "monthly": [
+      { "m": 1, "highF": 80, "lowF": 64, "precipDays": 9 }, { "m": 2, "highF": 80, "lowF": 64, "precipDays": 8 }, { "m": 3, "highF": 81, "lowF": 65, "precipDays": 9 },
+      { "m": 4, "highF": 82, "lowF": 67, "precipDays": 8 }, { "m": 5, "highF": 84, "lowF": 68, "precipDays": 6 }, { "m": 6, "highF": 86, "lowF": 70, "precipDays": 5 },
+      { "m": 7, "highF": 87, "lowF": 71, "precipDays": 6 }, { "m": 8, "highF": 88, "lowF": 72, "precipDays": 6 }, { "m": 9, "highF": 88, "lowF": 71, "precipDays": 5 },
+      { "m": 10, "highF": 86, "lowF": 70, "precipDays": 7 }, { "m": 11, "highF": 83, "lowF": 68, "precipDays": 9 }, { "m": 12, "highF": 80, "lowF": 66, "precipDays": 10 }
+    ] },
+    "generatedBy": "HAND_AUTHORED_2026_09"
+  },
+  {
+    "iata": "KOA",
+    "name": "Kona / Big Island",
+    "lat": 19.7388,
+    "lng": -156.0456,
+    "tier": "LUXURY",
+    "idealNightsMin": 5,
+    "idealNightsMax": 9,
+    "walkable": false,
+    "carNeeded": true,
+    "airportToCenterKm": 30,
+    "parkingTypical": "EXPENSIVE",
+    "activitiesDispersed": true,
+    "familyFit": {
+      "tags": ["beach", "water", "hiking", "interactive"],
+      "byAgeBand": { "0-5": 2, "6-12": 3, "13-17": 3, "adult": 3 },
+      "indoorRatio": 0.1
+    },
+    "anchors": [
+      { "title": "Waikoloa & Kohala Coast resorts", "kind": "NATURE", "months": [1,2,3,4,5,6,7,8,9,10,11,12], "weatherDependent": true },
+      { "title": "Hawaii Volcanoes National Park", "kind": "NATURE", "months": [1,2,3,4,5,6,7,8,9,10,11,12], "weatherDependent": true },
+      { "title": "Manta ray night snorkel", "kind": "NATURE", "months": [1,2,3,4,5,6,7,8,9,10,11,12], "weatherDependent": true },
+      { "title": "IRONMAN World Championship (Kona)", "kind": "SPORTS", "months": [10], "weatherDependent": true }
+    ],
+    "climate": { "monthly": [
+      { "m": 1, "highF": 81, "lowF": 65, "precipDays": 4 }, { "m": 2, "highF": 81, "lowF": 65, "precipDays": 4 }, { "m": 3, "highF": 82, "lowF": 66, "precipDays": 5 },
+      { "m": 4, "highF": 83, "lowF": 67, "precipDays": 5 }, { "m": 5, "highF": 84, "lowF": 68, "precipDays": 4 }, { "m": 6, "highF": 86, "lowF": 70, "precipDays": 3 },
+      { "m": 7, "highF": 87, "lowF": 71, "precipDays": 4 }, { "m": 8, "highF": 88, "lowF": 71, "precipDays": 4 }, { "m": 9, "highF": 88, "lowF": 71, "precipDays": 4 },
+      { "m": 10, "highF": 87, "lowF": 70, "precipDays": 4 }, { "m": 11, "highF": 84, "lowF": 68, "precipDays": 4 }, { "m": 12, "highF": 82, "lowF": 66, "precipDays": 4 }
+    ] },
+    "generatedBy": "HAND_AUTHORED_2026_09"
+  },
+  {
+    "iata": "LIH",
+    "name": "Kauai",
+    "lat": 21.976,
+    "lng": -159.339,
+    "tier": "LUXURY",
+    "idealNightsMin": 5,
+    "idealNightsMax": 8,
+    "walkable": false,
+    "carNeeded": true,
+    "airportToCenterKm": 22,
+    "parkingTypical": "EXPENSIVE",
+    "activitiesDispersed": true,
+    "familyFit": {
+      "tags": ["beach", "water", "hiking"],
+      "byAgeBand": { "0-5": 2, "6-12": 3, "13-17": 3, "adult": 3 },
+      "indoorRatio": 0.1
+    },
+    "anchors": [
+      { "title": "Poipu Beach resorts", "kind": "NATURE", "months": [1,2,3,4,5,6,7,8,9,10,11,12], "weatherDependent": true },
+      { "title": "Na Pali Coast boat/helicopter tours", "kind": "NATURE", "months": [4,5,6,7,8,9,10], "weatherDependent": true },
+      { "title": "Waimea Canyon & Koke'e", "kind": "NATURE", "months": [1,2,3,4,5,6,7,8,9,10,11,12], "weatherDependent": true },
+      { "title": "Hanalei Bay & North Shore", "kind": "NATURE", "months": [5,6,7,8,9], "weatherDependent": true }
+    ],
+    "climate": { "monthly": [
+      { "m": 1, "highF": 78, "lowF": 65, "precipDays": 13 }, { "m": 2, "highF": 78, "lowF": 65, "precipDays": 11 }, { "m": 3, "highF": 78, "lowF": 67, "precipDays": 13 },
+      { "m": 4, "highF": 80, "lowF": 69, "precipDays": 13 }, { "m": 5, "highF": 82, "lowF": 70, "precipDays": 11 }, { "m": 6, "highF": 84, "lowF": 73, "precipDays": 10 },
+      { "m": 7, "highF": 85, "lowF": 74, "precipDays": 12 }, { "m": 8, "highF": 86, "lowF": 74, "precipDays": 11 }, { "m": 9, "highF": 86, "lowF": 74, "precipDays": 10 },
+      { "m": 10, "highF": 84, "lowF": 72, "precipDays": 13 }, { "m": 11, "highF": 81, "lowF": 70, "precipDays": 14 }, { "m": 12, "highF": 79, "lowF": 67, "precipDays": 14 }
+    ] },
+    "generatedBy": "HAND_AUTHORED_2026_09"
+  },
+  {
+    "iata": "JAX",
+    "name": "Jacksonville / St. Augustine / Amelia Island",
+    "lat": 30.4941,
+    "lng": -81.6879,
+    "tier": "MID",
+    "idealNightsMin": 3,
+    "idealNightsMax": 5,
+    "walkable": false,
+    "carNeeded": true,
+    "airportToCenterKm": 25,
+    "parkingTypical": "FREE",
+    "activitiesDispersed": true,
+    "familyFit": {
+      "tags": ["beach", "water", "museums", "zoo-aquarium", "sports"],
+      "byAgeBand": { "0-5": 2, "6-12": 3, "13-17": 2, "adult": 2 },
+      "indoorRatio": 0.25
+    },
+    "anchors": [
+      { "title": "St. Augustine historic district & Castillo de San Marcos", "kind": "ATTRACTION", "months": [1,2,3,4,5,10,11,12], "weatherDependent": true },
+      { "title": "Amelia Island & Jacksonville beaches", "kind": "NATURE", "months": [4,5,6,7,8,9,10], "weatherDependent": true },
+      { "title": "Nights of Lights (St. Augustine)", "kind": "EVENT", "months": [11,12,1], "weatherDependent": false },
+      { "title": "THE PLAYERS Championship (golf)", "kind": "SPORTS", "months": [3], "weatherDependent": true }
+    ],
+    "climate": { "monthly": [
+      { "m": 1, "highF": 65, "lowF": 43, "precipDays": 8 }, { "m": 2, "highF": 68, "lowF": 46, "precipDays": 8 }, { "m": 3, "highF": 74, "lowF": 52, "precipDays": 8 },
+      { "m": 4, "highF": 80, "lowF": 58, "precipDays": 6 }, { "m": 5, "highF": 86, "lowF": 66, "precipDays": 7 }, { "m": 6, "highF": 90, "lowF": 72, "precipDays": 12 },
+      { "m": 7, "highF": 92, "lowF": 75, "precipDays": 13 }, { "m": 8, "highF": 91, "lowF": 75, "precipDays": 13 }, { "m": 9, "highF": 87, "lowF": 72, "precipDays": 11 },
+      { "m": 10, "highF": 80, "lowF": 63, "precipDays": 7 }, { "m": 11, "highF": 72, "lowF": 52, "precipDays": 6 }, { "m": 12, "highF": 66, "lowF": 46, "precipDays": 8 }
+    ] },
+    "generatedBy": "HAND_AUTHORED_2026_09"
+  },
+  {
+    "iata": "PBI",
+    "name": "Palm Beach",
+    "lat": 26.6832,
+    "lng": -80.0956,
+    "tier": "LUXURY",
+    "idealNightsMin": 3,
+    "idealNightsMax": 6,
+    "walkable": true,
+    "carNeeded": false,
+    "airportToCenterKm": 8,
+    "parkingTypical": "EXPENSIVE",
+    "activitiesDispersed": false,
+    "familyFit": {
+      "tags": ["beach", "water", "zoo-aquarium", "sports"],
+      "byAgeBand": { "0-5": 2, "6-12": 2, "13-17": 1, "adult": 3 },
+      "indoorRatio": 0.2
+    },
+    "anchors": [
+      { "title": "Worth Avenue, The Breakers & Palm Beach oceanfront", "kind": "ATTRACTION", "months": [11,12,1,2,3,4], "weatherDependent": true },
+      { "title": "Lion Country Safari & Palm Beach Zoo", "kind": "ATTRACTION", "months": [1,2,3,4,5,10,11,12], "weatherDependent": true },
+      { "title": "MLB Spring Training (Astros, Nationals, Cardinals, Marlins)", "kind": "SPORTS", "months": [2,3], "weatherDependent": true },
+      { "title": "Polo season (Wellington)", "kind": "SPORTS", "months": [1,2,3,4], "weatherDependent": true }
+    ],
+    "climate": { "monthly": [
+      { "m": 1, "highF": 75, "lowF": 57, "precipDays": 7 }, { "m": 2, "highF": 77, "lowF": 59, "precipDays": 7 }, { "m": 3, "highF": 79, "lowF": 63, "precipDays": 7 },
+      { "m": 4, "highF": 82, "lowF": 67, "precipDays": 7 }, { "m": 5, "highF": 86, "lowF": 71, "precipDays": 9 }, { "m": 6, "highF": 89, "lowF": 75, "precipDays": 14 },
+      { "m": 7, "highF": 90, "lowF": 76, "precipDays": 14 }, { "m": 8, "highF": 90, "lowF": 77, "precipDays": 15 }, { "m": 9, "highF": 89, "lowF": 76, "precipDays": 15 },
+      { "m": 10, "highF": 85, "lowF": 72, "precipDays": 12 }, { "m": 11, "highF": 80, "lowF": 65, "precipDays": 8 }, { "m": 12, "highF": 77, "lowF": 61, "precipDays": 8 }
+    ] },
+    "generatedBy": "HAND_AUTHORED_2026_09"
+  },
+  {
+    "iata": "SRQ",
+    "name": "Sarasota / Siesta Key",
+    "lat": 27.3954,
+    "lng": -82.5544,
+    "tier": "UPSCALE",
+    "idealNightsMin": 4,
+    "idealNightsMax": 7,
+    "walkable": false,
+    "carNeeded": true,
+    "airportToCenterKm": 15,
+    "parkingTypical": "FREE",
+    "activitiesDispersed": true,
+    "familyFit": {
+      "tags": ["beach", "water", "zoo-aquarium", "museums"],
+      "byAgeBand": { "0-5": 3, "6-12": 3, "13-17": 2, "adult": 3 },
+      "indoorRatio": 0.2
+    },
+    "anchors": [
+      { "title": "Siesta Key & Lido Key beaches", "kind": "NATURE", "months": [1,2,3,4,5,10,11,12], "weatherDependent": true },
+      { "title": "Mote Marine Aquarium & The Ringling", "kind": "ATTRACTION", "months": [1,2,3,4,5,6,7,8,9,10,11,12], "weatherDependent": false },
+      { "title": "MLB Spring Training (Orioles, Braves)", "kind": "SPORTS", "months": [2,3], "weatherDependent": true }
+    ],
+    "climate": { "monthly": [
+      { "m": 1, "highF": 72, "lowF": 51, "precipDays": 6 }, { "m": 2, "highF": 74, "lowF": 54, "precipDays": 6 }, { "m": 3, "highF": 78, "lowF": 58, "precipDays": 6 },
+      { "m": 4, "highF": 83, "lowF": 62, "precipDays": 4 }, { "m": 5, "highF": 88, "lowF": 69, "precipDays": 5 }, { "m": 6, "highF": 90, "lowF": 74, "precipDays": 11 },
+      { "m": 7, "highF": 91, "lowF": 75, "precipDays": 15 }, { "m": 8, "highF": 91, "lowF": 76, "precipDays": 15 }, { "m": 9, "highF": 90, "lowF": 74, "precipDays": 11 },
+      { "m": 10, "highF": 86, "lowF": 67, "precipDays": 6 }, { "m": 11, "highF": 79, "lowF": 59, "precipDays": 5 }, { "m": 12, "highF": 74, "lowF": 54, "precipDays": 6 }
+    ] },
+    "generatedBy": "HAND_AUTHORED_2026_09"
+  },
+  {
+    "iata": "MYR",
+    "name": "Myrtle Beach",
+    "lat": 33.6797,
+    "lng": -78.9283,
+    "tier": "BUDGET",
+    "idealNightsMin": 4,
+    "idealNightsMax": 7,
+    "walkable": false,
+    "carNeeded": true,
+    "airportToCenterKm": 5,
+    "parkingTypical": "FREE",
+    "activitiesDispersed": true,
+    "familyFit": {
+      "tags": ["beach", "water", "theme-parks", "interactive", "sports", "zoo-aquarium"],
+      "byAgeBand": { "0-5": 3, "6-12": 3, "13-17": 3, "adult": 2 },
+      "indoorRatio": 0.25
+    },
+    "anchors": [
+      { "title": "Grand Strand beaches & Boardwalk SkyWheel", "kind": "NATURE", "months": [5,6,7,8,9], "weatherDependent": true },
+      { "title": "Broadway at the Beach & Ripley's Aquarium", "kind": "ATTRACTION", "months": [1,2,3,4,5,6,7,8,9,10,11,12], "weatherDependent": false },
+      { "title": "Golf (90+ courses)", "kind": "SPORTS", "months": [3,4,5,9,10,11], "weatherDependent": true },
+      { "title": "Carolina Country Music Fest", "kind": "FESTIVAL", "months": [6], "weatherDependent": true }
+    ],
+    "climate": { "monthly": [
+      { "m": 1, "highF": 58, "lowF": 37, "precipDays": 9 }, { "m": 2, "highF": 61, "lowF": 40, "precipDays": 8 }, { "m": 3, "highF": 68, "lowF": 46, "precipDays": 9 },
+      { "m": 4, "highF": 75, "lowF": 53, "precipDays": 7 }, { "m": 5, "highF": 82, "lowF": 62, "precipDays": 8 }, { "m": 6, "highF": 88, "lowF": 70, "precipDays": 10 },
+      { "m": 7, "highF": 90, "lowF": 74, "precipDays": 11 }, { "m": 8, "highF": 88, "lowF": 73, "precipDays": 11 }, { "m": 9, "highF": 84, "lowF": 68, "precipDays": 9 },
+      { "m": 10, "highF": 76, "lowF": 57, "precipDays": 7 }, { "m": 11, "highF": 68, "lowF": 47, "precipDays": 7 }, { "m": 12, "highF": 61, "lowF": 40, "precipDays": 9 }
+    ] },
+    "generatedBy": "HAND_AUTHORED_2026_09"
+  },
+  {
+    "iata": "ASE",
+    "name": "Aspen / Snowmass",
+    "lat": 39.2232,
+    "lng": -106.8687,
+    "tier": "LUXURY",
+    "idealNightsMin": 4,
+    "idealNightsMax": 7,
+    "walkable": true,
+    "carNeeded": false,
+    "airportToCenterKm": 6,
+    "parkingTypical": "EXPENSIVE",
+    "activitiesDispersed": false,
+    "familyFit": {
+      "tags": ["snow", "hiking", "interactive"],
+      "byAgeBand": { "0-5": 2, "6-12": 3, "13-17": 3, "adult": 3 },
+      "indoorRatio": 0.2
+    },
+    "anchors": [
+      { "title": "Aspen Snowmass skiing (four mountains)", "kind": "NATURE", "months": [12,1,2,3,4], "weatherDependent": true },
+      { "title": "Maroon Bells & summer hiking/biking", "kind": "NATURE", "months": [6,7,8,9], "weatherDependent": true },
+      { "title": "Aspen Music Festival & Food & Wine Classic", "kind": "FESTIVAL", "months": [6,7,8], "weatherDependent": false },
+      { "title": "X Games Aspen", "kind": "SPORTS", "months": [1], "weatherDependent": true }
+    ],
+    "climate": { "monthly": [
+      { "m": 1, "highF": 33, "lowF": 8, "precipDays": 9 }, { "m": 2, "highF": 37, "lowF": 11, "precipDays": 9 }, { "m": 3, "highF": 45, "lowF": 19, "precipDays": 10 },
+      { "m": 4, "highF": 53, "lowF": 26, "precipDays": 9 }, { "m": 5, "highF": 63, "lowF": 34, "precipDays": 9 }, { "m": 6, "highF": 74, "lowF": 41, "precipDays": 6 },
+      { "m": 7, "highF": 80, "lowF": 47, "precipDays": 9 }, { "m": 8, "highF": 78, "lowF": 46, "precipDays": 10 }, { "m": 9, "highF": 70, "lowF": 38, "precipDays": 8 },
+      { "m": 10, "highF": 58, "lowF": 28, "precipDays": 7 }, { "m": 11, "highF": 43, "lowF": 17, "precipDays": 8 }, { "m": 12, "highF": 32, "lowF": 8, "precipDays": 9 }
+    ] },
+    "generatedBy": "HAND_AUTHORED_2026_09"
+  },
+  {
+    "iata": "BZN",
+    "name": "Bozeman / Big Sky / Yellowstone",
+    "lat": 45.7776,
+    "lng": -111.153,
+    "tier": "UPSCALE",
+    "idealNightsMin": 4,
+    "idealNightsMax": 8,
+    "walkable": false,
+    "carNeeded": true,
+    "airportToCenterKm": 15,
+    "parkingTypical": "FREE",
+    "activitiesDispersed": true,
+    "familyFit": {
+      "tags": ["hiking", "snow", "museums", "water"],
+      "byAgeBand": { "0-5": 1, "6-12": 3, "13-17": 3, "adult": 3 },
+      "indoorRatio": 0.15
+    },
+    "anchors": [
+      { "title": "Yellowstone National Park (North & West entrances)", "kind": "NATURE", "months": [5,6,7,8,9,10], "weatherDependent": true },
+      { "title": "Big Sky Resort skiing", "kind": "NATURE", "months": [12,1,2,3,4], "weatherDependent": true },
+      { "title": "Museum of the Rockies (dinosaurs)", "kind": "ATTRACTION", "months": [1,2,3,4,5,6,7,8,9,10,11,12], "weatherDependent": false },
+      { "title": "Yellowstone winter snowcoach/wolf watching", "kind": "NATURE", "months": [12,1,2], "weatherDependent": true }
+    ],
+    "climate": { "monthly": [
+      { "m": 1, "highF": 33, "lowF": 13, "precipDays": 8 }, { "m": 2, "highF": 37, "lowF": 15, "precipDays": 7 }, { "m": 3, "highF": 46, "lowF": 23, "precipDays": 9 },
+      { "m": 4, "highF": 55, "lowF": 30, "precipDays": 9 }, { "m": 5, "highF": 64, "lowF": 38, "precipDays": 11 }, { "m": 6, "highF": 73, "lowF": 45, "precipDays": 10 },
+      { "m": 7, "highF": 84, "lowF": 50, "precipDays": 6 }, { "m": 8, "highF": 83, "lowF": 48, "precipDays": 6 }, { "m": 9, "highF": 72, "lowF": 40, "precipDays": 7 },
+      { "m": 10, "highF": 57, "lowF": 30, "precipDays": 7 }, { "m": 11, "highF": 42, "lowF": 20, "precipDays": 8 }, { "m": 12, "highF": 31, "lowF": 12, "precipDays": 8 }
+    ] },
+    "generatedBy": "HAND_AUTHORED_2026_09"
+  },
+  {
+    "iata": "JAC",
+    "name": "Jackson Hole / Grand Teton",
+    "lat": 43.6073,
+    "lng": -110.7377,
+    "tier": "LUXURY",
+    "idealNightsMin": 4,
+    "idealNightsMax": 7,
+    "walkable": false,
+    "carNeeded": true,
+    "airportToCenterKm": 14,
+    "parkingTypical": "FREE",
+    "activitiesDispersed": true,
+    "familyFit": {
+      "tags": ["hiking", "snow", "water", "museums"],
+      "byAgeBand": { "0-5": 1, "6-12": 3, "13-17": 3, "adult": 3 },
+      "indoorRatio": 0.15
+    },
+    "anchors": [
+      { "title": "Grand Teton National Park & Jenny Lake", "kind": "NATURE", "months": [6,7,8,9], "weatherDependent": true },
+      { "title": "Jackson Hole Mountain Resort skiing", "kind": "NATURE", "months": [12,1,2,3,4], "weatherDependent": true },
+      { "title": "Yellowstone South Entrance day trips", "kind": "NATURE", "months": [5,6,7,8,9,10], "weatherDependent": true },
+      { "title": "National Elk Refuge sleigh rides", "kind": "NATURE", "months": [12,1,2,3], "weatherDependent": true },
+      { "title": "Snake River rafting & wildlife safaris", "kind": "NATURE", "months": [6,7,8,9], "weatherDependent": true }
+    ],
+    "climate": { "monthly": [
+      { "m": 1, "highF": 27, "lowF": 4, "precipDays": 11 }, { "m": 2, "highF": 32, "lowF": 7, "precipDays": 9 }, { "m": 3, "highF": 42, "lowF": 16, "precipDays": 9 },
+      { "m": 4, "highF": 51, "lowF": 25, "precipDays": 8 }, { "m": 5, "highF": 62, "lowF": 32, "precipDays": 9 }, { "m": 6, "highF": 72, "lowF": 38, "precipDays": 8 },
+      { "m": 7, "highF": 81, "lowF": 43, "precipDays": 6 }, { "m": 8, "highF": 80, "lowF": 41, "precipDays": 6 }, { "m": 9, "highF": 71, "lowF": 33, "precipDays": 6 },
+      { "m": 10, "highF": 57, "lowF": 24, "precipDays": 7 }, { "m": 11, "highF": 39, "lowF": 14, "precipDays": 9 }, { "m": 12, "highF": 27, "lowF": 5, "precipDays": 11 }
+    ] },
+    "generatedBy": "HAND_AUTHORED_2026_09"
+  },
+  {
+    "iata": "CUN",
+    "name": "Cancun / Riviera Maya",
+    "lat": 21.0365,
+    "lng": -86.8771,
+    "tier": "UPSCALE",
+    "idealNightsMin": 4,
+    "idealNightsMax": 7,
+    "walkable": false,
+    "carNeeded": false,
+    "airportToCenterKm": 18,
+    "parkingTypical": "FREE",
+    "activitiesDispersed": true,
+    "familyFit": {
+      "tags": ["beach", "water", "theme-parks", "interactive", "nightlife-heavy"],
+      "byAgeBand": { "0-5": 3, "6-12": 3, "13-17": 3, "adult": 3 },
+      "indoorRatio": 0.1
+    },
+    "anchors": [
+      { "title": "All-inclusive resorts (Hotel Zone, Playa del Carmen, Tulum)", "kind": "ATTRACTION", "months": [11,12,1,2,3,4,5], "weatherDependent": true },
+      { "title": "Xcaret, Xel-Ha & Xplor eco-parks", "kind": "THEME_PARK", "months": [1,2,3,4,5,6,7,8,9,10,11,12], "weatherDependent": true },
+      { "title": "Chichen Itza & Tulum ruins", "kind": "ATTRACTION", "months": [11,12,1,2,3,4], "weatherDependent": true },
+      { "title": "Cenote swimming & Isla Mujeres", "kind": "NATURE", "months": [1,2,3,4,5,6,7,8,9,10,11,12], "weatherDependent": true },
+      { "title": "Whale shark season (Isla Holbox)", "kind": "NATURE", "months": [6,7,8,9], "weatherDependent": true }
+    ],
+    "climate": { "monthly": [
+      { "m": 1, "highF": 82, "lowF": 67, "precipDays": 7 }, { "m": 2, "highF": 83, "lowF": 68, "precipDays": 5 }, { "m": 3, "highF": 85, "lowF": 70, "precipDays": 4 },
+      { "m": 4, "highF": 88, "lowF": 73, "precipDays": 3 }, { "m": 5, "highF": 90, "lowF": 76, "precipDays": 6 }, { "m": 6, "highF": 90, "lowF": 77, "precipDays": 10 },
+      { "m": 7, "highF": 91, "lowF": 77, "precipDays": 9 }, { "m": 8, "highF": 91, "lowF": 77, "precipDays": 9 }, { "m": 9, "highF": 90, "lowF": 76, "precipDays": 12 },
+      { "m": 10, "highF": 87, "lowF": 74, "precipDays": 11 }, { "m": 11, "highF": 84, "lowF": 71, "precipDays": 7 }, { "m": 12, "highF": 82, "lowF": 68, "precipDays": 7 }
+    ] },
+    "generatedBy": "HAND_AUTHORED_2026_09"
+  },
+  {
+    "iata": "PVR",
+    "name": "Puerto Vallarta / Riviera Nayarit",
+    "lat": 20.6801,
+    "lng": -105.2544,
+    "tier": "UPSCALE",
+    "idealNightsMin": 4,
+    "idealNightsMax": 7,
+    "walkable": true,
+    "carNeeded": false,
+    "airportToCenterKm": 8,
+    "parkingTypical": "FREE",
+    "activitiesDispersed": true,
+    "familyFit": {
+      "tags": ["beach", "water", "hiking", "nightlife-heavy"],
+      "byAgeBand": { "0-5": 3, "6-12": 3, "13-17": 2, "adult": 3 },
+      "indoorRatio": 0.1
+    },
+    "anchors": [
+      { "title": "Malecon, Zona Romantica & Banderas Bay beaches", "kind": "ATTRACTION", "months": [11,12,1,2,3,4], "weatherDependent": true },
+      { "title": "Nuevo Vallarta & Punta Mita resorts", "kind": "ATTRACTION", "months": [11,12,1,2,3,4,5], "weatherDependent": true },
+      { "title": "Humpback whale watching", "kind": "NATURE", "months": [12,1,2,3], "weatherDependent": true },
+      { "title": "Sayulita & Marietas Islands day trips", "kind": "NATURE", "months": [11,12,1,2,3,4,5], "weatherDependent": true }
+    ],
+    "climate": { "monthly": [
+      { "m": 1, "highF": 84, "lowF": 60, "precipDays": 2 }, { "m": 2, "highF": 84, "lowF": 60, "precipDays": 1 }, { "m": 3, "highF": 85, "lowF": 60, "precipDays": 0 },
+      { "m": 4, "highF": 86, "lowF": 62, "precipDays": 0 }, { "m": 5, "highF": 88, "lowF": 67, "precipDays": 1 }, { "m": 6, "highF": 90, "lowF": 73, "precipDays": 9 },
+      { "m": 7, "highF": 91, "lowF": 74, "precipDays": 16 }, { "m": 8, "highF": 91, "lowF": 74, "precipDays": 15 }, { "m": 9, "highF": 90, "lowF": 74, "precipDays": 14 },
+      { "m": 10, "highF": 90, "lowF": 71, "precipDays": 6 }, { "m": 11, "highF": 88, "lowF": 65, "precipDays": 2 }, { "m": 12, "highF": 85, "lowF": 61, "precipDays": 2 }
+    ] },
+    "generatedBy": "HAND_AUTHORED_2026_09"
+  },
+  {
+    "iata": "SJD",
+    "name": "Los Cabos",
+    "lat": 23.1518,
+    "lng": -109.7211,
+    "tier": "LUXURY",
+    "idealNightsMin": 4,
+    "idealNightsMax": 7,
+    "walkable": false,
+    "carNeeded": false,
+    "airportToCenterKm": 35,
+    "parkingTypical": "FREE",
+    "activitiesDispersed": true,
+    "familyFit": {
+      "tags": ["beach", "water", "nightlife-heavy", "sports"],
+      "byAgeBand": { "0-5": 2, "6-12": 2, "13-17": 2, "adult": 3 },
+      "indoorRatio": 0.1
+    },
+    "anchors": [
+      { "title": "Tourist Corridor luxury resorts", "kind": "ATTRACTION", "months": [10,11,12,1,2,3,4,5], "weatherDependent": true },
+      { "title": "El Arco, Medano Beach & Cabo San Lucas marina", "kind": "ATTRACTION", "months": [10,11,12,1,2,3,4,5], "weatherDependent": true },
+      { "title": "Gray whale & humpback season", "kind": "NATURE", "months": [12,1,2,3], "weatherDependent": true },
+      { "title": "Sport fishing & golf (Bisbee's Black & Blue)", "kind": "SPORTS", "months": [10,11], "weatherDependent": true }
+    ],
+    "climate": { "monthly": [
+      { "m": 1, "highF": 79, "lowF": 55, "precipDays": 1 }, { "m": 2, "highF": 80, "lowF": 55, "precipDays": 1 }, { "m": 3, "highF": 83, "lowF": 58, "precipDays": 0 },
+      { "m": 4, "highF": 86, "lowF": 60, "precipDays": 0 }, { "m": 5, "highF": 90, "lowF": 64, "precipDays": 0 }, { "m": 6, "highF": 93, "lowF": 70, "precipDays": 0 },
+      { "m": 7, "highF": 95, "lowF": 76, "precipDays": 2 }, { "m": 8, "highF": 95, "lowF": 77, "precipDays": 5 }, { "m": 9, "highF": 93, "lowF": 75, "precipDays": 5 },
+      { "m": 10, "highF": 90, "lowF": 70, "precipDays": 3 }, { "m": 11, "highF": 85, "lowF": 63, "precipDays": 1 }, { "m": 12, "highF": 80, "lowF": 58, "precipDays": 1 }
+    ] },
+    "generatedBy": "HAND_AUTHORED_2026_09"
+  },
+  {
+    "iata": "SJU",
+    "name": "San Juan, Puerto Rico",
+    "lat": 18.4394,
+    "lng": -66.0018,
+    "tier": "UPSCALE",
+    "idealNightsMin": 4,
+    "idealNightsMax": 7,
+    "walkable": true,
+    "carNeeded": false,
+    "airportToCenterKm": 8,
+    "parkingTypical": "CHEAP",
+    "activitiesDispersed": true,
+    "familyFit": {
+      "tags": ["beach", "water", "hiking", "museums", "nightlife-heavy"],
+      "byAgeBand": { "0-5": 2, "6-12": 3, "13-17": 3, "adult": 3 },
+      "indoorRatio": 0.15
+    },
+    "anchors": [
+      { "title": "Old San Juan forts (El Morro) & Condado/Isla Verde beaches", "kind": "ATTRACTION", "months": [1,2,3,4,5,6,7,8,9,10,11,12], "weatherDependent": true },
+      { "title": "El Yunque rainforest", "kind": "NATURE", "months": [1,2,3,4,5,6,7,8,9,10,11,12], "weatherDependent": true },
+      { "title": "Bioluminescent bay kayaking (Fajardo)", "kind": "NATURE", "months": [1,2,3,4,5,6,7,8,9,10,11,12], "weatherDependent": true },
+      { "title": "San Sebastian Street Festival", "kind": "FESTIVAL", "months": [1], "weatherDependent": true },
+      { "title": "Culebra & Vieques island hops", "kind": "NATURE", "months": [12,1,2,3,4,5], "weatherDependent": true }
+    ],
+    "climate": { "monthly": [
+      { "m": 1, "highF": 83, "lowF": 71, "precipDays": 15 }, { "m": 2, "highF": 84, "lowF": 71, "precipDays": 12 }, { "m": 3, "highF": 85, "lowF": 72, "precipDays": 10 },
+      { "m": 4, "highF": 86, "lowF": 73, "precipDays": 11 }, { "m": 5, "highF": 87, "lowF": 75, "precipDays": 14 }, { "m": 6, "highF": 89, "lowF": 77, "precipDays": 13 },
+      { "m": 7, "highF": 89, "lowF": 78, "precipDays": 16 }, { "m": 8, "highF": 89, "lowF": 78, "precipDays": 16 }, { "m": 9, "highF": 89, "lowF": 77, "precipDays": 15 },
+      { "m": 10, "highF": 88, "lowF": 76, "precipDays": 15 }, { "m": 11, "highF": 86, "lowF": 74, "precipDays": 16 }, { "m": 12, "highF": 84, "lowF": 72, "precipDays": 16 }
+    ] },
+    "generatedBy": "HAND_AUTHORED_2026_09"
+  },
+  {
+    "iata": "STT",
+    "name": "St. Thomas, USVI",
+    "lat": 18.3373,
+    "lng": -64.9734,
+    "tier": "UPSCALE",
+    "idealNightsMin": 4,
+    "idealNightsMax": 7,
+    "walkable": false,
+    "carNeeded": true,
+    "airportToCenterKm": 4,
+    "parkingTypical": "FREE",
+    "activitiesDispersed": true,
+    "familyFit": {
+      "tags": ["beach", "water", "hiking"],
+      "byAgeBand": { "0-5": 2, "6-12": 3, "13-17": 3, "adult": 3 },
+      "indoorRatio": 0.1
+    },
+    "anchors": [
+      { "title": "Magens Bay & Sapphire Beach", "kind": "NATURE", "months": [1,2,3,4,5,6,7,8,9,10,11,12], "weatherDependent": true },
+      { "title": "St. John / Virgin Islands National Park ferry day trips", "kind": "NATURE", "months": [12,1,2,3,4,5,6], "weatherDependent": true },
+      { "title": "Coral World Ocean Park & Skyride", "kind": "ATTRACTION", "months": [1,2,3,4,5,6,7,8,9,10,11,12], "weatherDependent": true },
+      { "title": "Carnival (St. Thomas)", "kind": "FESTIVAL", "months": [4,5], "weatherDependent": true }
+    ],
+    "climate": { "monthly": [
+      { "m": 1, "highF": 84, "lowF": 72, "precipDays": 13 }, { "m": 2, "highF": 84, "lowF": 71, "precipDays": 10 }, { "m": 3, "highF": 85, "lowF": 72, "precipDays": 9 },
+      { "m": 4, "highF": 86, "lowF": 73, "precipDays": 9 }, { "m": 5, "highF": 87, "lowF": 75, "precipDays": 11 }, { "m": 6, "highF": 88, "lowF": 77, "precipDays": 11 },
+      { "m": 7, "highF": 89, "lowF": 77, "precipDays": 13 }, { "m": 8, "highF": 90, "lowF": 78, "precipDays": 13 }, { "m": 9, "highF": 89, "lowF": 77, "precipDays": 13 },
+      { "m": 10, "highF": 88, "lowF": 76, "precipDays": 14 }, { "m": 11, "highF": 86, "lowF": 75, "precipDays": 15 }, { "m": 12, "highF": 84, "lowF": 73, "precipDays": 14 }
+    ] },
+    "generatedBy": "HAND_AUTHORED_2026_09"
+  },
+  {
+    "iata": "MBJ",
+    "name": "Montego Bay / Negril, Jamaica",
+    "lat": 18.5037,
+    "lng": -77.9134,
+    "tier": "UPSCALE",
+    "idealNightsMin": 4,
+    "idealNightsMax": 7,
+    "walkable": false,
+    "carNeeded": false,
+    "airportToCenterKm": 5,
+    "parkingTypical": "FREE",
+    "activitiesDispersed": true,
+    "familyFit": {
+      "tags": ["beach", "water", "hiking", "interactive", "nightlife-heavy"],
+      "byAgeBand": { "0-5": 3, "6-12": 3, "13-17": 3, "adult": 3 },
+      "indoorRatio": 0.1
+    },
+    "anchors": [
+      { "title": "All-inclusive resorts (Montego Bay, Negril, Ocho Rios)", "kind": "ATTRACTION", "months": [11,12,1,2,3,4], "weatherDependent": true },
+      { "title": "Dunn's River Falls & Mystic Mountain", "kind": "NATURE", "months": [1,2,3,4,5,6,7,8,9,10,11,12], "weatherDependent": true },
+      { "title": "Seven Mile Beach & Rick's Cafe (Negril)", "kind": "ATTRACTION", "months": [11,12,1,2,3,4,5], "weatherDependent": true },
+      { "title": "Reggae Sumfest", "kind": "FESTIVAL", "months": [7], "weatherDependent": true }
+    ],
+    "climate": { "monthly": [
+      { "m": 1, "highF": 84, "lowF": 71, "precipDays": 6 }, { "m": 2, "highF": 84, "lowF": 71, "precipDays": 5 }, { "m": 3, "highF": 85, "lowF": 72, "precipDays": 4 },
+      { "m": 4, "highF": 86, "lowF": 73, "precipDays": 5 }, { "m": 5, "highF": 87, "lowF": 75, "precipDays": 8 }, { "m": 6, "highF": 88, "lowF": 77, "precipDays": 9 },
+      { "m": 7, "highF": 89, "lowF": 77, "precipDays": 7 }, { "m": 8, "highF": 89, "lowF": 77, "precipDays": 8 }, { "m": 9, "highF": 88, "lowF": 76, "precipDays": 10 },
+      { "m": 10, "highF": 88, "lowF": 75, "precipDays": 12 }, { "m": 11, "highF": 86, "lowF": 74, "precipDays": 9 }, { "m": 12, "highF": 85, "lowF": 72, "precipDays": 6 }
+    ] },
+    "generatedBy": "HAND_AUTHORED_2026_09"
+  },
+  {
+    "iata": "NAS",
+    "name": "Nassau / Paradise Island, Bahamas",
+    "lat": 25.039,
+    "lng": -77.4661,
+    "tier": "LUXURY",
+    "idealNightsMin": 3,
+    "idealNightsMax": 6,
+    "walkable": false,
+    "carNeeded": false,
+    "airportToCenterKm": 15,
+    "parkingTypical": "FREE",
+    "activitiesDispersed": false,
+    "familyFit": {
+      "tags": ["beach", "water", "theme-parks", "zoo-aquarium", "interactive"],
+      "byAgeBand": { "0-5": 3, "6-12": 3, "13-17": 3, "adult": 2 },
+      "indoorRatio": 0.1
+    },
+    "anchors": [
+      { "title": "Atlantis Paradise Island (Aquaventure waterpark)", "kind": "THEME_PARK", "months": [1,2,3,4,5,6,7,8,9,10,11,12], "weatherDependent": true },
+      { "title": "Baha Mar resorts & Cable Beach", "kind": "ATTRACTION", "months": [11,12,1,2,3,4,5], "weatherDependent": true },
+      { "title": "Swimming pigs (Exuma) & Blue Lagoon Island day trips", "kind": "NATURE", "months": [1,2,3,4,5,6,7,8,9,10,11,12], "weatherDependent": true },
+      { "title": "Junkanoo parade", "kind": "FESTIVAL", "months": [12,1], "weatherDependent": true }
+    ],
+    "climate": { "monthly": [
+      { "m": 1, "highF": 77, "lowF": 63, "precipDays": 6 }, { "m": 2, "highF": 78, "lowF": 63, "precipDays": 5 }, { "m": 3, "highF": 79, "lowF": 65, "precipDays": 6 },
+      { "m": 4, "highF": 81, "lowF": 68, "precipDays": 6 }, { "m": 5, "highF": 84, "lowF": 71, "precipDays": 10 }, { "m": 6, "highF": 87, "lowF": 74, "precipDays": 13 },
+      { "m": 7, "highF": 89, "lowF": 75, "precipDays": 14 }, { "m": 8, "highF": 89, "lowF": 75, "precipDays": 15 }, { "m": 9, "highF": 88, "lowF": 75, "precipDays": 14 },
+      { "m": 10, "highF": 85, "lowF": 73, "precipDays": 12 }, { "m": 11, "highF": 81, "lowF": 69, "precipDays": 8 }, { "m": 12, "highF": 78, "lowF": 65, "precipDays": 7 }
+    ] },
+    "generatedBy": "HAND_AUTHORED_2026_09"
+  },
+  {
+    "iata": "PUJ",
+    "name": "Punta Cana, Dominican Republic",
+    "lat": 18.5674,
+    "lng": -68.3634,
+    "tier": "UPSCALE",
+    "idealNightsMin": 4,
+    "idealNightsMax": 7,
+    "walkable": false,
+    "carNeeded": false,
+    "airportToCenterKm": 15,
+    "parkingTypical": "FREE",
+    "activitiesDispersed": false,
+    "familyFit": {
+      "tags": ["beach", "water", "interactive", "nightlife-heavy"],
+      "byAgeBand": { "0-5": 3, "6-12": 3, "13-17": 3, "adult": 3 },
+      "indoorRatio": 0.1
+    },
+    "anchors": [
+      { "title": "Bavaro Beach all-inclusive resorts", "kind": "ATTRACTION", "months": [11,12,1,2,3,4,5], "weatherDependent": true },
+      { "title": "Saona Island catamaran day trip", "kind": "NATURE", "months": [1,2,3,4,5,6,7,8,9,10,11,12], "weatherDependent": true },
+      { "title": "Scape Park & Hoyo Azul cenote", "kind": "ATTRACTION", "months": [1,2,3,4,5,6,7,8,9,10,11,12], "weatherDependent": true }
+    ],
+    "climate": { "monthly": [
+      { "m": 1, "highF": 84, "lowF": 69, "precipDays": 8 }, { "m": 2, "highF": 84, "lowF": 69, "precipDays": 7 }, { "m": 3, "highF": 85, "lowF": 70, "precipDays": 6 },
+      { "m": 4, "highF": 86, "lowF": 71, "precipDays": 7 }, { "m": 5, "highF": 87, "lowF": 73, "precipDays": 10 }, { "m": 6, "highF": 88, "lowF": 75, "precipDays": 10 },
+      { "m": 7, "highF": 89, "lowF": 75, "precipDays": 10 }, { "m": 8, "highF": 89, "lowF": 75, "precipDays": 11 }, { "m": 9, "highF": 89, "lowF": 75, "precipDays": 11 },
+      { "m": 10, "highF": 88, "lowF": 74, "precipDays": 12 }, { "m": 11, "highF": 86, "lowF": 72, "precipDays": 12 }, { "m": 12, "highF": 84, "lowF": 70, "precipDays": 9 }
+    ] },
+    "generatedBy": "HAND_AUTHORED_2026_09"
+  },
+  {
+    "iata": "AUA",
+    "name": "Aruba",
+    "lat": 12.5014,
+    "lng": -70.0152,
+    "tier": "UPSCALE",
+    "idealNightsMin": 4,
+    "idealNightsMax": 7,
+    "walkable": true,
+    "carNeeded": false,
+    "airportToCenterKm": 12,
+    "parkingTypical": "FREE",
+    "activitiesDispersed": false,
+    "familyFit": {
+      "tags": ["beach", "water", "hiking", "nightlife-heavy"],
+      "byAgeBand": { "0-5": 3, "6-12": 3, "13-17": 2, "adult": 3 },
+      "indoorRatio": 0.1
+    },
+    "anchors": [
+      { "title": "Palm Beach & Eagle Beach resort strip", "kind": "ATTRACTION", "months": [1,2,3,4,5,6,7,8,9,10,11,12], "weatherDependent": true },
+      { "title": "Arikok National Park & Natural Pool UTV tours", "kind": "NATURE", "months": [1,2,3,4,5,6,7,8,9,10,11,12], "weatherDependent": true },
+      { "title": "Flamingo Beach (De Palm Island) & snorkeling", "kind": "NATURE", "months": [1,2,3,4,5,6,7,8,9,10,11,12], "weatherDependent": true },
+      { "title": "Aruba Carnival", "kind": "FESTIVAL", "months": [1,2], "weatherDependent": true }
+    ],
+    "climate": { "monthly": [
+      { "m": 1, "highF": 86, "lowF": 76, "precipDays": 7 }, { "m": 2, "highF": 86, "lowF": 76, "precipDays": 5 }, { "m": 3, "highF": 87, "lowF": 77, "precipDays": 3 },
+      { "m": 4, "highF": 88, "lowF": 78, "precipDays": 3 }, { "m": 5, "highF": 89, "lowF": 79, "precipDays": 3 }, { "m": 6, "highF": 90, "lowF": 80, "precipDays": 3 },
+      { "m": 7, "highF": 90, "lowF": 79, "precipDays": 5 }, { "m": 8, "highF": 91, "lowF": 80, "precipDays": 5 }, { "m": 9, "highF": 91, "lowF": 80, "precipDays": 5 },
+      { "m": 10, "highF": 90, "lowF": 79, "precipDays": 8 }, { "m": 11, "highF": 88, "lowF": 78, "precipDays": 11 }, { "m": 12, "highF": 87, "lowF": 77, "precipDays": 10 }
+    ] },
+    "generatedBy": "HAND_AUTHORED_2026_09"
+  },
+  {
+    "iata": "SXM",
+    "name": "St. Maarten / St. Martin",
+    "lat": 18.041,
+    "lng": -63.1089,
+    "tier": "UPSCALE",
+    "idealNightsMin": 4,
+    "idealNightsMax": 7,
+    "walkable": false,
+    "carNeeded": true,
+    "airportToCenterKm": 3,
+    "parkingTypical": "FREE",
+    "activitiesDispersed": true,
+    "familyFit": {
+      "tags": ["beach", "water", "nightlife-heavy"],
+      "byAgeBand": { "0-5": 2, "6-12": 2, "13-17": 2, "adult": 3 },
+      "indoorRatio": 0.1
+    },
+    "anchors": [
+      { "title": "Maho Beach plane-spotting & Simpson Bay", "kind": "ATTRACTION", "months": [1,2,3,4,5,6,7,8,9,10,11,12], "weatherDependent": true },
+      { "title": "Orient Bay & Grand Case (French side dining)", "kind": "ATTRACTION", "months": [11,12,1,2,3,4,5], "weatherDependent": true },
+      { "title": "Anguilla & St. Barths day trips", "kind": "NATURE", "months": [12,1,2,3,4,5], "weatherDependent": true },
+      { "title": "Heineken Regatta", "kind": "SPORTS", "months": [3], "weatherDependent": true }
+    ],
+    "climate": { "monthly": [
+      { "m": 1, "highF": 84, "lowF": 73, "precipDays": 12 }, { "m": 2, "highF": 84, "lowF": 72, "precipDays": 9 }, { "m": 3, "highF": 85, "lowF": 73, "precipDays": 8 },
+      { "m": 4, "highF": 86, "lowF": 74, "precipDays": 8 }, { "m": 5, "highF": 87, "lowF": 76, "precipDays": 10 }, { "m": 6, "highF": 88, "lowF": 78, "precipDays": 10 },
+      { "m": 7, "highF": 89, "lowF": 78, "precipDays": 12 }, { "m": 8, "highF": 89, "lowF": 78, "precipDays": 12 }, { "m": 9, "highF": 89, "lowF": 77, "precipDays": 12 },
+      { "m": 10, "highF": 88, "lowF": 76, "precipDays": 13 }, { "m": 11, "highF": 86, "lowF": 75, "precipDays": 14 }, { "m": 12, "highF": 84, "lowF": 74, "precipDays": 14 }
+    ] },
+    "generatedBy": "HAND_AUTHORED_2026_09"
+  }
+]

@@ -8,6 +8,7 @@ import { sendInboundConfirmation } from "@/lib/email"
 import { getConfig } from "@/lib/config"
 import { logAIUsage } from "@/lib/ai-usage"
 import { formatDateInTimezone } from "@/lib/utils"
+import { checkWebhookSecret } from "@/lib/webhook-auth"
 
 export const dynamic = "force-dynamic"
 
@@ -312,12 +313,17 @@ ${text}`
 // The +{userId} part identifies the user
 export async function POST(request: NextRequest) {
   // Verify webhook secret to prevent unauthorized access
-  const webhookSecret = process.env.INBOUND_WEBHOOK_SECRET
-  if (webhookSecret) {
-    const headerSecret = request.headers.get("x-webhook-secret")
-    if (headerSecret !== webhookSecret) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  // Fail closed: an unset/empty secret is a misconfiguration, not "auth off".
+  const authResult = checkWebhookSecret(
+    process.env.INBOUND_WEBHOOK_SECRET,
+    request.headers.get("x-webhook-secret"),
+  )
+  if (!authResult.ok) {
+    if (authResult.status === 503) {
+      console.error("[inbound-email] INBOUND_WEBHOOK_SECRET is not configured; rejecting request")
+      return NextResponse.json({ error: "Service unavailable" }, { status: 503 })
     }
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
   try {

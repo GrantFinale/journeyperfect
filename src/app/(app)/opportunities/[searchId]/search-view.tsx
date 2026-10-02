@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useTransition } from "react"
+import { useEffect, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { Check, Loader2, RefreshCw, AlertTriangle, Plane, Calendar, Users, Sparkles } from "lucide-react"
@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils"
 import { authorizePrivateRates, runOpportunitySearch } from "@/lib/actions/opportunities"
 import type { OpportunitySearchView, TravelOpportunityView } from "@/lib/opportunities/views"
 import { CheckPrivateRatesButton } from "@/components/private-rates/check-private-rates-button"
+import { GoRatesCaptureButton } from "@/components/private-rates/go-rates-capture-button"
 import { OpportunityCard } from "../opportunity-card"
 import { formatAgo, formatWindow, weekdayPatternLabel } from "../format"
 
@@ -51,6 +52,9 @@ export function SearchView({
   const router = useRouter()
   const [rerunning, startRerun] = useTransition()
   const [authorizing, startAuthorize] = useTransition()
+  // When the Go Rates extension is installed, it replaces the runner-based
+  // check (Hilton blocks the hosted browser anyway).
+  const [goRatesExtension, setGoRatesExtension] = useState(false)
 
   const inProgress = /^STAGE_\d$/.test(search.status)
   const states = stageStates(search.status)
@@ -169,8 +173,9 @@ export function SearchView({
                           Applying your rates…
                         </span>
                       ) : (
-                        <CheckPrivateRatesButton searchId={search.id} onDone={handlePrivateRatesDone} />
+                        !goRatesExtension && <CheckPrivateRatesButton searchId={search.id} onDone={handlePrivateRatesDone} />
                       )}
+                      {!authorizing && <GoRatesCaptureButton searchId={search.id} onExtensionDetected={setGoRatesExtension} />}
                       {search.privateRatesAuthorizedAt && (
                         <span className="text-xs text-emerald-700">
                           checked {formatAgo(search.privateRatesAuthorizedAt)}

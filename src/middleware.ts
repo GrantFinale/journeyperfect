@@ -22,8 +22,9 @@ export const config = {
      * - /api/auth/:path*
      * - /api/health
      * - /api/mcp and /api/cron/* (bearer-authenticated by their own handlers)
+     * - /api/private-rates/capture (capture-token authenticated; the Go Rates extension posts here)
      * - _next/static, _next/image, favicon.ico, etc.
      */
-    "/((?!$|login|shared/.*|api/auth/.*|api/health|api/mcp$|api/cron/.*|api/stripe/.*|api/inbound-email|api/trip/.*/calendar|_next/static|_next/image|favicon\\.ico|manifest\\.json|sw\\.js|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    "/((?!$|login|shared/.*|api/auth/.*|api/health|api/mcp$|api/private-rates/capture$|api/cron/.*|api/stripe/.*|api/inbound-email|api/trip/.*/calendar|_next/static|_next/image|favicon\\.ico|manifest\\.json|sw\\.js|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 }

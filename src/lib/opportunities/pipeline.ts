@@ -63,6 +63,22 @@ export interface StageOutcome {
   /** True when the stage had nothing to do (already complete) */
   skipped: boolean
   note?: string
+  /** Stage 3 only: distinct HotelRateQuote rows that matched a shortlisted candidate. */
+  quotesUsed?: number
+}
+
+/**
+ * How stage 3 gets its quotes.
+ *   "runner"   (default) run checkPrivateRatesForSearch (the browser runner),
+ *              then score from stored quotes.
+ *   "captured" never call the runner; score only from HotelRateQuote rows
+ *              already stored for the user (≤24h old, not expired), e.g. the
+ *              ones the Go Rates Chrome extension posted.
+ */
+export type PrivateRatesMode = "runner" | "captured"
+
+export interface RunStageOptions {
+  privateRatesMode?: PrivateRatesMode
 }
 
 export class StageRefusedError extends Error {
@@ -90,6 +106,8 @@ type ExtendedConstraints = SearchConstraints & { maxDoorToDoorMins?: number | nu
 const FORECAST_DAYS = 16
 /** HotelRateQuote must be this close to the candidate's centre to count. */
 const HOTEL_MATCH_KM = 40
+/** Captured mode only uses quotes retrieved within this window. */
+const CAPTURED_QUOTE_MAX_AGE_MS = 24 * 60 * 60_000
 /** Route price history window for the airfare baseline. */
 const ROUTE_HISTORY_DAYS = 120
 
@@ -587,7 +605,7 @@ async function runStage2(ctx: SearchContext): Promise<StageOutcome> {
 
 // ─── Stage 3: private rates (explicit authorisation only) ────────────────────
 
-async function runStage3(ctx: SearchContext): Promise<StageOutcome> {
+async function runStage3(ctx: SearchContext, mode: PrivateRatesMode = "runner"): Promise<StageOutcome> {
   const { search, caps } = ctx
   if (!search.privateRatesAuthorizedAt) {
     throw new StageRefusedError(3, "Private rates were not authorised for this search")
@@ -600,17 +618,20 @@ async function runStage3(ctx: SearchContext): Promise<StageOutcome> {
   // The private-rates action owns its own property cap; we bound which
   // candidates we evaluate quotes for.
   const shortlist = live.slice(0, Math.max(caps.maxPrivateRateLookups, 1) * 3)
-  const check = await checkPrivateRatesForSearch(search.id)
+  const check: { status: string; quotesWritten: number } =
+    mode === "captured" ? { status: "CAPTURED", quotesWritten: 0 } : await checkPrivateRatesForSearch(search.id)
 
   const now = new Date()
   const quotes = await prisma.hotelRateQuote.findMany({
     where: {
       userId: search.userId,
       expiresAt: { gt: now },
+      ...(mode === "captured" ? { retrievedAt: { gte: new Date(now.getTime() - CAPTURED_QUOTE_MAX_AGE_MS) } } : {}),
       checkIn: { gte: search.windowStart },
       checkOut: { lte: new Date(search.windowEnd.getTime() + 86_400_000) },
     },
   })
+  const usedQuoteIds = new Set<string>()
 
   const updates = shortlist.map((c) => {
     const checkIn = formatYmd(c.checkIn)
@@ -637,6 +658,7 @@ async function runStage3(ctx: SearchContext): Promise<StageOutcome> {
         available: q.available,
         retrievedAt: q.retrievedAt,
       }))
+    for (const q of matching) usedQuoteIds.add(q.id)
     const profile = ctx.profiles.get(c.destinationIata)
     const { pair: _pair, ...hotelValue } = evaluateHotelValue({ quotes: matching, nights: c.nights, destinationTier: profile?.tier ?? null })
     void _pair
@@ -646,7 +668,8 @@ async function runStage3(ctx: SearchContext): Promise<StageOutcome> {
     return prisma.opportunityCandidate.update({ where: { id: c.id }, data: { factors: json(factors), stage: Math.max(c.stage, 3), score } })
   })
   await prisma.$transaction(updates)
-  return { stage: 3, status: "STAGE_3", processed: updates.length, skipped: false, note: `${check.status}, ${check.quotesWritten} quotes` }
+  const note = mode === "captured" ? `CAPTURED, ${usedQuoteIds.size} quotes used` : `${check.status}, ${check.quotesWritten} quotes`
+  return { stage: 3, status: "STAGE_3", processed: updates.length, skipped: false, note, quotesUsed: usedQuoteIds.size }
 }
 
 // ─── Stage 4: outliers, scoring, TravelOpportunity rows ──────────────────────
@@ -799,7 +822,7 @@ async function existingOpportunityId(searchId: string, candidateId: string): Pro
  * Throws StageRefusedError when a cap or the stage-3 authorisation gate would
  * be violated; the caller decides whether that is a FAILED search.
  */
-export async function runStage(searchId: string, stage: StageNumber): Promise<StageOutcome> {
+export async function runStage(searchId: string, stage: StageNumber, opts: RunStageOptions = {}): Promise<StageOutcome> {
   const ctx = await loadContext(searchId)
   switch (stage) {
     case 0:
@@ -809,7 +832,7 @@ export async function runStage(searchId: string, stage: StageNumber): Promise<St
     case 2:
       return runStage2(ctx)
     case 3:
-      return runStage3(ctx)
+      return runStage3(ctx, opts.privateRatesMode ?? "runner")
     case 4:
       return runStage4(ctx)
   }

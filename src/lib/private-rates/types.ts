@@ -31,7 +31,7 @@ export type RateKind = "PRIVATE_HILTON_GO" | "PUBLIC"
 export type PrivateRateProviderId = "hilton"
 
 /** `PrivateRateAuditLog.action` */
-export type PrivateRateAuditAction = "CONNECT" | "CHECK_RATES" | "CHALLENGE" | "DISCONNECT" | "REVOKE" | "KILL_SWITCH"
+export type PrivateRateAuditAction = "CONNECT" | "CHECK_RATES" | "CHALLENGE" | "DISCONNECT" | "REVOKE" | "KILL_SWITCH" | "CAPTURE"
 
 /** Per-property lookup: the runner already knows which hotels to price. */
 export type HiltonRatesTask = {

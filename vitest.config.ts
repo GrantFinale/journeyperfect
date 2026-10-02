@@ -6,8 +6,8 @@ export default defineConfig({
     environment: "node",
     globals: true,
     setupFiles: [],
-    // The browser-runner is its own package with its own vitest; agent worktrees are stale copies.
-    exclude: ["**/node_modules/**", "services/**", ".claude/**"],
+    // The browser-runner and the Chrome extension are their own packages; agent worktrees are stale copies.
+    exclude: ["**/node_modules/**", "services/**", "extensions/**", ".claude/**"],
   },
   resolve: {
     alias: {

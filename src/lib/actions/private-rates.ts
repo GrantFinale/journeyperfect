@@ -18,7 +18,9 @@
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/db"
 import { setConfig } from "@/lib/config"
-import { getConfigKeyNumber } from "@/lib/config-keys"
+import { getConfigKey, getConfigKeyNumber } from "@/lib/config-keys"
+import { signCaptureToken } from "@/lib/private-rates/capture-token"
+import { GO_RATES_MAX_CONCURRENT_TABS, buildGoRatesItems, type GoRatesPlan } from "@/lib/private-rates/go-rates-plan"
 import { revalidatePath } from "next/cache"
 import {
   DEFAULT_PROVIDER,
@@ -464,6 +466,199 @@ export async function checkPrivateRatesForSearch(
 
   revalidatePath("/settings/private-rates")
   return stoppedKind ? { status, quotesWritten: progress.quotesWritten, challengeKind: stoppedKind } : { status, quotesWritten: progress.quotesWritten }
+}
+
+// ─── Go Rates capture (user-run Chrome extension) ───────────────────────────
+
+/**
+ * The capture endpoint's absolute URL. Read NEXT_PUBLIC_APP_URL through a
+ * computed key: a literal `process.env.NEXT_PUBLIC_APP_URL` is inlined at build
+ * time, and the Docker build sets it to http://localhost:3000.
+ */
+function captureEndpointUrl(): string {
+  const key = ["NEXT_PUBLIC", "APP_URL"].join("_")
+  const base = process.env[key] || process.env.AUTH_URL || process.env.NEXTAUTH_URL || "https://www.journeyperfect.com"
+  return `${base.replace(/\/+$/, "")}/api/private-rates/capture`
+}
+
+function gateMessage(reason: string): string {
+  switch (reason) {
+    case "DISABLED":
+      return "Private rates are turned off right now."
+    case "NOT_ENTITLED":
+      return "Private rates are not available on your account."
+    case "LIMIT":
+      return "You have reached today's limit for rate checks. Try again tomorrow."
+    default:
+      return "Private rates are not available right now."
+  }
+}
+
+/**
+ * Build the plan the Go Rates extension executes in the user's own Chrome:
+ * one Hilton search tab per (destination, dates) group, plus a 45-minute
+ * capture token bound to this user and search. Never touches the browser
+ * runner or the PrivateRateSession.
+ *
+ * Gates: enabled + entitled + daily cap. One plan = one check: a CHECK_RATES
+ * audit row (detail.mode "extension") is written here, before any tab opens,
+ * so two quick clicks cannot both slip under the cap. An empty plan consumes
+ * nothing.
+ */
+export async function createGoRatesCapturePlan(searchId: string): Promise<{ plan: GoRatesPlan } | { error: string }> {
+  const { id: userId } = await requireUser()
+  try {
+    await assertCanRun(userId, PROVIDER)
+  } catch (err) {
+    if (err instanceof PrivateRatesGateError) return { error: gateMessage(err.reason) }
+    throw err
+  }
+
+  const search = await prisma.opportunitySearch.findFirst({
+    where: { id: searchId, userId },
+    select: { id: true, travelerProfileIds: true },
+  })
+  if (!search) return { error: "Search not found." }
+
+  const [rows, maxItems, urlTemplate] = await Promise.all([
+    prisma.opportunityCandidate.findMany({
+      where: { searchId, pruned: false, stage: { gte: 1 } },
+      select: {
+        id: true,
+        destinationIata: true,
+        destinationName: true,
+        destinationLat: true,
+        destinationLng: true,
+        checkIn: true,
+        checkOut: true,
+        stage: true,
+        pruned: true,
+        score: true,
+      },
+    }),
+    getConfigKeyNumber("privateRates.maxPropertiesPerCheck"),
+    getConfigKey("privateRates.hilton.searchUrlTemplate"),
+  ])
+
+  const candidates: PlanCandidate[] = rows.map((r) => ({
+    id: r.id,
+    destinationIata: r.destinationIata,
+    destinationName: r.destinationName,
+    destinationLat: r.destinationLat,
+    destinationLng: r.destinationLng,
+    checkIn: ymd(r.checkIn),
+    checkOut: ymd(r.checkOut),
+    stage: r.stage,
+    pruned: r.pruned,
+    score: r.score,
+  }))
+  const items = buildGoRatesItems(candidates, {
+    maxItems,
+    urlTemplate,
+    travelerCount: Math.max(1, search.travelerProfileIds.length),
+  })
+  if (items.length === 0) return { error: "Nothing to price yet for this search." }
+
+  let token: string
+  try {
+    token = signCaptureToken({ userId, searchId }).token
+  } catch {
+    console.error("[private-rates] capture token secret is not configured")
+    return { error: "Go rates capture is not set up on the server yet." }
+  }
+
+  // Reserve the daily check before any tab opens.
+  await prisma.privateRateAuditLog.create({
+    data: {
+      userId,
+      provider: PROVIDER,
+      action: "CHECK_RATES",
+      searchId,
+      detail: { mode: "extension", status: "PLANNED", itemsPlanned: items.length },
+    },
+  })
+  revalidatePath("/settings/private-rates")
+
+  return {
+    plan: {
+      version: 1,
+      searchId,
+      token,
+      captureUrl: captureEndpointUrl(),
+      maxConcurrentTabs: GO_RATES_MAX_CONCURRENT_TABS,
+      items,
+    },
+  }
+}
+
+/**
+ * Apply what the extension captured: mark the search authorised for private
+ * rates, then re-run stage 3 in "captured" mode (scores only from quotes
+ * already stored for this user, ≤24h old; the browser runner is never called)
+ * and stage 4. `blockedPages` counts tabs the extension reported as blocked
+ * since this search's latest extension plan.
+ */
+export async function finishGoRatesCapture(
+  searchId: string,
+): Promise<{ status: string; opportunityCount: number; quotesUsed: number; blockedPages: number }> {
+  const { id: userId } = await requireUser()
+  const search = await prisma.opportunitySearch.findFirst({ where: { id: searchId, userId }, select: { id: true, privateRatesAuthorizedAt: true } })
+  if (!search) throw new Error("Search not found")
+
+  const countOpportunities = () => prisma.travelOpportunity.count({ where: { searchId, userId } })
+
+  try {
+    await assertEnabledAndEntitled(userId, PROVIDER)
+  } catch (err) {
+    if (err instanceof PrivateRatesGateError) {
+      return { status: `FAILED: ${gateMessage(err.reason)}`, opportunityCount: await countOpportunities(), quotesUsed: 0, blockedPages: 0 }
+    }
+    throw err
+  }
+
+  if (!search.privateRatesAuthorizedAt) {
+    await prisma.opportunitySearch.update({ where: { id: searchId }, data: { privateRatesAuthorizedAt: new Date() } })
+  }
+
+  const blockedPages = await blockedPagesSinceLatestPlan(userId, searchId)
+
+  // Dynamic import: the pipeline imports this module (runner-mode stage 3).
+  const { runStage, StageRefusedError } = await import("@/lib/opportunities/pipeline")
+  let status: string
+  let quotesUsed = 0
+  try {
+    const s3 = await runStage(searchId, 3, { privateRatesMode: "captured" })
+    quotesUsed = s3.quotesUsed ?? 0
+    const s4 = await runStage(searchId, 4)
+    status = s4.status
+  } catch (err) {
+    console.error("[private-rates] finishGoRatesCapture failed:", err)
+    status = err instanceof StageRefusedError ? `FAILED: ${err.message}` : "FAILED: Your captured rates could not be applied. Please try again."
+  }
+
+  revalidatePath(`/opportunities/${searchId}`)
+  return { status, opportunityCount: await countOpportunities(), quotesUsed, blockedPages }
+}
+
+async function blockedPagesSinceLatestPlan(userId: string, searchId: string): Promise<number> {
+  try {
+    const plans = await prisma.privateRateAuditLog.findMany({
+      where: { userId, provider: PROVIDER, action: "CHECK_RATES", searchId },
+      orderBy: { createdAt: "desc" },
+      take: 10,
+      select: { createdAt: true, detail: true },
+    })
+    const latest = plans.find((p) => (p.detail as { mode?: unknown } | null)?.mode === "extension")
+    if (!latest) return 0
+    const captures = await prisma.privateRateAuditLog.findMany({
+      where: { userId, provider: PROVIDER, action: "CAPTURE", searchId, createdAt: { gte: latest.createdAt } },
+      select: { detail: true },
+      take: 1000,
+    })
+    return captures.filter((c) => (c.detail as { blocked?: unknown } | null)?.blocked === true).length
+  } catch {
+    return 0
+  }
 }
 
 // ─── Admin ──────────────────────────────────────────────────────────────────

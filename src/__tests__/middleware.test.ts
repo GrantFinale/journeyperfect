@@ -3,7 +3,7 @@ import { NextResponse } from "next/server"
 
 // The middleware matcher regex from src/middleware.ts
 const MATCHER_REGEX =
-  /^\/((?!$|login|shared\/.*|api\/auth\/.*|api\/health|api\/mcp$|api\/cron\/.*|_next\/static|_next\/image|favicon\.ico|.*\.(?:svg|png|jpg|jpeg|gif|webp)$).*)/
+  /^\/((?!$|login|shared\/.*|api\/auth\/.*|api\/health|api\/mcp$|api\/private-rates\/capture$|api\/cron\/.*|_next\/static|_next\/image|favicon\.ico|.*\.(?:svg|png|jpg|jpeg|gif|webp)$).*)/
 
 function matchesMiddleware(pathname: string): boolean {
   return MATCHER_REGEX.test(pathname)
@@ -22,6 +22,7 @@ describe("middleware route matcher", () => {
       ["/api/health", "health check"],
       ["/api/mcp", "MCP endpoint (API-key auth)"],
       ["/api/cron/flight-prices", "cron endpoint (CRON_SECRET auth)"],
+      ["/api/private-rates/capture", "Go Rates capture endpoint (capture-token auth)"],
     ])("%s (%s) should not be matched", (pathname) => {
       expect(matchesMiddleware(pathname)).toBe(false)
     })
@@ -37,9 +38,19 @@ describe("middleware route matcher", () => {
       ["/api/trips", "API trips endpoint"],
       ["/api/mcpx", "lookalike of the MCP endpoint"],
       ["/api/cron", "bare cron prefix"],
+      ["/api/private-rates/capturex", "lookalike of the capture endpoint"],
+      ["/api/private-rates/capture/extra", "path under the capture endpoint"],
+      ["/api/private-rates", "other private-rates API paths"],
     ])("%s (%s) should be matched", (pathname) => {
       expect(matchesMiddleware(pathname)).toBe(true)
     })
+  })
+})
+
+describe("middleware matcher source", () => {
+  it("excludes the Go Rates capture endpoint with an anchored pattern", async () => {
+    const { config } = await import("@/middleware")
+    expect(config.matcher[0]).toContain("api/private-rates/capture$|")
   })
 })
 

@@ -13,6 +13,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
 import { LiveView } from "@/components/private-rates/live-view"
+import { useGoRatesExtension } from "@/components/private-rates/use-go-rates-extension"
 import { connectHilton, disconnectHilton, getPrivateRateStatus, pollHiltonConnect } from "@/lib/actions/private-rates"
 
 type Status = Awaited<ReturnType<typeof getPrivateRateStatus>>
@@ -216,6 +217,8 @@ export function PrivateRatesView({ initial }: { initial: Status }) {
         )}
       </section>
 
+      <GoRatesExtensionSection />
+
       <section className="rounded-lg border border-gray-200 bg-white p-5">
         <h2 className="text-base font-semibold text-gray-900">How this works</h2>
         <ul className="mt-3 list-disc space-y-1.5 pl-5 text-sm text-gray-600">
@@ -229,5 +232,50 @@ export function PrivateRatesView({ initial }: { initial: Status }) {
         </ul>
       </section>
     </div>
+  )
+}
+
+/** Install guide + presence badge for the Go Rates Chrome extension (linked as #extension). */
+function GoRatesExtensionSection() {
+  const { detected, checking } = useGoRatesExtension()
+  const badge = detected
+    ? { label: "Installed", className: "bg-green-100 text-green-800" }
+    : checking
+      ? { label: "Checking…", className: "bg-gray-100 text-gray-600" }
+      : { label: "Not detected", className: "bg-gray-100 text-gray-700" }
+
+  return (
+    <section id="extension" className="scroll-mt-6 rounded-lg border border-gray-200 bg-white p-5">
+      <div className="flex items-center gap-2">
+        <h2 className="text-lg font-semibold text-gray-900">Go Rates Chrome extension</h2>
+        <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${badge.className}`}>{badge.label}</span>
+      </div>
+      <p className="mt-1 text-sm text-gray-600">
+        The extension opens Hilton search tabs in your own Chrome, reads the rates shown on the page and sends them to
+        your JourneyPerfect account. You stay signed in to Hilton yourself, in your own browser. No password is involved:
+        JourneyPerfect never sees your Hilton sign-in.
+      </p>
+      <p className="mt-2 text-sm text-gray-600">
+        Once it is installed, an opportunity search shows an &ldquo;Open Go rate tabs&rdquo; button in its Private rates step.
+        Tabs open only when you press it.
+      </p>
+
+      <h3 className="mt-4 text-sm font-semibold text-gray-900">Install</h3>
+      <ol className="mt-2 list-decimal space-y-1.5 pl-5 text-sm text-gray-600">
+        <li>
+          In Chrome, open <code className="rounded bg-gray-100 px-1 py-0.5 text-xs text-gray-800">chrome://extensions</code>.
+        </li>
+        <li>Turn on <strong>Developer mode</strong> (top right).</li>
+        <li>
+          Click <strong>Load unpacked</strong> and select the <code className="rounded bg-gray-100 px-1 py-0.5 text-xs text-gray-800">extensions/go-rates</code>{" "}
+          folder from the JourneyPerfect repo:
+          <div className="mt-1 break-all rounded bg-gray-50 px-2 py-1 font-mono text-xs text-gray-800">
+            ~/claude-dashboard/journeyperfect/extensions/go-rates
+          </div>
+        </li>
+        <li>Sign in to Go Hilton in Chrome once. The extension uses that sign-in; it does not store it.</li>
+        <li>Reload this page. The badge above should say Installed.</li>
+      </ol>
+    </section>
   )
 }

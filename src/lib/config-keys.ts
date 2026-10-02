@@ -153,6 +153,12 @@ export const CONFIG_KEYS = {
     desc: "Rate/corporate code the runner appends to Hilton searches to surface the Team Member (Go Hilton) rate. Empty = public rates only.",
     secret: true,
   },
+  "privateRates.hilton.searchUrlTemplate": {
+    default:
+      "https://www.hilton.com/en/search/?query={location}&arrivalDate={checkIn}&departureDate={checkOut}&flexibleDates=false&room1NumAdults={adults}",
+    group: "privateRates",
+    desc: "Hilton search URL the Go Rates Chrome extension opens per destination + dates. Placeholders (URL-encoded): {location} {checkIn} {checkOut} {adults} {lat} {lng}. Must be https; an invalid template falls back to the default.",
+  },
 
   // ─── AI models ─────────────────────────────────────────────────────────
   "ai.tripPlannerModel": {

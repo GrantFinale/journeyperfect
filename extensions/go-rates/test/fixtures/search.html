@@ -1,0 +1,47 @@
+<!doctype html>
+<!-- PLAUSIBLE, NOT CAPTURED: hand-written to match the selector assumptions in lib/extract.js. -->
+<html lang="en">
+<head>
+  <title>Hotels in Chicago, IL | Hilton</title>
+  <script type="application/ld+json">
+  {"@context":"https://schema.org","@graph":[
+    {"@type":"Hotel","name":"Hilton Chicago","url":"https://www.hilton.com/en/hotels/chichhh-hilton-chicago/","geo":{"@type":"GeoCoordinates","latitude":41.8725,"longitude":-87.6245}},
+    {"@type":"Hotel","name":"Hampton Inn Chicago Downtown/Magnificent Mile","geo":{"latitude":"41.8937","longitude":"-87.6271"}}
+  ]}
+  </script>
+</head>
+<body>
+  <header>
+    <img alt="Go Hilton team member travel" src="/go.svg" />
+    <nav><button data-testid="header-account-menu" aria-haspopup="true">Hi, Member</button></nav>
+  </header>
+  <main>
+    <p>3 hotels found</p>
+    <ul>
+      <li data-testid="hotel-card">
+        <h2 data-testid="hotel-name">Hilton Chicago</h2>
+        <img alt="Hilton Hotels &amp; Resorts logo" src="/hh.svg" />
+        <a href="/en/book/reservation/rooms/?ctyhocn=CHICHHH&amp;arrivalDate=2026-11-06&amp;departureDate=2026-11-08">View rates</a>
+        <div data-testid="rate-container">
+          <span class="rate-label">Team Member Rate</span>
+          <span data-testid="price-amount">$89</span>
+          <s data-testid="strikethrough-price">$249</s>
+          <span>per night</span>
+        </div>
+        <div data-testid="total-price">Total $201.40 for 2 nights</div>
+      </li>
+      <li data-testid="hotel-card">
+        <h2 data-testid="hotel-name">Hampton Inn Chicago Downtown/Magnificent Mile</h2>
+        <a href="https://www.hilton.com/en/hotels/chimmhx-hampton-chicago-downtown-magnificent-mile/">Hotel details</a>
+        <div data-testid="rate-container"><span data-testid="price-amount">$134</span><span>/night</span></div>
+      </li>
+      <li data-testid="hotel-card">
+        <h2 data-testid="hotel-name">Conrad Chicago Downtown</h2>
+        <a href="/en/book/reservation/rooms/?ctyhocn=CHIRSCI&amp;arrivalDate=2026-11-06&amp;departureDate=2026-11-08">View rates</a>
+        <div>Sold out for your dates</div>
+      </li>
+    </ul>
+  </main>
+  <footer><a href="/en/hilton-honors/">Hilton Honors</a></footer>
+</body>
+</html>

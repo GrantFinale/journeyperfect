@@ -124,9 +124,11 @@ you change one copy, change the other.
 ## Hilton selector assumptions
 
 Everything we assume about hilton.com's DOM is in the `HILTON` constant at the
-top of `src/hilton.ts`, with a comment per entry. In short: the sign-in URL is
-`/en/hilton-honors/login/`; signed-in is detected by landing under
-`/hilton-honors/guest/` or by an account-menu widget; the rooms page is
+top of `src/hilton.ts`, with a comment per entry. In short: interactive
+sign-in starts on the Go Hilton team-member portal `/en/go-hilton/` and the
+user signs in from there in the live view; signed-in is detected by landing
+under `/hilton-honors/guest/` or by an account-menu / sign-out widget with no
+sign-in link on the page; the rooms page is
 `/en/book/reservation/rooms/?ctyhocn=…&arrivalDate=…&departureDate=…`; a rate
 code is appended as `corporateCode=` (override with `HILTON_RATE_CODE_PARAM`);
 the location search is `/en/search/?query=…`. Room and property cards are

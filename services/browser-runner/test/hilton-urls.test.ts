@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { brandFromCtyhocn, buildLocationSearchUrl, buildRoomsUrl, isTimeoutError } from "../src/hilton.js"
+import { brandFromCtyhocn, buildLocationSearchUrl, buildRoomsUrl, HILTON, isTimeoutError, signedInFromUrl } from "../src/hilton.js"
 
 describe("buildRoomsUrl", () => {
   it("builds the rooms deep link with dates and adults", () => {
@@ -39,6 +39,33 @@ describe("buildLocationSearchUrl", () => {
     const u = new URL(buildLocationSearchUrl({ location: "Denver", checkIn: "2026-10-10", checkOut: "2026-10-12", lat: 39.7 }))
     expect(u.searchParams.has("lat")).toBe(false)
     expect(u.searchParams.has("lng")).toBe(false)
+  })
+})
+
+describe("sign-in entry point", () => {
+  it("starts interactive sign-in on the Go Hilton portal", () => {
+    const u = new URL(HILTON.signInUrl)
+    expect(u.origin).toBe(HILTON.origin)
+    expect(u.pathname).toBe("/en/go-hilton/")
+    expect(u.pathname.startsWith("/en" + HILTON.goHiltonPath)).toBe(true)
+  })
+})
+
+describe("signedInFromUrl", () => {
+  it("treats the Honors guest area as signed in", () => {
+    expect(signedInFromUrl("https://www.hilton.com/en/hilton-honors/guest/my-account/")).toBe(true)
+    expect(signedInFromUrl("https://www.hilton.com/en/hilton-honors/guest/activity/")).toBe(true)
+  })
+
+  it("treats login pages as signed out", () => {
+    expect(signedInFromUrl("https://www.hilton.com/en/hilton-honors/login/")).toBe(false)
+    expect(signedInFromUrl("https://www.hilton.com/en/go-hilton/login/")).toBe(false)
+    expect(signedInFromUrl("not a url")).toBe(false)
+  })
+
+  it("defers to the DOM on the public Go Hilton landing page", () => {
+    expect(signedInFromUrl(HILTON.signInUrl)).toBeUndefined()
+    expect(signedInFromUrl("https://www.hilton.com/en/go-hilton/search/")).toBeUndefined()
   })
 })
 

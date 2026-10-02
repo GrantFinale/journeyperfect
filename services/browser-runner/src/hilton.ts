@@ -8,14 +8,24 @@
  * so it can be updated in one place. Each entry is an ASSUMPTION until checked
  * against the live site:
  *
- *   signInUrl        The Honors login page. Verified public URL.
+ *   signInUrl        Where an interactive sign-in session starts: the Go Hilton
+ *                    team-member travel portal (/en/go-hilton/; hilton.com/go
+ *                    301s here). The user signs in from there in the live view
+ *                    (the portal links to the Honors / team-member login).
+ *                    Verified public URL (2026-10-02, residential connection).
+ *   honorsLoginUrl   The plain Honors login page, kept for reference/fallback.
+ *   goHiltonPath     Path prefix of the Go Hilton portal. Being on it is NOT by
+ *                    itself a signed-in signal (the landing page is public).
  *   accountUrl       Honors account dashboard; unauthenticated visitors are
  *                    redirected to signInUrl. Used to verify a sealed profile is
  *                    still signed in.
  *   signedInPath     After login Hilton lands on /hilton-honors/guest/...;
  *                    any URL under this path means signed in.
  *   signedIn[]       Header widgets that only render for a signed-in member
- *                    (account menu / "Hi, <first name>" / points balance).
+ *                    (account menu / "Hi, <first name>" / points balance). The
+ *                    sign-out link is an ASSUMED marker that also covers the Go
+ *                    Hilton portal, which uses the same site header; it only
+ *                    counts while no sign-in link (signedOut[]) is present.
  *   roomsUrl         Room-selection page keyed by ctyhocn (Hilton property
  *                    code, e.g. CHIPDHH), arrivalDate/departureDate (YYYY-MM-DD),
  *                    room1NumAdults. These params are widely used deep-link
@@ -42,7 +52,9 @@ import type { ChallengeKind, HiltonCityRatesTask, HiltonRatesTask, RateObservati
 
 export const HILTON = {
   origin: "https://www.hilton.com",
-  signInUrl: "https://www.hilton.com/en/hilton-honors/login/",
+  signInUrl: "https://www.hilton.com/en/go-hilton/",
+  honorsLoginUrl: "https://www.hilton.com/en/hilton-honors/login/",
+  goHiltonPath: "/go-hilton/",
   accountUrl: "https://www.hilton.com/en/hilton-honors/guest/my-account/",
   signedInPath: "/hilton-honors/guest/",
   loginPath: "/hilton-honors/login",
@@ -57,6 +69,8 @@ export const HILTON = {
       'a[href*="/hilton-honors/guest/"]',
       '[data-testid="points-balance"]',
       'button[data-e2e="account-menu"]',
+      'a[href*="logout" i]',
+      'a[href*="signout" i]',
     ],
     signedOut: ['a[href*="/hilton-honors/login"]', '[data-testid="header-sign-in"]'],
     room: {
@@ -179,20 +193,31 @@ export async function openSignIn(context: BrowserContext): Promise<Page> {
 }
 
 /**
- * Signed-in check on the CURRENT page (no navigation, so it is safe to call
- * while the user is driving the live view). URL under signedInPath, or any
- * signed-in header widget present while no sign-in link is.
+ * URL-only part of the signed-in check: true under the Honors guest area,
+ * false on a login page (Honors login or any hilton.com /login path, including
+ * one reached from the Go Hilton portal), undefined when the URL alone cannot
+ * tell (e.g. the public Go Hilton landing page) so the caller inspects the DOM.
  */
-export async function isSignedIn(page: Page): Promise<boolean> {
-  const url = page.url()
-  let pathname = ""
+export function signedInFromUrl(url: string): boolean | undefined {
+  let pathname: string
   try {
     pathname = new URL(url).pathname
   } catch {
     return false
   }
-  if (pathname.startsWith("/en" + HILTON.signedInPath) || pathname.includes(HILTON.signedInPath)) return true
-  if (pathname.includes(HILTON.loginPath)) return false
+  if (pathname.includes(HILTON.signedInPath)) return true
+  if (pathname.includes(HILTON.loginPath) || /\/login\/?$/.test(pathname)) return false
+  return undefined
+}
+
+/**
+ * Signed-in check on the CURRENT page (no navigation, so it is safe to call
+ * while the user is driving the live view). URL under signedInPath, or any
+ * signed-in header widget present while no sign-in link is.
+ */
+export async function isSignedIn(page: Page): Promise<boolean> {
+  const byUrl = signedInFromUrl(page.url())
+  if (byUrl !== undefined) return byUrl
   return page.evaluate(
     ({ signedIn, signedOut }) => {
       const has = (sels: readonly string[]) => sels.some((s) => document.querySelector(s) !== null)

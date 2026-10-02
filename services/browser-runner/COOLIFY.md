@@ -1,5 +1,11 @@
 # Deploying browser-runner on Coolify
 
+> **Production currently runs on the home Mac Studio, not on Coolify (since
+> 2026-10-02).** `runner.journeyperfect.com` is routed by a Traefik dynamic file
+> through an SSH reverse tunnel. The Coolify app below is **stopped**, and auto
+> deploy is off. See [HOME-RUNNER.md](./HOME-RUNNER.md), including how to roll
+> back to this container.
+
 The runner is a **separate Coolify application** next to the Next.js app on the
 `benedict-ventures` droplet. Do not fold it into the Next.js app's container:
 the app must never have Playwright, Chromium, or the master key.

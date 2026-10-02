@@ -33,7 +33,7 @@
 ;(function (root) {
   "use strict"
 
-  const VERSION = "0.1.0"
+  const VERSION = "0.2.0"
 
   const SELECTORS = {
     signedIn: [
@@ -68,7 +68,16 @@
         'article[class*="hotel" i]',
         '[class*="HotelCard" i]',
       ],
-      name: ['[data-testid*="hotel-name" i]', '[data-testid*="hotelName" i]', "h2", "h3"],
+      // Tried in order; every candidate must pass isPlausibleName (never a price).
+      name: [
+        '[data-testid*="hotel-name" i]',
+        '[data-testid*="property-name" i]',
+        '[data-testid*="hotelName" i]',
+        '[data-testid*="propertyName" i]',
+        "h2",
+        "h3",
+        "h4",
+      ],
       price: ['[data-testid*="price" i]', '[data-testid*="rate" i]', '[class*="price" i]', '[class*="rate" i]'],
       link: ['a[href*="ctyhocn="]', 'a[href*="/hotels/"]'],
     },
@@ -183,6 +192,48 @@
     return CTYHOCN_BRANDS[String(code).trim().toUpperCase().slice(-2)]
   }
 
+  // Card text that is never a hotel name: calls to action and rate/price chrome.
+  const CTA_RE = /^(view|see|book|select|check|choose|show|more|reserve|explore|compare|find|learn|go to)\b|\b(rates?|details|deals?|availability|more info)$/i
+  const NOT_NAME_RE = /^(sold out|not available|unavailable|per night|nightly|total|from|team member|go hilton|member rate|lowest|price|rate|save|free)\b/i
+
+  /** Light clean-up of a name candidate: aria-label boilerplate, "View rates for X", "opens in new tab". */
+  function cleanNameCandidate(text) {
+    return norm(text)
+      .replace(/^(view|see|book|select|check)\s+(rates|details|hotel details|hotel|rooms|availability)?\s*(for|at)\s+/i, "")
+      .replace(/,?\s*\(?opens?\s+(in\s+)?(a\s+)?new\s+(tab|window)\)?\.?$/i, "")
+      .trim()
+  }
+
+  /**
+   * True when text can be a hotel name: never money ("$317"), not mostly
+   * digits/currency symbols, at least 3 letters, not a call to action.
+   */
+  function isPlausibleName(text) {
+    const t = norm(text)
+    if (!t || t.length > 160) return false
+    if (new RegExp(MONEY_SRC).test(t)) return false
+    const letters = (t.match(/\p{L}/gu) || []).length
+    if (letters < 3) return false
+    const compact = t.replace(/\s+/g, "")
+    const numeric = (compact.match(/[\d$€£¥.,%+\-/]/g) || []).length
+    if (numeric * 2 >= compact.length) return false
+    if (CTA_RE.test(t) || NOT_NAME_RE.test(t)) return false
+    return true
+  }
+
+  /**
+   * First plausible name among ordered candidates; otherwise the property code
+   * (the server resolves it to a stored name), otherwise "Property".
+   */
+  function choosePropertyName(candidates, code) {
+    for (const c of candidates || []) {
+      if (typeof c !== "string") continue
+      const t = cleanNameCandidate(c)
+      if (isPlausibleName(t)) return t.slice(0, 160)
+    }
+    return code ? String(code) : "Property"
+  }
+
   /** Akamai / bot-protection error page detection from title + body text + url. */
   function detectBlocked(sig) {
     const title = String((sig && sig.title) || "").toLowerCase()
@@ -279,7 +330,7 @@
 
     const base = {
       propertyCode: card.code || undefined,
-      propertyName: norm(card.name || card.code || "Property").slice(0, 160),
+      propertyName: choosePropertyName([card.name], card.code),
       brand: card.brand || brandFromCode(card.code),
       lat: typeof card.lat === "number" ? card.lat : undefined,
       lng: typeof card.lng === "number" ? card.lng : undefined,
@@ -305,7 +356,13 @@
       }
     }
     const hasPrivate = nightly.some((e) => e.kind === "PRIVATE")
-    const unlabelled = nightly.filter((e) => e.kind === null).sort((a, b) => a.amount - b.amount)
+    // The same unlabelled amount shown twice on a card (price + "$239 Select"
+    // button) is one price, not a private rate and a public comparable.
+    const seenAmounts = new Set()
+    const unlabelled = nightly
+      .filter((e) => e.kind === null)
+      .sort((a, b) => a.amount - b.amount)
+      .filter((e) => (seenAmounts.has(e.amount) ? false : (seenAmounts.add(e.amount), true)))
     const hasStruck = nightly.some((e) => e.struck)
     unlabelled.forEach((e, i) => {
       if (!hasPrivate && i === 0 && ctx.goContext && !ctx.signedOut) {
@@ -371,7 +428,8 @@
    * lower-cased name and by property code. Budgeted so huge blobs stay cheap.
    */
   function indexGeo(value, index, budget) {
-    index = index || { byName: new Map(), byCode: new Map() }
+    index = index || { byName: new Map(), byCode: new Map(), nameByCode: new Map() }
+    if (!index.nameByCode) index.nameByCode = new Map()
     let left = budget || 200000
     const num = (v) => (v === null || v === undefined || v === "" ? NaN : Number(v))
     const coords = (n) => {
@@ -390,6 +448,12 @@
       if (Array.isArray(n)) {
         for (const v of n) if (v && typeof v === "object") stack.push(v)
         continue
+      }
+      // Names keyed by property code, with or without coordinates.
+      const anyCode = [n.ctyhocn, n.propCode, n.propertyCode].find((v) => typeof v === "string" && /^[A-Za-z0-9]{4,10}$/.test(v))
+      if (anyCode && !index.nameByCode.has(anyCode.toUpperCase())) {
+        const nm = [n.name, n.propertyName, n.hotelName].find((v) => typeof v === "string" && isPlausibleName(v))
+        if (nm) index.nameByCode.set(anyCode.toUpperCase(), norm(nm).slice(0, 160))
       }
       const c = coords(n)
       if (c) {
@@ -570,7 +634,7 @@
   }
 
   function geoIndexFor(doc) {
-    const index = { byName: new Map(), byCode: new Map() }
+    const index = { byName: new Map(), byCode: new Map(), nameByCode: new Map() }
     for (const s of safeAll(doc, SELECTORS.jsonLd)) {
       try {
         indexGeo(JSON.parse(s.textContent || "null"), index, 50000)
@@ -612,6 +676,33 @@
       }
     }
     return {}
+  }
+
+  /**
+   * Ordered hotel-name candidates for one search card:
+   *   1. headings / name test-ids (SELECTORS.search.name, every match in order)
+   *   2. text, aria-label and title of the link carrying this card's ctyhocn
+   *   3. img alt inside the card (logos excluded)
+   *   4. __NEXT_DATA__ / JSON-LD name keyed by the property code
+   * choosePropertyName() rejects anything money-like, so a price that comes
+   * before the heading can never become the name.
+   */
+  function cardNameCandidates(card, code, linkSels, nameByCode, base) {
+    const out = []
+    for (const q of SELECTORS.search.name) for (const el of safeAll(card, q).slice(0, 6)) out.push(textOf(el))
+    for (const q of linkSels) {
+      for (const a of safeAll(card, q)) {
+        const c = codeFromUrl(a.getAttribute("href"), base)
+        if (!c || (code && c !== code)) continue
+        out.push(textOf(a), a.getAttribute("aria-label") || "", a.getAttribute("title") || "")
+      }
+    }
+    for (const img of safeAll(card, "img[alt]")) {
+      const alt = img.getAttribute("alt") || ""
+      if (alt && !/logo/i.test(alt)) out.push(alt)
+    }
+    if (code && nameByCode && nameByCode.get(code)) out.push(nameByCode.get(code))
+    return out
   }
 
   function cardBrand(card) {
@@ -676,7 +767,10 @@
 
     if (pageKind === "ROOMS") {
       let propertyCode = codeFromUrl(loc)
-      const propertyName = firstText(doc, SELECTORS.propertyName) || propertyCode || "Property"
+      const nameCands = []
+      for (const q of SELECTORS.propertyName) for (const el of safeAll(doc, q).slice(0, 3)) nameCands.push(textOf(el))
+      if (propertyCode && geo.nameByCode.get(propertyCode)) nameCands.push(geo.nameByCode.get(propertyCode))
+      const propertyName = choosePropertyName(nameCands, propertyCode)
       let brand
       for (const q of SELECTORS.brand) {
         const el = safeOne(doc, q)
@@ -720,11 +814,8 @@
         const { code, url } = cardCode(card, SELECTORS.search.link, loc || "https://www.hilton.com/")
         if (code && codes.has(code)) continue
         if (code) codes.add(code)
-        let name = firstText(card, SELECTORS.search.name)
-        if (!name) {
-          const firstLine = norm(String(card.innerText || card.textContent || "").split("\n")[0])
-          name = firstLine || code || "Property"
-        }
+        const base = loc || "https://www.hilton.com/"
+        const name = choosePropertyName(cardNameCandidates(card, code, SELECTORS.search.link, geo.nameByCode, base), code)
         const g = (code && geo.byCode.get(code)) || geo.byName.get(name.toLowerCase()) || {}
         const entries = collectEntries(card, SELECTORS.search.price, win)
         const c = {
@@ -769,6 +860,7 @@
     parseMoney, parseAllMoney, stripMoney, codeFromUrl, brandFromCode, detectBlocked, detectPageKind,
     detectGoContext, sanitizeUrl, redact, classifyEntry, buildCardObservations, reduceRoomObservations, indexGeo,
     detectAuth, quickProbe, extractFromDocument, snapshot,
+    isPlausibleName, choosePropertyName, cardNameCandidates,
   }
   root.JPGoRatesExtract = api
   if (typeof module !== "undefined" && module.exports) module.exports = api

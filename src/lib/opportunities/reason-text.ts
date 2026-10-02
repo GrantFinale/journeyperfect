@@ -14,6 +14,18 @@ export function hotelSavingsDetail(hotelName: string, privateNightly: number, pu
   return `${hotelName}, private ${money(privateNightly)} vs public ${money(publicNightly)}/night`
 }
 
+/** Informational only (no public comparable): never phrased as a saving. */
+export const GO_RATE_HEADLINE_PREFIX = "Go rate from "
+
+export function goRateHeadline(nightly: number, hotelName: string, currency = "USD"): string {
+  return `${GO_RATE_HEADLINE_PREFIX}${money(nightly, currency)}/night at ${hotelName}`
+}
+
+/** A hotelValue reason that only reports a Go rate, as opposed to a deal. */
+export function isInformationalHotelReason(headline: string): boolean {
+  return headline.startsWith(GO_RATE_HEADLINE_PREFIX)
+}
+
 const PARTY_WORDS = ["", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"]
 
 export function partyWord(count: number): string {

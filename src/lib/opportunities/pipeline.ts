@@ -27,7 +27,7 @@ import type { FlightItinerary, FlightQuery } from "@/lib/flights/types"
 import { haversineDistance } from "@/lib/haversine"
 import { getWeatherForecast, type DayForecast } from "@/lib/weather"
 import { getHistoricalWeather } from "@/lib/weather-climate"
-import { assembleCoreTripCost, estimateGroundTransport, estimateMajorActivity } from "./cost-estimates"
+import { assembleCoreTripCost, estimateGroundTransport, estimateMajorActivity, hotelStayTotal } from "./cost-estimates"
 import { generateDateCandidates } from "./date-candidates"
 import { daysBetween, formatYmd, monthsInRange } from "./dates"
 import {
@@ -616,8 +616,10 @@ async function runStage3(ctx: SearchContext, mode: PrivateRatesMode = "runner"):
   await setStatus(search.id, "STAGE_3")
 
   // The private-rates action owns its own property cap; we bound which
-  // candidates we evaluate quotes for.
-  const shortlist = live.slice(0, Math.max(caps.maxPrivateRateLookups, 1) * 3)
+  // candidates we evaluate quotes for. Captured mode reads only stored quotes
+  // (no Hilton traffic), so every live candidate is evaluated: the extension
+  // plan can cover candidates outside the runner's shortlist.
+  const shortlist = mode === "captured" ? live : live.slice(0, Math.max(caps.maxPrivateRateLookups, 1) * 3)
   const check: { status: string; quotesWritten: number } =
     mode === "captured" ? { status: "CAPTURED", quotesWritten: 0 } : await checkPrivateRatesForSearch(search.id)
 
@@ -703,7 +705,7 @@ async function runStage4(ctx: SearchContext): Promise<StageOutcome> {
     const profile = ctx.profiles.get(c.destinationIata)
     const airfareTotal = f.airfare?.available ? num(f.airfare.facts.partyTotal) : null
     const airfareSource: FactorSource = f.airfare?.available ? f.airfare.source : "UNKNOWN"
-    const hotelTotal = f.hotelValue?.available ? num(f.hotelValue.facts.privateTotal) : null
+    const hotelTotal = f.hotelValue?.available ? hotelStayTotal(f.hotelValue.facts, c.nights) : null
     const hotelSource: FactorSource = f.hotelValue?.available ? f.hotelValue.source : "UNKNOWN"
     const mode = f.doorToDoor?.facts.mode === "DRIVE" ? "DRIVE" : "FLY"
     const ground = profile

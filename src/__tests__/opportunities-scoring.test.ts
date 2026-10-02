@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { assembleCoreTripCost, estimateGroundTransport, estimateMajorActivity, weakestSource } from "@/lib/opportunities/cost-estimates"
+import { assembleCoreTripCost, estimateGroundTransport, estimateMajorActivity, hotelStayTotal, weakestSource } from "@/lib/opportunities/cost-estimates"
 import { DEFAULT_OUTLIER_THRESHOLDS, detectDateArbitrage, detectOutliers } from "@/lib/opportunities/outliers"
 import { mergeReasons, orderReasons } from "@/lib/opportunities/reason-text"
 import { computePenalties, rankCandidates, scoreCandidate } from "@/lib/opportunities/scoring"
@@ -111,6 +111,13 @@ describe("detectOutliers", () => {
     })
     const out = detectOutliers({ ...base, factors: { anchor, hotelValue: hotel } }, ctx)
     expect(out.map((r) => r.headline)).toContain("Magic vs Celtics plus a hotel deal")
+    // A bare Go-rate line (no public comparable) is information, not a deal.
+    const goOnly = f("hotelValue", 0.35, {
+      source: "RETRIEVED",
+      facts: { hotelName: "Hilton Chicago", privateNightlyRate: 207, comparablePublicRate: "", savingsTotal: "", savingsRatio: "" },
+      reasons: [{ factor: "hotelValue", headline: "Go rate from $207/night at Hilton Chicago", magnitude: 0.3, polarity: "POSITIVE" }],
+    })
+    expect(detectOutliers({ ...base, factors: { anchor, hotelValue: goOnly } }, ctx).some((r) => r.headline.includes("plus a hotel deal"))).toBe(false)
     const seasonalOnly = f("anchor", 0.75, { facts: { anchorTitle: "Festival", eventCount: 0 } })
     expect(detectOutliers({ ...base, factors: { anchor: seasonalOnly, hotelValue: hotel } }, ctx).some((r) => r.headline.includes("plus a hotel deal"))).toBe(false)
   })
@@ -184,5 +191,11 @@ describe("cost estimates", () => {
     expect(noHotel.source).toBe("UNKNOWN")
     expect(noHotel.total).toBe(1900)
     expect(assembleCoreTripCost({ airfareTotal: null, airfareSource: "UNKNOWN", hotelTotal: null, hotelSource: "UNKNOWN", groundTransportEstimate: 340, majorActivityEstimate: 300 }).total).toBeNull()
+    // Go-only hotel: nightly × nights, RETRIEVED; never from a public rate.
+    expect(hotelStayTotal({ privateNightlyRate: 207, privateTotal: 700, comparablePublicRate: "" }, 3)).toBe(621)
+    expect(hotelStayTotal({ privateNightlyRate: "", privateTotal: 640 }, 3)).toBe(640)
+    expect(hotelStayTotal({ comparablePublicRate: 300 }, 3)).toBeNull()
+    const goOnly = assembleCoreTripCost({ airfareTotal: 1260, airfareSource: "RETRIEVED", hotelTotal: hotelStayTotal({ privateNightlyRate: 207 }, 3), hotelSource: "RETRIEVED", groundTransportEstimate: 340, majorActivityEstimate: 300 })
+    expect(goOnly.total).toBe(1260 + 621 + 340 + 300)
   })
 })

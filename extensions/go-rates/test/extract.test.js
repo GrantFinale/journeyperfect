@@ -222,3 +222,66 @@ test("SELECTORS are centralised and data-testid first", () => {
     assert.match(list[0], /data-testid/)
   }
 })
+
+// ── Hotel names (never a price) ──────────────────────────────────────────────
+
+test("isPlausibleName rejects money, digit soup, short text and calls to action", () => {
+  for (const bad of ["$317", "US$ 239", "$1,234.56", "317", "12 / 4", "Hi", "", "View rates", "Select", "Hotel details", "Book now", "From $207", "per night"]) {
+    assert.equal(X.isPlausibleName(bad), false, bad)
+  }
+  for (const good of ["Hilton Chicago", "Hampton Inn Chicago Downtown/Magnificent Mile", "Home2 Suites by Hilton Chicago McCormick Place", "The Gwen"]) {
+    assert.equal(X.isPlausibleName(good), true, good)
+  }
+})
+
+test("choosePropertyName takes the first plausible candidate, else the property code", () => {
+  assert.equal(X.choosePropertyName(["$317", "Hilton Chicago"], "CHICHHH"), "Hilton Chicago")
+  assert.equal(X.choosePropertyName(["$317", "View rates", "Embassy Suites Chicago, opens new tab"], "CHIDWES"), "Embassy Suites Chicago")
+  assert.equal(X.choosePropertyName(["$207", "", null], "CHITDHX"), "CHITDHX")
+  assert.equal(X.choosePropertyName([], undefined), "Property")
+  // buildCardObservations applies the same rule to whatever name the DOM layer passed.
+  const [o] = X.buildCardObservations({ name: "$317", code: "CHICHHH", entries: [{ text: "$317", label: "$317 per night" }] }, { goContext: true })
+  assert.equal(o.propertyName, "CHICHHH")
+})
+
+test("indexGeo keeps names keyed by property code, skipping money-like names", () => {
+  const idx = X.indexGeo({ hotels: [{ ctyhocn: "chidtgi", name: "Hilton Garden Inn Chicago" }, { propCode: "CHITDHX", name: "$207" }] })
+  assert.equal(idx.nameByCode.get("CHIDTGI"), "Hilton Garden Inn Chicago")
+  assert.equal(idx.nameByCode.has("CHITDHX"), false)
+})
+
+test("search page where the price precedes the heading: names never look like money", () => {
+  const { makeDocument } = require("./mini-dom.js")
+  const url = "https://www.hilton.com/en/search/?query=Chicago&arrivalDate=2026-10-29&departureDate=2026-11-01"
+  const doc = makeDocument(fixture("search-price-first.html"), url)
+  const r = X.extractFromDocument(doc, { url })
+  assert.equal(r.extractorVersion, "0.2.0")
+  assert.equal(r.goContext, true)
+  assert.equal(r.auth.signedIn, true)
+  assert.equal(r.debug.cardSelector, '[data-testid="hotel-card"]')
+  const byCode = Object.fromEntries(r.observations.map((o) => [o.propertyCode, o]))
+  assert.deepEqual(Object.keys(byCode).sort(), ["CHICHHH", "CHIDTGI", "CHIDWES", "CHIGWQQ", "CHITDHX"])
+  assert.equal(byCode.CHICHHH.propertyName, "Hilton Chicago") // heading after an <h3>$317</h3>
+  assert.equal(byCode.CHICHHH.nightlyRate, 317)
+  assert.equal(byCode.CHIDWES.propertyName, "Embassy Suites by Hilton Chicago Downtown Magnificent Mile") // link aria-label
+  assert.equal(byCode.CHIGWQQ.propertyName, "The Gwen, Curio Collection by Hilton") // img alt, logo skipped
+  assert.equal(byCode.CHIDTGI.propertyName, "Hilton Garden Inn Chicago Downtown Riverwalk") // __NEXT_DATA__
+  assert.equal(byCode.CHIDTGI.lat, 41.8868)
+  assert.equal(byCode.CHITDHX.propertyName, "CHITDHX") // nothing usable: the server resolves the code
+  for (const o of r.observations) {
+    assert.doesNotMatch(o.propertyName, /^\s*(US)?\$\s?\d/, o.propertyCode)
+    assert.equal(o.rateKind, "PRIVATE_HILTON_GO", `${o.propertyCode} has one price: no invented public rate`)
+  }
+  assert.equal(r.observations.length, 5)
+})
+
+test("original search fixture still extracts through the DOM layer", () => {
+  const { makeDocument } = require("./mini-dom.js")
+  const url = "https://www.hilton.com/en/search/?query=Chicago"
+  const r = X.extractFromDocument(makeDocument(fixture("search.html"), url), { url })
+  const names = [...new Set(r.observations.map((o) => o.propertyName))]
+  assert.deepEqual(names, ["Hilton Chicago", "Hampton Inn Chicago Downtown/Magnificent Mile", "Conrad Chicago Downtown"])
+  assert.equal(r.observations.find((o) => o.propertyCode === "CHIRSCI").available, false)
+  const hilton = r.observations.filter((o) => o.propertyCode === "CHICHHH")
+  assert.deepEqual(hilton.map((o) => [o.rateKind, o.nightlyRate]), [["PRIVATE_HILTON_GO", 89], ["PUBLIC", 249]])
+})

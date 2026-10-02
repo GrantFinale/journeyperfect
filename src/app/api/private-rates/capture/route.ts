@@ -27,9 +27,12 @@ import {
   CAPTURE_QUOTE_TTL_MS,
   CaptureCounter,
   MAX_CAPTURE_BODY_BYTES,
+  codesNeedingNames,
   normaliseObservations,
   parseCaptureBody,
+  repairQuoteNames,
 } from "@/lib/private-rates/capture"
+import { knownNamesByCode } from "@/lib/private-rates/names"
 import { parseGoRatesItemKey } from "@/lib/private-rates/go-rates-plan"
 
 export const dynamic = "force-dynamic"
@@ -104,12 +107,23 @@ export async function POST(req: NextRequest) {
   const blocked = body.blocked === true
   let written = 0
   if (!blocked) {
-    const quotes = normaliseObservations(body.observations, {
+    let quotes = normaliseObservations(body.observations, {
       checkIn: key.checkIn,
       checkOut: key.checkOut,
       lat: candidate.destinationLat,
       lng: candidate.destinationLng,
     })
+    // A price or bare code in propertyName: reuse a name already stored for that property, else the code.
+    const unnamed = codesNeedingNames(quotes)
+    if (unnamed.length > 0) {
+      const stored = await prisma.hotelRateQuote.findMany({
+        where: { userId, provider: DEFAULT_PROVIDER, propertyCode: { in: unnamed } },
+        select: { propertyCode: true, propertyName: true },
+        orderBy: { retrievedAt: "desc" },
+        take: 500,
+      })
+      quotes = repairQuoteNames(quotes, knownNamesByCode(stored))
+    }
     if (quotes.length > 0) {
       const retrievedAt = new Date()
       const expiresAt = new Date(retrievedAt.getTime() + CAPTURE_QUOTE_TTL_MS)

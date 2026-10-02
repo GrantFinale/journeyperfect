@@ -144,3 +144,21 @@ export function assembleCoreTripCost(input: CoreTripCostInput): { total: number 
   if (input.airfareTotal == null && input.hotelTotal == null) return { total: null, source: "UNKNOWN" }
   return { total: Math.round(total), source }
 }
+
+function finiteNum(v: unknown): number | null {
+  if (typeof v === "number" && Number.isFinite(v)) return v
+  if (typeof v === "string" && v.trim() !== "" && Number.isFinite(Number(v))) return Number(v)
+  return null
+}
+
+/**
+ * Private (Go) hotel cost for the core estimate from hotelValue facts:
+ * nightly × nights, else the quoted private total. Null when neither exists;
+ * never derived from a public rate.
+ */
+export function hotelStayTotal(facts: Record<string, unknown>, nights: number): number | null {
+  const nightly = finiteNum(facts.privateNightlyRate)
+  if (nightly != null && nightly > 0) return Math.round(nightly * Math.max(1, nights) * 100) / 100
+  const total = finiteNum(facts.privateTotal)
+  return total != null && total > 0 ? total : null
+}

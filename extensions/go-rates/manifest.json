@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "JourneyPerfect Go Rates",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Private helper: opens the Hilton searches JourneyPerfect asks for in your own signed-in Chrome, reads the displayed rates, and sends them to your JourneyPerfect account.",
   "minimum_chrome_version": "110",
   "permissions": ["tabs", "storage"],

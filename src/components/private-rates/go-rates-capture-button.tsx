@@ -56,6 +56,14 @@ export function explainFinish(res: FinishResult): { kind: "success" | "warning" 
     res.blockedPages > 0
       ? ` Hilton blocked ${plural(res.blockedPages, "tab", "tabs")}, so ${res.blockedPages === 1 ? "its" : "their"} rates were not captured. Check you are signed in to Go Hilton in Chrome and try again later.`
       : ""
+  const capturedQuotes = res.capturedQuotes ?? 0
+  if (capturedQuotes > 0) {
+    const hotels = Math.max(1, res.capturedHotels ?? 0)
+    return {
+      kind: blocked ? "warning" : "success",
+      message: `Captured ${plural(capturedQuotes, "Hilton rate", "Hilton rates")} across ${plural(hotels, "hotel", "hotels")}. See 'Hotel rates from your Hilton tabs' below.${blocked}`,
+    }
+  }
   if (res.quotesUsed === 0) {
     return { kind: "warning", message: `None of the captured rates matched these destinations and dates.${blocked}` }
   }

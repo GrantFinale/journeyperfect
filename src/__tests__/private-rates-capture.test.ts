@@ -4,16 +4,22 @@ import {
   MAX_CAPTURE_BODY_BYTES,
   namePropertyCode,
   nightsBetween,
+  codesNeedingNames,
   normaliseObservations,
   parseCaptureBody,
+  repairCapturedHotelNames,
+  repairQuoteNames,
   type CaptureObservation,
+  type HotelNameStore,
 } from "@/lib/private-rates/capture"
+import { isMoneyLikeName, knownNamesByCode, resolveHotelName } from "@/lib/private-rates/names"
 import { evaluateHotelValue } from "@/lib/opportunities/factors/hotel-value"
 
 // ─── Route mocks ────────────────────────────────────────────────────────────
 
 const db = vi.hoisted(() => ({
   candidateFindFirst: vi.fn(),
+  quoteFindMany: vi.fn(),
   deleteMany: vi.fn(),
   createMany: vi.fn(),
   transaction: vi.fn(),
@@ -23,7 +29,7 @@ const gates = vi.hoisted(() => ({ assertEnabledAndEntitled: vi.fn(), audit: vi.f
 vi.mock("@/lib/db", () => ({
   prisma: {
     opportunityCandidate: { findFirst: db.candidateFindFirst },
-    hotelRateQuote: { deleteMany: db.deleteMany, createMany: db.createMany },
+    hotelRateQuote: { findMany: db.quoteFindMany, deleteMany: db.deleteMany, createMany: db.createMany },
     $transaction: db.transaction,
   },
 }))
@@ -164,6 +170,67 @@ describe("hotel value never invents a missing rate kind", () => {
   })
 })
 
+// ─── Hotel names (the "$317" bug) ───────────────────────────────────────────
+
+describe("hotel name repair", () => {
+  it("recognises money-like and numeric names", () => {
+    for (const bad of ["$317", "$239", "US$ 1,234.50", "317", "  ", "12-34", "Hi"]) expect(isMoneyLikeName(bad), bad).toBe(true)
+    for (const good of ["Hilton Chicago", "Home2 Suites by Hilton Chicago River North", "CHITDHX"]) expect(isMoneyLikeName(good), good).toBe(false)
+  })
+
+  it("resolves: usable name kept; else a stored name for the code; else the code", () => {
+    const known = new Map([["CHICHHH", "Hilton Chicago"]])
+    expect(resolveHotelName("Hilton Chicago Downtown", "CHICHHH", known)).toBe("Hilton Chicago Downtown")
+    expect(resolveHotelName("$317", "CHICHHH", known)).toBe("Hilton Chicago")
+    expect(resolveHotelName("CHICHHH", "CHICHHH", known)).toBe("Hilton Chicago")
+    expect(resolveHotelName("$239", "CHIDWES", known)).toBe("CHIDWES")
+    expect(resolveHotelName("$239", "name:x@41.9,-87.6", known)).toBe("Hilton hotel")
+    expect(knownNamesByCode([{ propertyCode: "A", propertyName: "$1" }, { propertyCode: "A", propertyName: "Real Name" }]).get("A")).toBe("Real Name")
+  })
+
+  it("repairQuoteNames uses names from the same batch first, then stored ones", () => {
+    const quotes = [
+      { propertyCode: "CHICHHH", propertyName: "$317" },
+      { propertyCode: "CHICHHH", propertyName: "Hilton Chicago" },
+      { propertyCode: "CHIDWES", propertyName: "$239" },
+      { propertyCode: "CHITDHX", propertyName: "CHITDHX" },
+      { propertyCode: "CHIGWQQ", propertyName: "The Gwen" },
+    ]
+    expect(codesNeedingNames(quotes)).toEqual(["CHICHHH", "CHIDWES", "CHITDHX"])
+    const out = repairQuoteNames(quotes, new Map([["CHITDHX", "Hampton Inn Chicago Downtown"]]))
+    expect(out.map((q) => q.propertyName)).toEqual(["Hilton Chicago", "Hilton Chicago", "CHIDWES", "Hampton Inn Chicago Downtown", "The Gwen"])
+  })
+
+  it("repairCapturedHotelNames fixes only the user's money-like rows, grouped by target name", async () => {
+    const rows = [
+      { id: "1", propertyCode: "CHICHHH", propertyName: "$317" },
+      { id: "2", propertyCode: "CHICHHH", propertyName: "Hilton Chicago" },
+      { id: "3", propertyCode: "CHIDWES", propertyName: "$239" },
+      { id: "4", propertyCode: "CHIDWES", propertyName: "$241" },
+      { id: "5", propertyCode: "CHIGWQQ", propertyName: "The Gwen" },
+      { id: "6", propertyCode: "CHITDHX", propertyName: "CHITDHX" },
+    ]
+    const findMany = vi.fn().mockResolvedValue(rows)
+    const updateMany = vi.fn().mockImplementation(async ({ where }: { where: { id: { in: string[] } } }) => ({ count: where.id.in.length }))
+    const store = { hotelRateQuote: { findMany, updateMany } } as unknown as HotelNameStore
+    const changed = await repairCapturedHotelNames("user-1", store)
+    expect(changed).toBe(3)
+    expect(findMany.mock.calls[0][0].where).toEqual({ userId: "user-1", provider: "hilton" })
+    expect(updateMany.mock.calls.map((c) => c[0])).toEqual([
+      { where: { userId: "user-1", id: { in: ["1"] } }, data: { propertyName: "Hilton Chicago" } },
+      { where: { userId: "user-1", id: { in: ["3", "4"] } }, data: { propertyName: "CHIDWES" } },
+    ])
+    // Idempotent: a second pass over repaired rows changes nothing.
+    findMany.mockResolvedValue([
+      { id: "1", propertyCode: "CHICHHH", propertyName: "Hilton Chicago" },
+      { id: "3", propertyCode: "CHIDWES", propertyName: "CHIDWES" },
+    ])
+    updateMany.mockClear()
+    expect(await repairCapturedHotelNames("user-1", store)).toBe(0)
+    expect(updateMany).not.toHaveBeenCalled()
+  })
+})
+
 // ─── Route ──────────────────────────────────────────────────────────────────
 
 describe("POST /api/private-rates/capture", () => {
@@ -174,6 +241,7 @@ describe("POST /api/private-rates/capture", () => {
     vi.resetModules()
     process.env.AUTH_SECRET = SECRET
     db.candidateFindFirst.mockReset().mockResolvedValue({ destinationLat: 41.88, destinationLng: -87.63 })
+    db.quoteFindMany.mockReset().mockResolvedValue([])
     db.deleteMany.mockReset().mockReturnValue("deleteMany")
     db.createMany.mockReset().mockImplementation(({ data }: { data: unknown[] }) => ({ count: data.length }))
     db.transaction.mockReset().mockImplementation(async (ops: unknown[]) => ops)
@@ -216,6 +284,18 @@ describe("POST /api/private-rates/capture", () => {
       { searchId: "search-1", itemKey: "ORD|2026-11-06|2026-11-08", written: 2, blocked: false, pageKind: "SEARCH", observations: 2 },
       { provider: "hilton", searchId: "search-1" },
     )
+  })
+
+  it("replaces a price-as-name with a stored name for that property, else the code", async () => {
+    db.quoteFindMany.mockResolvedValue([{ propertyCode: "CHICHHH", propertyName: "Hilton Chicago" }])
+    const { POST } = await import("@/app/api/private-rates/capture/route")
+    const res = await POST(
+      req(body({ token: await token(), observations: [obs({ propertyCode: "CHICHHH", propertyName: "$317" }), obs({ propertyCode: "CHIDWES", propertyName: "$239" })] })),
+    )
+    expect(res.status).toBe(200)
+    expect(db.quoteFindMany.mock.calls[0][0].where).toEqual({ userId: "user-1", provider: "hilton", propertyCode: { in: ["CHICHHH", "CHIDWES"] } })
+    const data = db.createMany.mock.calls[0][0].data
+    expect(data.map((d: { propertyName: string }) => d.propertyName)).toEqual(["Hilton Chicago", "CHIDWES"])
   })
 
   it("blocked=true writes nothing but is audited", async () => {

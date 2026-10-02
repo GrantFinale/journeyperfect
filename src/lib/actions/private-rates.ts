@@ -20,7 +20,9 @@ import { prisma } from "@/lib/db"
 import { setConfig } from "@/lib/config"
 import { getConfigKey, getConfigKeyNumber } from "@/lib/config-keys"
 import { signCaptureToken } from "@/lib/private-rates/capture-token"
-import { GO_RATES_MAX_CONCURRENT_TABS, buildGoRatesItems, type GoRatesPlan } from "@/lib/private-rates/go-rates-plan"
+import { GO_RATES_MAX_CONCURRENT_TABS, adultsForTravelerCount, buildGoRatesItems, type GoRatesPlan } from "@/lib/private-rates/go-rates-plan"
+import { repairCapturedHotelNames } from "@/lib/private-rates/capture"
+import { EMPTY_CAPTURED_RATES, groupCapturedRates, type CapturedHotelRates } from "@/lib/private-rates/captured-view"
 import { revalidatePath } from "next/cache"
 import {
   DEFAULT_PROVIDER,
@@ -600,7 +602,16 @@ export async function createGoRatesCapturePlan(searchId: string): Promise<{ plan
  */
 export async function finishGoRatesCapture(
   searchId: string,
-): Promise<{ status: string; opportunityCount: number; quotesUsed: number; blockedPages: number }> {
+): Promise<{
+  status: string
+  opportunityCount: number
+  quotesUsed: number
+  blockedPages: number
+  /** Captured quotes shown in "Hotel rates from your Hilton tabs" for this search */
+  capturedQuotes: number
+  /** Distinct hotels among them */
+  capturedHotels: number
+}> {
   const { id: userId } = await requireUser()
   const search = await prisma.opportunitySearch.findFirst({ where: { id: searchId, userId }, select: { id: true, privateRatesAuthorizedAt: true } })
   if (!search) throw new Error("Search not found")
@@ -611,7 +622,14 @@ export async function finishGoRatesCapture(
     await assertEnabledAndEntitled(userId, PROVIDER)
   } catch (err) {
     if (err instanceof PrivateRatesGateError) {
-      return { status: `FAILED: ${gateMessage(err.reason)}`, opportunityCount: await countOpportunities(), quotesUsed: 0, blockedPages: 0 }
+      return {
+        status: `FAILED: ${gateMessage(err.reason)}`,
+        opportunityCount: await countOpportunities(),
+        quotesUsed: 0,
+        blockedPages: 0,
+        capturedQuotes: 0,
+        capturedHotels: 0,
+      }
     }
     throw err
   }
@@ -621,6 +639,13 @@ export async function finishGoRatesCapture(
   }
 
   const blockedPages = await blockedPagesSinceLatestPlan(userId, searchId)
+
+  // Fix names the 0.1.0 extension stored as prices ("$317") before anything reads them.
+  try {
+    await repairCapturedHotelNames(userId, undefined, PROVIDER)
+  } catch (err) {
+    console.error("[private-rates] hotel name repair failed:", err)
+  }
 
   // Dynamic import: the pipeline imports this module (runner-mode stage 3).
   const { runStage, StageRefusedError } = await import("@/lib/opportunities/pipeline")
@@ -636,8 +661,86 @@ export async function finishGoRatesCapture(
     status = err instanceof StageRefusedError ? `FAILED: ${err.message}` : "FAILED: Your captured rates could not be applied. Please try again."
   }
 
+  const captured = await loadCapturedHotelRates(userId, searchId).catch(() => EMPTY_CAPTURED_RATES)
+
   revalidatePath(`/opportunities/${searchId}`)
-  return { status, opportunityCount: await countOpportunities(), quotesUsed, blockedPages }
+  return {
+    status,
+    opportunityCount: await countOpportunities(),
+    quotesUsed,
+    blockedPages,
+    capturedQuotes: captured.totalQuotes,
+    capturedHotels: captured.totalHotels,
+  }
+}
+
+/**
+ * Captured Hilton quotes for one of the caller's searches, grouped by
+ * candidate destination + dates (see captured-view.ts). Hidden (empty) unless
+ * private rates are enabled AND the user is entitled. Reads only the caller's
+ * own quotes; never contacts Hilton.
+ */
+export async function getCapturedHotelRates(searchId: string): Promise<CapturedHotelRates> {
+  const { id: userId } = await requireUser()
+  const [enabled, entitled] = await Promise.all([isPrivateRatesEnabled(), userIsEntitled(userId, PROVIDER)])
+  if (!enabled || !entitled) return EMPTY_CAPTURED_RATES
+  return loadCapturedHotelRates(userId, searchId)
+}
+
+async function loadCapturedHotelRates(userId: string, searchId: string): Promise<CapturedHotelRates> {
+  const search = await prisma.opportunitySearch.findFirst({
+    where: { id: searchId, userId },
+    select: { id: true, travelerProfileIds: true },
+  })
+  if (!search) return EMPTY_CAPTURED_RATES
+  const candidates = await prisma.opportunityCandidate.findMany({
+    where: { searchId },
+    select: {
+      destinationIata: true,
+      destinationName: true,
+      destinationLat: true,
+      destinationLng: true,
+      checkIn: true,
+      checkOut: true,
+      nights: true,
+    },
+  })
+  if (candidates.length === 0) return EMPTY_CAPTURED_RATES
+
+  const dateKeys = new Map<string, { checkIn: Date; checkOut: Date }>()
+  for (const c of candidates) dateKeys.set(`${ymd(c.checkIn)}|${ymd(c.checkOut)}`, { checkIn: c.checkIn, checkOut: c.checkOut })
+  const rows = await prisma.hotelRateQuote.findMany({
+    where: {
+      userId,
+      provider: PROVIDER,
+      available: true,
+      OR: [...dateKeys.values()].map((d) => ({ checkIn: d.checkIn, checkOut: d.checkOut })),
+    },
+    select: {
+      id: true,
+      propertyCode: true,
+      propertyName: true,
+      brand: true,
+      lat: true,
+      lng: true,
+      checkIn: true,
+      checkOut: true,
+      rateKind: true,
+      nightlyRate: true,
+      currency: true,
+      roomType: true,
+      available: true,
+      retrievedAt: true,
+    },
+    orderBy: { retrievedAt: "desc" },
+    take: 2000,
+  })
+
+  return groupCapturedRates(
+    candidates.map((c) => ({ ...c, checkIn: ymd(c.checkIn), checkOut: ymd(c.checkOut) })),
+    rows.map((r) => ({ ...r, checkIn: ymd(r.checkIn), checkOut: ymd(r.checkOut) })),
+    { adults: adultsForTravelerCount(Math.max(1, search.travelerProfileIds.length)) },
+  )
 }
 
 async function blockedPagesSinceLatestPlan(userId: string, searchId: string): Promise<number> {

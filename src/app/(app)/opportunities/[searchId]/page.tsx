@@ -5,6 +5,8 @@ import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/db"
 import { hasFeature } from "@/lib/features"
 import { getOpportunitySearch } from "@/lib/actions/opportunities"
+import { getCapturedHotelRates } from "@/lib/actions/private-rates"
+import { EMPTY_CAPTURED_RATES } from "@/lib/private-rates/captured-view"
 import { SearchView } from "./search-view"
 
 export const dynamic = "force-dynamic"
@@ -20,6 +22,8 @@ export default async function OpportunitySearchPage({ params }: { params: Promis
 
   const data = await getOpportunitySearch(searchId)
   if (!data) notFound()
+  // Never let the optional rates panel break the page.
+  const capturedRates = await getCapturedHotelRates(searchId).catch(() => EMPTY_CAPTURED_RATES)
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8">
@@ -30,7 +34,12 @@ export default async function OpportunitySearchPage({ params }: { params: Promis
         <ArrowLeft className="w-4 h-4" />
         Opportunities
       </Link>
-      <SearchView search={data.search} opportunities={data.opportunities} candidateCounts={data.candidateCounts} />
+      <SearchView
+        search={data.search}
+        opportunities={data.opportunities}
+        candidateCounts={data.candidateCounts}
+        capturedRates={capturedRates}
+      />
     </div>
   )
 }

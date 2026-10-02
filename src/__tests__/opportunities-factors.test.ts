@@ -450,6 +450,60 @@ describe("evaluateHotelValue", () => {
     expect(solo.reasons.some((x) => x.headline.includes("hotel savings"))).toBe(false)
   })
 
+  it("private quotes only: available, informational Go-rate reason, never a savings claim", () => {
+    const r = evaluateHotelValue({
+      quotes: [
+        quote({ id: "a", propertyCode: "CHICHHH", propertyName: "Hilton Chicago", brand: "Hilton Hotels & Resorts", rateKind: "PRIVATE_HILTON_GO", nightlyRate: 239 }),
+        quote({ id: "b", propertyCode: "CHITDHX", propertyName: "Hampton Inn Chicago Downtown", brand: "Hampton by Hilton", rateKind: "PRIVATE_HILTON_GO", nightlyRate: 207 }),
+        quote({ id: "c", propertyCode: "CHIDWES", propertyName: "$317", brand: "Embassy Suites", rateKind: "PRIVATE_HILTON_GO", nightlyRate: 317 }),
+      ],
+      nights: 3,
+    })
+    expect(r.available).toBe(true)
+    expect(r.source).toBe("RETRIEVED")
+    expect(r.facts).toMatchObject({
+      bestPrivateNightly: 207,
+      bestPrivateName: "Hampton Inn Chicago Downtown",
+      bestPrivateCode: "CHITDHX",
+      privateQuoteCount: 3,
+      publicQuoteCount: 0,
+      hotelName: "Hampton Inn Chicago Downtown",
+      privateNightlyRate: 207,
+      comparablePublicRate: "",
+      savingsTotal: "",
+      hasPublicComparable: false,
+      hotelRateQuoteId: "b",
+    })
+    expect(r.reasons).toHaveLength(1)
+    expect(r.reasons[0]).toMatchObject({ polarity: "POSITIVE", headline: "Go rate from $207/night at Hampton Inn Chicago Downtown" })
+    expect(r.reasons[0].magnitude).toBeLessThanOrEqual(0.5)
+    expect(r.reasons.some((x) => /sav|off/i.test(x.headline))).toBe(false)
+    expect(r.score!).toBeGreaterThan(0)
+    expect(r.score!).toBeLessThanOrEqual(0.5)
+  })
+
+  it("private-only never shows a price as the hotel name", () => {
+    const r = evaluateHotelValue({ quotes: [quote({ propertyCode: "CHITDHX", propertyName: "$207", brand: "Hampton", rateKind: "PRIVATE_HILTON_GO", nightlyRate: 207 })], nights: 3 })
+    expect(r.facts.hotelName).toBe("CHITDHX")
+    expect(r.reasons[0].headline).toBe("Go rate from $207/night at CHITDHX")
+  })
+
+  it("a PUBLIC quote for the same property keeps the savings logic", () => {
+    const r = evaluateHotelValue({
+      quotes: [
+        quote({ propertyCode: "CHICHHH", propertyName: "Hilton Chicago", brand: "Hilton", rateKind: "PRIVATE_HILTON_GO", nightlyRate: 120 }),
+        quote({ propertyCode: "CHICHHH", propertyName: "Hilton Chicago", brand: "Hilton", rateKind: "PUBLIC", nightlyRate: 320 }),
+        quote({ propertyCode: "CHITDHX", propertyName: "Hampton", brand: "Hampton", rateKind: "PRIVATE_HILTON_GO", nightlyRate: 99 }),
+      ],
+      nights: 3,
+    })
+    expect(r.facts.propertyCode).toBe("CHICHHH")
+    expect(r.facts.comparablePublicRate).toBe(320)
+    expect(r.facts.savingsTotal).toBe(600)
+    expect(r.facts).toMatchObject({ bestPrivateNightly: 99, bestPrivateCode: "CHITDHX", privateQuoteCount: 2, publicQuoteCount: 1 })
+    expect(r.reasons[0].headline).toBe("$600 hotel savings")
+  })
+
   it("is unavailable with no usable quotes", () => {
     expect(evaluateHotelValue({ quotes: [], nights: 3 }).available).toBe(false)
     expect(evaluateHotelValue({ quotes: [quote({ propertyCode: "X", rateKind: "PUBLIC", nightlyRate: 200 })], nights: 3 }).available).toBe(false)

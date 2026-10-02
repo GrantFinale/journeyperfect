@@ -7,7 +7,8 @@
  * score weights unlockedTier above raw savings: a $75 Conrad beats a $65
  * Hampton. Everything here is RETRIEVED; private quotes are the user's own.
  */
-import { hotelSavingsDetail, hotelSavingsHeadline } from "../reason-text"
+import { fallbackNameForCode, isMoneyLikeName } from "@/lib/private-rates/names"
+import { goRateHeadline, hotelSavingsDetail, hotelSavingsHeadline } from "../reason-text"
 import type { DestinationTier, FactorResult, OpportunityReason } from "../types"
 import { clamp01, money, pct, reason, result, round, unavailable } from "./shared"
 
@@ -130,13 +131,30 @@ export interface HotelValueInput {
 
 export function evaluateHotelValue(input: HotelValueInput): FactorResult & { pair: HotelPair | null } {
   const pairs = pairQuotes(input.quotes)
+  const usable = input.quotes.filter((q) => q.available && q.nightlyRate > 0)
+  const privateQuoteCount = usable.filter((q) => q.rateKind.startsWith("PRIVATE")).length
+  const publicQuoteCount = usable.filter((q) => q.rateKind === "PUBLIC").length
   if (pairs.length === 0) {
-    return { ...unavailable("hotelValue", { quoteCount: input.quotes.length }), pair: null }
+    return { ...unavailable("hotelValue", { quoteCount: input.quotes.length, privateQuoteCount, publicQuoteCount }), pair: null }
   }
-  const best = pairs[0]
   const nights = Math.max(1, input.nights)
+  // Cheapest private nightly across every property: the "Go rate from" figure.
+  const cheapest = pairs.reduce((a, b) => (b.privateQuote.nightlyRate < a.privateQuote.nightlyRate ? b : a))
+  const counts = {
+    bestPrivateNightly: cheapest.privateQuote.nightlyRate,
+    bestPrivateName: displayHotelName(cheapest.propertyName, cheapest.propertyCode),
+    bestPrivateCode: cheapest.propertyCode,
+    privateQuoteCount,
+    publicQuoteCount,
+  }
+
+  // No public comparable for any property: informational only, never a savings claim.
+  if (!pairs.some((p) => p.publicQuote)) return evaluatePrivateOnly(input, pairs, cheapest, nights, counts)
+
+  const best = pairs[0]
   const priv = best.privateQuote
   const pub = best.publicQuote
+  const bestName = displayHotelName(best.propertyName, best.propertyCode)
 
   let score = best.value
   if (best.tier && input.destinationTier && TIER_RANK[best.tier] > TIER_RANK[input.destinationTier] && best.unlockedTier > 0) {
@@ -154,19 +172,19 @@ export function evaluateHotelValue(input: HotelValueInput): FactorResult & { pai
           "POSITIVE",
           hotelSavingsHeadline(best.savingsTotal),
           0.5 + best.savingsRatio + best.unlockedTier * 0.5,
-          hotelSavingsDetail(best.propertyName, priv.nightlyRate, pub.nightlyRate)
+          hotelSavingsDetail(bestName, priv.nightlyRate, pub.nightlyRate)
         )
       )
     } else if (best.savingsRatio >= 0.25) {
       reasons.push(
-        reason("hotelValue", "POSITIVE", `${pct(best.savingsRatio)} off at ${best.propertyName}`, 0.3 + best.savingsRatio, hotelSavingsDetail(best.propertyName, priv.nightlyRate, pub.nightlyRate))
+        reason("hotelValue", "POSITIVE", `${pct(best.savingsRatio)} off at ${bestName}`, 0.3 + best.savingsRatio, hotelSavingsDetail(bestName, priv.nightlyRate, pub.nightlyRate))
       )
     }
   }
   if (best.unlockedTier >= 1) {
-    reasons.push(reason("hotelValue", "POSITIVE", "Luxury stay at a mid-tier price", 0.9, `${best.propertyName}, ${money(priv.nightlyRate)}/night private`))
+    reasons.push(reason("hotelValue", "POSITIVE", "Luxury stay at a mid-tier price", 0.9, `${bestName}, ${money(priv.nightlyRate)}/night private`))
   } else if (best.unlockedTier > 0 && !reasons.length) {
-    reasons.push(reason("hotelValue", "POSITIVE", "Upscale stay at a mid-tier price", 0.5, `${best.propertyName}, ${money(priv.nightlyRate)}/night private`))
+    reasons.push(reason("hotelValue", "POSITIVE", "Upscale stay at a mid-tier price", 0.5, `${bestName}, ${money(priv.nightlyRate)}/night private`))
   }
 
   const res = result(
@@ -174,26 +192,87 @@ export function evaluateHotelValue(input: HotelValueInput): FactorResult & { pai
     score,
     "RETRIEVED",
     {
-      hotelName: best.propertyName,
-      propertyCode: best.propertyCode,
-      brand: best.brand ?? "",
-      tier: best.tier ?? "",
-      privateNightlyRate: priv.nightlyRate,
-      privateTotal: priv.totalRate,
-      comparablePublicRate: pub?.nightlyRate ?? "",
-      publicTotal: pub?.totalRate ?? "",
-      savingsTotal: best.savingsTotal ?? "",
-      savingsRatio: best.savingsRatio ?? "",
-      unlockedTier: best.unlockedTier,
-      hotelRateQuoteId: priv.id,
-      publicRateQuoteId: pub?.id ?? "",
-      currency: priv.currency ?? "USD",
-      nights,
-      pairCount: pairs.length,
-      hasPublicComparable: pub != null,
+      ...pairFacts(best, nights, pairs.length),
+      ...counts,
     },
     reasons,
     input.retrievedAt ?? (priv.retrievedAt ? new Date(priv.retrievedAt).toISOString() : undefined)
   )
   return { ...res, pair: best }
+}
+
+/** A price or bare code is never shown as a hotel name. */
+function displayHotelName(name: string, propertyCode: string): string {
+  return isMoneyLikeName(name) ? fallbackNameForCode(propertyCode) : name
+}
+
+function pairFacts(p: HotelPair, nights: number, pairCount: number) {
+  const priv = p.privateQuote
+  const pub = p.publicQuote
+  return {
+    hotelName: displayHotelName(p.propertyName, p.propertyCode),
+    propertyCode: p.propertyCode,
+    brand: p.brand ?? "",
+    tier: p.tier ?? "",
+    privateNightlyRate: priv.nightlyRate,
+    privateTotal: priv.totalRate,
+    comparablePublicRate: pub?.nightlyRate ?? "",
+    publicTotal: pub?.totalRate ?? "",
+    savingsTotal: p.savingsTotal ?? "",
+    savingsRatio: p.savingsRatio ?? "",
+    unlockedTier: p.unlockedTier,
+    hotelRateQuoteId: priv.id,
+    publicRateQuoteId: pub?.id ?? "",
+    currency: priv.currency ?? "USD",
+    nights,
+    pairCount,
+    hasPublicComparable: pub != null,
+  }
+}
+
+/** Score for a private-only result: modest, a little higher when the rate unlocks a better tier. */
+export const PRIVATE_ONLY_BASE_SCORE = 0.35
+
+/**
+ * Only private (Go) quotes near the candidate: the factor is available and
+ * reports the cheapest Go rate as information ("Go rate from $207/night at
+ * …"). No public comparable is invented, so there is no savings headline.
+ */
+function evaluatePrivateOnly(
+  input: HotelValueInput,
+  pairs: HotelPair[],
+  cheapest: HotelPair,
+  nights: number,
+  counts: Record<string, number | string>
+): FactorResult & { pair: HotelPair | null } {
+  const priv = cheapest.privateQuote
+  const name = displayHotelName(cheapest.propertyName, cheapest.propertyCode)
+  const unlocked = pairs.reduce((a, b) => (b.unlockedTier > a.unlockedTier ? b : a))
+  let score = PRIVATE_ONLY_BASE_SCORE + 0.25 * unlocked.unlockedTier
+  if (unlocked.tier && input.destinationTier && TIER_RANK[unlocked.tier] > TIER_RANK[input.destinationTier] && unlocked.unlockedTier > 0) {
+    score += 0.05
+  }
+  const others = pairs.length - 1
+  const reasons: OpportunityReason[] = [
+    reason(
+      "hotelValue",
+      "POSITIVE",
+      goRateHeadline(priv.nightlyRate, name, priv.currency ?? "USD"),
+      0.3,
+      others > 0 ? `Your Go Hilton rate; ${others} more Hilton ${others === 1 ? "hotel" : "hotels"} priced nearby` : "Your Go Hilton rate"
+    ),
+  ]
+  if (unlocked.unlockedTier >= 1) {
+    const uName = displayHotelName(unlocked.propertyName, unlocked.propertyCode)
+    reasons.push(reason("hotelValue", "POSITIVE", "Luxury stay at a mid-tier price", 0.6, `${uName}, ${money(unlocked.privateQuote.nightlyRate)}/night private`))
+  }
+  const res = result(
+    "hotelValue",
+    score,
+    "RETRIEVED",
+    { ...pairFacts(cheapest, nights, pairs.length), ...counts },
+    reasons,
+    input.retrievedAt ?? (priv.retrievedAt ? new Date(priv.retrievedAt).toISOString() : undefined)
+  )
+  return { ...res, pair: cheapest }
 }

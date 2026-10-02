@@ -99,25 +99,31 @@ export function OpportunityCard({ opportunity: o }: { opportunity: TravelOpportu
         </section>
       )}
 
-      {/* Hotel private-rate line: only when a private rate exists */}
-      {o.hotelName && o.privateNightlyRate != null && (
+      {/* Hotel Go-rate line: whenever a private rate exists. Savings only with a real public comparable. */}
+      {o.privateNightlyRate != null && (
         <section className="mb-4 rounded-xl bg-emerald-50/60 border border-emerald-100 px-3 py-2 text-sm">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <span className="font-medium text-gray-900 break-words">{o.hotelName}</span>
-            <span className="text-gray-600">
-              private {formatMoney(o.privateNightlyRate)}/night
-              {o.comparablePublicRate != null && (
+            <span className="text-gray-700 break-words">
+              Go rate <span className="font-semibold text-gray-900">{formatMoney(o.privateNightlyRate)}/night</span>
+              {o.hotelName && (
                 <>
                   {" "}
-                  vs public <span className="line-through text-gray-400">{formatMoney(o.comparablePublicRate)}</span>
+                  at <span className="font-medium text-gray-900">{o.hotelName}</span>
                 </>
               )}
             </span>
-            {o.hotelSavingsTotal != null && o.hotelSavingsTotal > 0 && (
-              <span className="text-emerald-700 font-medium">saves {formatMoney(o.hotelSavingsTotal)}</span>
-            )}
             <SourceChip source="RETRIEVED" suffix={ago || undefined} />
           </div>
+          {o.comparablePublicRate != null && (
+            <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-gray-600">
+              <span>
+                vs public <span className="line-through text-gray-400">{formatMoney(o.comparablePublicRate)}</span>/night
+              </span>
+              {o.hotelSavingsTotal != null && o.hotelSavingsTotal > 0 && (
+                <span className="text-emerald-700 font-medium">saves {formatMoney(o.hotelSavingsTotal)}</span>
+              )}
+            </div>
+          )}
         </section>
       )}
 

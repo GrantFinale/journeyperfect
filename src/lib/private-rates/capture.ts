@@ -3,9 +3,12 @@
  * endpoint the Go Rates Chrome extension posts page observations to.
  *
  * Kept free of Prisma and Next so it can be unit-tested directly; the route
- * handler only adds auth, gates, the item lookup and the writes.
+ * handler only adds auth, gates, the item lookup and the writes. The one
+ * exception, repairCapturedHotelNames, takes its store as a parameter and only
+ * imports Prisma lazily when none is given.
  */
 import { z } from "zod"
+import { fallbackNameForCode, isMoneyLikeName, knownNamesByCode, needsBetterName, resolveHotelName } from "./names"
 
 export const MAX_CAPTURE_BODY_BYTES = 512 * 1024
 export const MAX_CAPTURES_PER_TOKEN = 200
@@ -146,6 +149,78 @@ export function normaliseObservations(observations: readonly CaptureObservation[
     })
   }
   return out
+}
+
+/**
+ * Replace unusable names (a price such as "$317", digits, or just the property
+ * code) with a usable name: one from this same batch for the code, else one in
+ * `stored` (names already captured for the user), else the code itself.
+ * Returns new objects; never invents a name.
+ */
+export function repairQuoteNames<T extends { propertyCode: string; propertyName: string }>(
+  quotes: readonly T[],
+  stored: ReadonlyMap<string, string> = new Map(),
+): T[] {
+  const known = new Map(stored)
+  for (const [code, name] of knownNamesByCode(quotes)) known.set(code, name)
+  return quotes.map((q) => {
+    const propertyName = resolveHotelName(q.propertyName, q.propertyCode, known)
+    return propertyName === q.propertyName ? q : { ...q, propertyName }
+  })
+}
+
+/** Property codes in a batch whose names need a stored-name lookup. */
+export function codesNeedingNames(quotes: readonly { propertyCode: string; propertyName: string }[]): string[] {
+  return [...new Set(quotes.filter((q) => needsBetterName(q.propertyName, q.propertyCode)).map((q) => q.propertyCode))]
+}
+
+/** The slice of Prisma `repairCapturedHotelNames` uses (injectable for tests). */
+export interface HotelNameStore {
+  hotelRateQuote: {
+    findMany(args: {
+      where: { userId: string; provider: string }
+      select: { id: true; propertyCode: true; propertyName: true }
+      orderBy: { retrievedAt: "desc" }
+      take: number
+    }): Promise<{ id: string; propertyCode: string; propertyName: string }[]>
+    updateMany(args: { where: { userId: string; id: { in: string[] } }; data: { propertyName: string } }): Promise<{ count: number }>
+  }
+}
+
+export const REPAIR_NAMES_MAX_ROWS = 5000
+
+/**
+ * One-off, idempotent repair of one user's captured Hilton quotes whose
+ * propertyName is money-like (the 0.1.0 extension bug) or only the code.
+ * Same rules as capture time: a usable name stored for that property code in
+ * any of the user's rows, else the code. Scoped to `userId`, touches only the
+ * propertyName of rows that need it, bounded to the newest
+ * REPAIR_NAMES_MAX_ROWS rows. Returns the number of rows changed.
+ */
+export async function repairCapturedHotelNames(userId: string, store?: HotelNameStore, provider = "hilton"): Promise<number> {
+  const db: HotelNameStore = store ?? ((await import("@/lib/db")).prisma as unknown as HotelNameStore)
+  const rows = await db.hotelRateQuote.findMany({
+    where: { userId, provider },
+    select: { id: true, propertyCode: true, propertyName: true },
+    orderBy: { retrievedAt: "desc" },
+    take: REPAIR_NAMES_MAX_ROWS,
+  })
+  const known = knownNamesByCode(rows)
+  const byTarget = new Map<string, string[]>()
+  for (const r of rows) {
+    if (!needsBetterName(r.propertyName, r.propertyCode)) continue
+    const target = known.get(r.propertyCode) ?? (isMoneyLikeName(r.propertyName) ? fallbackNameForCode(r.propertyCode) : r.propertyName)
+    if (target === r.propertyName) continue
+    const ids = byTarget.get(target) ?? []
+    ids.push(r.id)
+    byTarget.set(target, ids)
+  }
+  let changed = 0
+  for (const [propertyName, ids] of byTarget) {
+    const res = await db.hotelRateQuote.updateMany({ where: { userId, id: { in: ids } }, data: { propertyName } })
+    changed += res.count
+  }
+  return changed
 }
 
 /**

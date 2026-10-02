@@ -10,6 +10,8 @@ import type { OpportunitySearchView, TravelOpportunityView } from "@/lib/opportu
 import { CheckPrivateRatesButton } from "@/components/private-rates/check-private-rates-button"
 import { GoRatesCaptureButton } from "@/components/private-rates/go-rates-capture-button"
 import { OpportunityCard } from "../opportunity-card"
+import type { CapturedHotelRates } from "@/lib/private-rates/captured-view"
+import { CapturedRatesPanel } from "./captured-rates-panel"
 import { formatAgo, formatWindow, weekdayPatternLabel } from "../format"
 
 type CandidateCounts = { total: number; pruned: number; byStage: Record<number, number> }
@@ -44,10 +46,13 @@ export function SearchView({
   search,
   opportunities,
   candidateCounts,
+  capturedRates,
 }: {
   search: OpportunitySearchView
   opportunities: TravelOpportunityView[]
   candidateCounts: CandidateCounts
+  /** Hilton rates the Go Rates extension captured; panel hidden when empty */
+  capturedRates?: CapturedHotelRates
 }) {
   const router = useRouter()
   const [rerunning, startRerun] = useTransition()
@@ -210,6 +215,9 @@ export function SearchView({
           <span>Still searching. This page refreshes itself as stages finish.</span>
         </div>
       )}
+
+      {/* Captured Hilton rates (Go Rates extension) */}
+      {capturedRates && capturedRates.totalQuotes > 0 && <CapturedRatesPanel searchId={search.id} data={capturedRates} />}
 
       {/* Opportunities */}
       {opportunities.length > 0 ? (

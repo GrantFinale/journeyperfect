@@ -20,7 +20,7 @@
  */
 import { money, pct, reason, WEEKDAY_LONG } from "./factors/shared"
 import { weekday } from "./dates"
-import { airfareHeadline, airfareUnderDetail, hotelSavingsDetail, hotelSavingsHeadline } from "./reason-text"
+import { airfareHeadline, airfareUnderDetail, hotelSavingsDetail, hotelSavingsHeadline, isInformationalHotelReason } from "./reason-text"
 import type { CandidateFactors, DestinationTier, OpportunityReason } from "./types"
 
 export interface OutlierThresholds {
@@ -174,7 +174,10 @@ export function detectOutliers(
 
   // 5. Special event + favourable hotel (conjunction)
   const anchor = f.anchor
-  const hotelReason = hotel?.available && (hotel.reasons.some((r) => r.polarity === "POSITIVE") || out.some((r) => r.factor === "hotelValue"))
+  // A bare "Go rate from $X" line is information, not a deal: it does not count.
+  const hotelReason =
+    hotel?.available &&
+    (hotel.reasons.some((r) => r.polarity === "POSITIVE" && !isInformationalHotelReason(r.headline)) || out.some((r) => r.factor === "hotelValue"))
   if (anchor?.available && (num(anchor.facts.eventCount) ?? 0) > 0 && hotelReason) {
     out.push(
       reason(

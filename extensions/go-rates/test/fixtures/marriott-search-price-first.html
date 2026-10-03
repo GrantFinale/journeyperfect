@@ -1,0 +1,30 @@
+<!doctype html>
+<!-- PLAUSIBLE, NOT CAPTURED: Marriott cards where the price is rendered before
+     the hotel name, so a naive extractor would store "$249" as the name. -->
+<html lang="en">
+<head>
+  <title>Hotels in Chicago | Marriott Bonvoy</title>
+  <script id="__NEXT_DATA__" type="application/json">
+  {"props":{"pageProps":{"properties":[
+    {"marshaCode":"CHIAL","propertyName":"Aloft Chicago Mag Mile","coordinates":{"latitude":41.8935,"longitude":-87.6200}}
+  ]}}}
+  </script>
+</head>
+<body>
+  <main>
+    <div data-testid="property-card">
+      <div class="price-container"><h3 class="price">$249</h3><span>avg/night</span></div>
+      <h3>The Ritz-Carlton, Chicago</h3>
+      <a href="https://www.marriott.com/en-us/hotels/chirz-the-ritz-carlton-chicago/overview/">View Rates</a>
+    </div>
+    <div data-testid="property-card">
+      <span data-testid="price-value">$179</span>
+      <a href="/en-us/hotels/chiwi-the-westin-michigan-avenue-chicago/overview/" aria-label="The Westin Michigan Avenue Chicago, opens new tab">$179 View Rates</a>
+    </div>
+    <div data-testid="property-card">
+      <span data-testid="price-value">$139</span>
+      <a href="/en-us/hotels/chial-aloft-chicago-mag-mile/overview/">$139</a>
+    </div>
+  </main>
+</body>
+</html>

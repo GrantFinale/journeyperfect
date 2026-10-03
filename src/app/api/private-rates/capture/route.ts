@@ -1,32 +1,38 @@
 /**
  * POST /api/private-rates/capture — receives rates the JourneyPerfect Go Rates
- * Chrome extension read off a Hilton page in the user's own signed-in Chrome.
+ * Chrome extension read off a Hilton or Marriott page in the user's own Chrome.
  *
  * Excluded from the cookie middleware: the only credential is the short-lived
  * HMAC capture token from createGoRatesCapturePlan (45 min, bound to one user
  * and one search). Order of checks:
  *   413 body > 512 KB → 400 not JSON → 401 bad/expired token → 429 > 200
- *   captures on this token → 403 kill switch off / not entitled (re-checked on
- *   every capture) → 400 schema / unknown itemKey → write.
+ *   captures on this token → 403 kill switch off / not entitled to the item's
+ *   brand (re-checked on every capture) → 400 schema / unknown itemKey → write.
  *
- * itemKey ("IATA|checkIn|checkOut") is verified by looking up an un-pruned
- * OpportunityCandidate with that destination and those dates on the token's
- * search, owned by the token's user. The candidate also supplies the dates
- * and fallback coordinates, so the page can never pick its own dates.
+ * itemKey ("IATA|checkIn|checkOut|brand|intent", or the legacy
+ * "IATA|checkIn|checkOut" = hilton PRIVATE) is verified by looking up an
+ * un-pruned OpportunityCandidate with that destination and those dates on the
+ * token's search, owned by the token's user. The candidate also supplies the
+ * dates and fallback coordinates, so the page can never pick its own dates.
+ *
+ * The item decides the rate kind (applyItemIntent): a PUBLIC item stores only
+ * PUBLIC quotes; a PRIVATE item stores the brand's private kind, plus PUBLIC
+ * only for "signed-out" prices. HotelRateQuote.provider = the item's brand.
  *
  * Writes HotelRateQuote rows (sessionId null, expiresAt +24h). A repeat capture
- * for the same property, dates and rate kind replaces the earlier extension
- * rows rather than piling up duplicates. blocked=true writes nothing. Every
- * capture appends a CAPTURE audit row with counts only, never page content.
+ * for the same provider, property, dates and rate kind replaces the earlier
+ * extension rows rather than piling up duplicates. blocked=true writes nothing.
+ * Every capture appends a CAPTURE audit row with counts only, never page content.
  */
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
-import { DEFAULT_PROVIDER, PrivateRatesGateError, assertEnabledAndEntitled, audit } from "@/lib/private-rates"
+import { PrivateRatesGateError, assertEnabledAndEntitled, audit } from "@/lib/private-rates"
 import { verifyCaptureToken } from "@/lib/private-rates/capture-token"
 import {
   CAPTURE_QUOTE_TTL_MS,
   CaptureCounter,
   MAX_CAPTURE_BODY_BYTES,
+  applyItemIntent,
   codesNeedingNames,
   normaliseObservations,
   parseCaptureBody,
@@ -76,11 +82,15 @@ export async function POST(req: NextRequest) {
 
   if (!counter.take(nonce, exp)) return fail(429, "Too many captures for this plan")
 
+  // The item's brand picks the entitlement to check; an unparsable key is a 400 below,
+  // after the kill-switch / Hilton gate so a disabled feature still answers 403.
+  const key = parseGoRatesItemKey(raw && typeof raw === "object" ? (raw as { itemKey?: unknown }).itemKey : undefined)
+  const provider = key?.brand ?? "hilton"
   try {
-    await assertEnabledAndEntitled(userId, DEFAULT_PROVIDER)
+    await assertEnabledAndEntitled(userId, provider)
   } catch (err) {
     if (err instanceof PrivateRatesGateError) {
-      return fail(403, err.reason === "DISABLED" ? "Private rates are turned off" : "Not entitled to private rates")
+      return fail(403, err.reason === "DISABLED" ? "Private rates are turned off" : `Not entitled to ${provider} private rates`)
     }
     throw err
   }
@@ -88,8 +98,6 @@ export async function POST(req: NextRequest) {
   const parsed = parseCaptureBody(raw)
   if (!parsed.ok) return fail(400, parsed.error)
   const body = parsed.body
-
-  const key = parseGoRatesItemKey(body.itemKey)
   if (!key) return fail(400, "Unknown itemKey")
   const candidate = await prisma.opportunityCandidate.findFirst({
     where: {
@@ -105,9 +113,10 @@ export async function POST(req: NextRequest) {
   if (!candidate) return fail(400, "Unknown itemKey")
 
   const blocked = body.blocked === true
+  const intent = applyItemIntent(body.observations, key)
   let written = 0
   if (!blocked) {
-    let quotes = normaliseObservations(body.observations, {
+    let quotes = normaliseObservations(intent.observations, {
       checkIn: key.checkIn,
       checkOut: key.checkOut,
       lat: candidate.destinationLat,
@@ -117,7 +126,7 @@ export async function POST(req: NextRequest) {
     const unnamed = codesNeedingNames(quotes)
     if (unnamed.length > 0) {
       const stored = await prisma.hotelRateQuote.findMany({
-        where: { userId, provider: DEFAULT_PROVIDER, propertyCode: { in: unnamed } },
+        where: { userId, provider, propertyCode: { in: unnamed } },
         select: { propertyCode: true, propertyName: true },
         orderBy: { retrievedAt: "desc" },
         take: 500,
@@ -134,7 +143,7 @@ export async function POST(req: NextRequest) {
         prisma.hotelRateQuote.deleteMany({
           where: {
             userId,
-            provider: DEFAULT_PROVIDER,
+            provider,
             sessionId: null,
             checkIn,
             checkOut,
@@ -144,7 +153,7 @@ export async function POST(req: NextRequest) {
         prisma.hotelRateQuote.createMany({
           data: quotes.map((q) => ({
             userId,
-            provider: DEFAULT_PROVIDER,
+            provider,
             propertyCode: q.propertyCode,
             propertyName: q.propertyName,
             brand: q.brand,
@@ -171,8 +180,19 @@ export async function POST(req: NextRequest) {
   await audit(
     userId,
     "CAPTURE",
-    { searchId, itemKey: body.itemKey, written, blocked, pageKind: body.pageKind, observations: body.observations.length },
-    { provider: DEFAULT_PROVIDER, searchId },
+    {
+      searchId,
+      itemKey: body.itemKey,
+      brand: key.brand,
+      intent: key.intent,
+      written,
+      blocked,
+      pageKind: body.pageKind,
+      observations: body.observations.length,
+      coerced: intent.coerced,
+      dropped: intent.dropped,
+    },
+    { provider, searchId },
   )
 
   return NextResponse.json({ ok: true, written, itemKey: body.itemKey }, { headers: { "Cache-Control": "no-store" } })

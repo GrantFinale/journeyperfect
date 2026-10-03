@@ -18,6 +18,7 @@ import { getConfig } from "@/lib/config"
 import { getConfigKey, getConfigKeyBoolean, getConfigKeyNumber } from "@/lib/config-keys"
 import { getBrowserRunner } from "./runner"
 import { HiltonRateProvider, HILTON_RATE_CODE_CONFIG_KEY } from "./providers/hilton"
+import { GO_RATES_BRANDS } from "./brands"
 import type { BrowserRunner, PrivateRateAuditAction, PrivateRateProviderId } from "./types"
 
 export const DEFAULT_PROVIDER: PrivateRateProviderId = "hilton"
@@ -67,6 +68,27 @@ export async function checksRemainingToday(userId: string, provider: PrivateRate
 export async function assertEnabledAndEntitled(userId: string, provider: PrivateRateProviderId = DEFAULT_PROVIDER): Promise<void> {
   if (!(await isPrivateRatesEnabled())) throw new PrivateRatesGateError("DISABLED")
   if (!(await userIsEntitled(userId, provider))) throw new PrivateRatesGateError("NOT_ENTITLED")
+}
+
+/** Providers the user holds an active (unrevoked) entitlement for, in GO_RATES_BRANDS order. */
+export async function entitledProviders(userId: string): Promise<PrivateRateProviderId[]> {
+  const rows = await prisma.privateRateEntitlement.findMany({
+    where: { userId, revokedAt: null, provider: { in: [...GO_RATES_BRANDS] } },
+    select: { provider: true },
+  })
+  const have = new Set(rows.map((r) => r.provider))
+  return GO_RATES_BRANDS.filter((b) => have.has(b))
+}
+
+/**
+ * Enabled + entitled to at least one provider (the Go Rates extension case,
+ * where Hilton and Marriott are captured together). Returns those providers.
+ */
+export async function assertEnabledAndEntitledAny(userId: string): Promise<PrivateRateProviderId[]> {
+  if (!(await isPrivateRatesEnabled())) throw new PrivateRatesGateError("DISABLED")
+  const providers = await entitledProviders(userId)
+  if (providers.length === 0) throw new PrivateRatesGateError("NOT_ENTITLED")
+  return providers
 }
 
 /**
@@ -119,6 +141,8 @@ export async function getRateProvider(providerId: PrivateRateProviderId = DEFAUL
       const rateCode = await getConfig(HILTON_RATE_CODE_CONFIG_KEY, "")
       return new HiltonRateProvider({ rateCode })
     }
+    case "marriott":
+      throw new Error("Marriott rates are captured by the Go Rates extension only; there is no runner provider")
     default: {
       const never: never = providerId
       throw new Error(`Unknown private-rate provider "${String(never)}"`)

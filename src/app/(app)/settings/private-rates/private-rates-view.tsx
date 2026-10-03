@@ -1,7 +1,9 @@
 "use client"
 
 /**
- * Settings card for the Hilton Go connection.
+ * Settings for private hotel rates: which programs the user has (Hilton Go,
+ * Marriott F&F, and whether Marriott's rate code is set, never its value),
+ * the Hilton Go runner connection, and the Go Rates extension.
  * See docs/plans/opportunity-discovery-engine.md §6.
  *
  * Connect → connectHilton() opens an isolated browser on Hilton's sign-in page
@@ -162,60 +164,64 @@ export function PrivateRatesView({ initial }: { initial: Status }) {
 
   return (
     <div className="space-y-6">
-      <section className="rounded-lg border border-gray-200 bg-white p-5">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-lg font-semibold text-gray-900">Hilton account</h2>
-              <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${badge.className}`}>{badge.label}</span>
+      <ProgramsSection status={status} />
+
+      {status.hiltonEntitled && (
+        <section className="rounded-lg border border-gray-200 bg-white p-5">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-lg font-semibold text-gray-900">Hilton account</h2>
+                <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${badge.className}`}>{badge.label}</span>
+              </div>
+              <p className="mt-1 text-sm text-gray-500">
+                {connected && <>Last validated {formatWhen(status.session?.lastValidatedAt)}. Last used {formatWhen(status.session?.lastUsedAt)}.</>}
+                {needsUser && (CHALLENGE_TEXT[status.session?.challengeKind ?? ""] ?? "Hilton needs your attention.")}
+                {!connected && !needsUser && "Connect to let JourneyPerfect check Team Member rates on your behalf when you ask."}
+              </p>
+              <p className="mt-1 text-xs text-gray-400">
+                {status.checksRemainingToday} rate {status.checksRemainingToday === 1 ? "check" : "checks"} left today.
+              </p>
             </div>
-            <p className="mt-1 text-sm text-gray-500">
-              {connected && <>Last validated {formatWhen(status.session?.lastValidatedAt)}. Last used {formatWhen(status.session?.lastUsedAt)}.</>}
-              {needsUser && (CHALLENGE_TEXT[status.session?.challengeKind ?? ""] ?? "Hilton needs your attention.")}
-              {!connected && !needsUser && "Connect to let JourneyPerfect check Team Member rates on your behalf when you ask."}
-            </p>
-            <p className="mt-1 text-xs text-gray-400">
-              {status.checksRemainingToday} rate {status.checksRemainingToday === 1 ? "check" : "checks"} left today.
-            </p>
-          </div>
-          <div className="flex flex-shrink-0 gap-2">
-            {!live && (
-              <button
-                type="button"
-                onClick={handleConnect}
-                disabled={busy !== null}
-                className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
-              >
-                {busy === "connect" ? "Starting…" : connected ? "Reconnect" : needsUser ? "Sign in again" : "Connect Hilton"}
-              </button>
-            )}
-            {status.session && !live && (
-              <button
-                type="button"
-                onClick={handleDisconnect}
-                disabled={busy !== null}
-                className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60"
-              >
-                {busy === "disconnect" ? "Removing…" : "Disconnect"}
-              </button>
-            )}
-          </div>
-        </div>
-
-        {notice && <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">{notice}</div>}
-
-        {live && (
-          <div className="mt-4 space-y-3">
-            <LiveView liveViewUrl={live.liveViewUrl} onSignedIn={() => void pollOnce(live.sessionId)} />
-            <div className="flex items-center justify-between text-xs text-gray-500">
-              <span>Waiting for you to finish signing in (up to 10 minutes)…</span>
-              <button type="button" onClick={handleCancelLogin} className="text-gray-600 underline hover:text-gray-900">
-                Cancel
-              </button>
+            <div className="flex flex-shrink-0 gap-2">
+              {!live && (
+                <button
+                  type="button"
+                  onClick={handleConnect}
+                  disabled={busy !== null}
+                  className="rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
+                >
+                  {busy === "connect" ? "Starting…" : connected ? "Reconnect" : needsUser ? "Sign in again" : "Connect Hilton"}
+                </button>
+              )}
+              {status.session && !live && (
+                <button
+                  type="button"
+                  onClick={handleDisconnect}
+                  disabled={busy !== null}
+                  className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+                >
+                  {busy === "disconnect" ? "Removing…" : "Disconnect"}
+                </button>
+              )}
             </div>
           </div>
-        )}
-      </section>
+
+          {notice && <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">{notice}</div>}
+
+          {live && (
+            <div className="mt-4 space-y-3">
+              <LiveView liveViewUrl={live.liveViewUrl} onSignedIn={() => void pollOnce(live.sessionId)} />
+              <div className="flex items-center justify-between text-xs text-gray-500">
+                <span>Waiting for you to finish signing in (up to 10 minutes)…</span>
+                <button type="button" onClick={handleCancelLogin} className="text-gray-600 underline hover:text-gray-900">
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+        </section>
+      )}
 
       <GoRatesExtensionSection />
 
@@ -235,6 +241,47 @@ export function PrivateRatesView({ initial }: { initial: Status }) {
   )
 }
 
+/** Which private-rate programs this account has; Marriott's rate code status (set / not set, never the value). */
+function ProgramsSection({ status }: { status: Status }) {
+  const rows: { name: string; on: boolean; detail: string }[] = [
+    {
+      name: "Hilton Go (team member)",
+      on: status.providers.hilton,
+      detail: status.providers.hilton ? "Go Hilton search plus a public search per destination." : "Not enabled for your account.",
+    },
+    {
+      name: "Marriott Friends & Family",
+      on: status.providers.marriott,
+      detail: !status.providers.marriott
+        ? "Not enabled for your account."
+        : status.marriottRateCodeSet
+          ? "Rate code: set. F&F search plus a public search per destination."
+          : "Rate code: not set. No Marriott tabs open until an admin sets it.",
+    },
+  ]
+  return (
+    <section className="rounded-lg border border-gray-200 bg-white p-5">
+      <h2 className="text-lg font-semibold text-gray-900">Your programs</h2>
+      <ul className="mt-3 space-y-2">
+        {rows.map((r) => (
+          <li key={r.name} className="flex flex-wrap items-start justify-between gap-2 text-sm">
+            <span className="min-w-0">
+              <span className="font-medium text-gray-900">{r.name}</span>
+              <span className="block text-xs text-gray-500">{r.detail}</span>
+            </span>
+            <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${r.on ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-600"}`}>
+              {r.on ? "On" : "Off"}
+            </span>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-3 text-xs text-gray-400">
+        {status.checksRemainingToday} rate {status.checksRemainingToday === 1 ? "check" : "checks"} left today.
+      </p>
+    </section>
+  )
+}
+
 /** Install guide + presence badge for the Go Rates Chrome extension (linked as #extension). */
 function GoRatesExtensionSection() {
   const { detected, checking } = useGoRatesExtension()
@@ -251,9 +298,9 @@ function GoRatesExtensionSection() {
         <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${badge.className}`}>{badge.label}</span>
       </div>
       <p className="mt-1 text-sm text-gray-600">
-        The extension opens Hilton search tabs in your own Chrome, reads the rates shown on the page and sends them to
-        your JourneyPerfect account. You stay signed in to Hilton yourself, in your own browser. No password is involved:
-        JourneyPerfect never sees your Hilton sign-in.
+        The extension opens Hilton and Marriott search tabs in your own Chrome (a private-rate search and a public one for
+        each destination), reads the rates shown on the page and sends them to your JourneyPerfect account. You stay
+        signed in yourself, in your own browser. No password is involved: JourneyPerfect never sees your sign-in.
       </p>
       <p className="mt-2 text-sm text-gray-600">
         Once it is installed, an opportunity search shows an &ldquo;Open Go rate tabs&rdquo; button in its Private rates step.
@@ -273,7 +320,7 @@ function GoRatesExtensionSection() {
             ~/claude-dashboard/journeyperfect/extensions/go-rates
           </div>
         </li>
-        <li>Sign in to Go Hilton in Chrome once. The extension uses that sign-in; it does not store it.</li>
+        <li>Sign in to Go Hilton in Chrome once. The extension uses that sign-in; it does not store it. For Marriott the F&amp;F rate code is part of the search URL; sign in to Marriott too if your program asks for it.</li>
         <li>Reload this page. The badge above should say Installed.</li>
       </ol>
     </section>

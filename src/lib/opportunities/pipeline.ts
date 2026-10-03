@@ -649,6 +649,7 @@ async function runStage3(ctx: SearchContext, mode: PrivateRatesMode = "runner"):
       )
       .map((q) => ({
         id: q.id,
+        provider: q.provider,
         propertyCode: q.propertyCode,
         propertyName: q.propertyName,
         brand: q.brand,

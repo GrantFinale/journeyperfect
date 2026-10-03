@@ -7,7 +7,12 @@
 
   const APP_ORIGINS = ["https://journeyperfect.com", "https://www.journeyperfect.com", "http://localhost:3000"]
   const HILTON_ORIGIN = "https://www.hilton.com"
-  const MAX_ITEMS = 12
+  const MARRIOTT_ORIGIN = "https://www.marriott.com"
+  /** brand → the only origin its tabs may open on */
+  const BRAND_ORIGINS = { hilton: HILTON_ORIGIN, marriott: MARRIOTT_ORIGIN }
+  const BRANDS = ["hilton", "marriott"]
+  const INTENTS = ["PRIVATE", "PUBLIC"]
+  const MAX_ITEMS = 24
   const DEFAULT_CONCURRENCY = 3
   const MAX_CONCURRENCY = 4
   const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
@@ -22,6 +27,12 @@
 
   function isAppOrigin(origin) {
     return APP_ORIGINS.indexOf(origin) !== -1
+  }
+
+  /** "hilton" | "marriott" for a brand site origin, else null. */
+  function brandOfOrigin(origin) {
+    for (const b of BRANDS) if (BRAND_ORIGINS[b] === origin) return b
+    return null
   }
 
   function str(v, max) {
@@ -64,6 +75,13 @@
         dropped++
         continue
       }
+      // Plans from before brands/intents existed are Hilton private searches.
+      const brand = it.brand === undefined ? "hilton" : it.brand
+      const intent = it.intent === undefined ? "PRIVATE" : it.intent
+      if (BRANDS.indexOf(brand) === -1 || INTENTS.indexOf(intent) === -1) {
+        dropped++
+        continue
+      }
       let u
       try {
         u = new URL(it.url)
@@ -71,13 +89,15 @@
         dropped++
         continue
       }
-      if (u.origin !== HILTON_ORIGIN || u.username || u.password) {
+      if (u.origin !== BRAND_ORIGINS[brand] || u.username || u.password) {
         dropped++
         continue
       }
       keys.add(it.key)
       const clean = {
         key: it.key,
+        brand,
+        intent,
         location: typeof it.location === "string" ? it.location.slice(0, 200) : "",
         checkIn: typeof it.checkIn === "string" && DATE_RE.test(it.checkIn) ? it.checkIn : "",
         checkOut: typeof it.checkOut === "string" && DATE_RE.test(it.checkOut) ? it.checkOut : "",
@@ -87,7 +107,7 @@
       if (typeof it.lng === "number" && Number.isFinite(it.lng)) clean.lng = it.lng
       items.push(clean)
     }
-    if (!items.length) return { ok: false, error: "no valid www.hilton.com items" }
+    if (!items.length) return { ok: false, error: "no valid www.hilton.com / www.marriott.com items" }
     return {
       ok: true,
       dropped,
@@ -102,13 +122,25 @@
     }
   }
 
-  /** Dates a Hilton URL carries (arrivalDate/departureDate, with checkIn/checkOut fallbacks). */
+  /** "11/06/2026" → "2026-11-06"; YYYY-MM-DD passes through; anything else → "". */
+  function toYmd(v) {
+    if (!v) return ""
+    if (DATE_RE.test(v)) return v
+    const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(v)
+    return m ? `${m[3]}-${m[1].padStart(2, "0")}-${m[2].padStart(2, "0")}` : ""
+  }
+
+  /**
+   * Dates a Hilton or Marriott URL carries, as YYYY-MM-DD: Hilton
+   * arrivalDate/departureDate, Marriott fromDate/toDate (MM/DD/YYYY), with
+   * checkIn/checkOut fallbacks.
+   */
   function datesFromUrl(url) {
     try {
       const p = new URL(url).searchParams
       return {
-        checkIn: p.get("arrivalDate") || p.get("checkInDate") || p.get("checkIn") || "",
-        checkOut: p.get("departureDate") || p.get("checkOutDate") || p.get("checkOut") || "",
+        checkIn: toYmd(p.get("arrivalDate") || p.get("fromDate") || p.get("checkInDate") || p.get("checkIn") || ""),
+        checkOut: toYmd(p.get("departureDate") || p.get("toDate") || p.get("checkOutDate") || p.get("checkOut") || ""),
       }
     } catch (_e) {
       return { checkIn: "", checkOut: "" }
@@ -116,12 +148,18 @@
   }
 
   /**
-   * Choose the run item a manually captured tab belongs to: an uncaptured
+   * Choose the run item a manually captured tab belongs to. Only items of the
+   * tab's brand qualify (when `brand` is given). Within those: an uncaptured
    * item with the same dates, else any item with the same dates, else the
-   * first uncaptured item, else the first item.
+   * first uncaptured item, else the first item. A PRIVATE item is preferred
+   * over its PUBLIC twin at each step unless `intent` says otherwise.
    */
-  function matchItem(items, url) {
-    if (!items || !items.length) return null
+  function matchItem(allItems, url, brand, intent) {
+    if (!allItems || !allItems.length) return null
+    let items = brand ? allItems.filter((it) => (it.brand || "hilton") === brand) : allItems.slice()
+    if (!items.length) return null
+    const want = intent || "PRIVATE"
+    items = items.slice().sort((a, b) => ((a.intent || "PRIVATE") === want ? 0 : 1) - ((b.intent || "PRIVATE") === want ? 0 : 1))
     const d = datesFromUrl(url)
     const sameDates = (it) => d.checkIn && it.checkIn === d.checkIn && (!d.checkOut || it.checkOut === d.checkOut)
     const open = (it) => it.status !== "captured"
@@ -142,8 +180,8 @@
   }
 
   const api = {
-    APP_ORIGINS, HILTON_ORIGIN, MAX_ITEMS, DEFAULT_CONCURRENCY, MAX_CONCURRENCY,
-    originOf, isAppOrigin, validatePlan, datesFromUrl, matchItem, captureOutcome,
+    APP_ORIGINS, HILTON_ORIGIN, MARRIOTT_ORIGIN, BRAND_ORIGINS, BRANDS, INTENTS, MAX_ITEMS, DEFAULT_CONCURRENCY, MAX_CONCURRENCY,
+    originOf, isAppOrigin, brandOfOrigin, validatePlan, toYmd, datesFromUrl, matchItem, captureOutcome,
   }
   root.JPGoRatesPlan = api
   if (typeof module !== "undefined" && module.exports) module.exports = api

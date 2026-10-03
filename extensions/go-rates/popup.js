@@ -11,6 +11,13 @@
     $("snapshot").classList.add("hidden")
   }
 
+  const KIND_LABEL = {
+    "hilton|PRIVATE": "Hilton Go",
+    "hilton|PUBLIC": "Hilton public",
+    "marriott|PRIVATE": "Marriott F&F",
+    "marriott|PUBLIC": "Marriott public",
+  }
+
   function say(text, cls) {
     const m = $("msg")
     m.textContent = text || ""
@@ -30,13 +37,14 @@
     $("failed").textContent = run.failed
     $("total").textContent = run.total
     $("status").textContent = run.fatal ? "· halted" : run.blocked ? "· blocked" : run.stopped ? "· stopped" : run.done ? "· done" : "· running"
-    $("err").textContent = run.fatal || (run.blocked ? "Hilton's bot protection refused a page; no more tabs will open." : "") || run.lastError || ""
+    $("err").textContent = run.fatal || (run.blocked ? "A site's bot protection refused a page; no more tabs will open." : "") || run.lastError || ""
     const ul = $("items")
     ul.textContent = ""
     for (const it of run.items) {
       const li = document.createElement("li")
       const left = document.createElement("span")
-      left.textContent = `${it.location || it.key} ${it.checkIn ? it.checkIn + "→" + it.checkOut : ""}`
+      const kind = KIND_LABEL[`${it.brand || "hilton"}|${it.intent || "PRIVATE"}`] || ""
+      left.textContent = `${it.location || it.key} ${it.checkIn ? it.checkIn + "→" + it.checkOut : ""}${kind ? " · " + kind : ""}`
       const right = document.createElement("span")
       right.className = it.status === "captured" ? "ok" : it.status === "failed" ? "bad" : "muted"
       right.textContent = it.status === "captured" ? `✓ ${it.observations}` : it.status === "failed" ? it.error || "failed" : it.status
@@ -55,7 +63,7 @@
     try {
       const r = await chrome.runtime.sendMessage({ type: "CAPTURE_ACTIVE_TAB" })
       if (r && r.ok) say(`Captured ${r.observations} rate(s) into item ${r.itemKey}.`, "ok")
-      else if (r && r.blocked) say("This page is Hilton's bot-protection error page; recorded as blocked.", "bad")
+      else if (r && r.blocked) say("This page is the site's bot-protection error page; recorded as blocked.", "bad")
       else say((r && r.error) || "Capture failed.", "bad")
     } finally {
       refresh()

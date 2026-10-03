@@ -223,13 +223,19 @@ export async function getOpportunitySearch(searchId: string): Promise<{
     candidateCounts(searchId),
   ])
   // Best first: the candidate's score is the ranking; ties by destination name.
-  const scores = new Map(
-    (await prisma.opportunityCandidate.findMany({ where: { searchId }, select: { id: true, score: true } })).map((c) => [c.id, c.score ?? -Infinity])
+  const candRows = await prisma.opportunityCandidate.findMany({ where: { searchId }, select: { id: true, score: true, factors: true } })
+  const scores = new Map(candRows.map((c) => [c.id, c.score ?? -Infinity]))
+  // Which chain the stage-3 private rate came from (hilton Go / marriott F&F), for the card's wording.
+  const hotelProviders = new Map(
+    candRows.map((c) => {
+      const facts = (c.factors as { hotelValue?: { facts?: { provider?: unknown } } } | null)?.hotelValue?.facts
+      return [c.id, typeof facts?.provider === "string" ? facts.provider : null] as const
+    })
   )
   rows.sort((a, b) => (scores.get(b.candidateId) ?? -Infinity) - (scores.get(a.candidateId) ?? -Infinity) || a.destinationName.localeCompare(b.destinationName))
   return {
     search: toSearchView(search, { candidateCount: cc.total, opportunityCount: rows.length }),
-    opportunities: rows.map(toOpportunityView),
+    opportunities: rows.map((r) => toOpportunityView(r, { hotelProvider: hotelProviders.get(r.candidateId) })),
     candidateCounts: cc,
   }
 }

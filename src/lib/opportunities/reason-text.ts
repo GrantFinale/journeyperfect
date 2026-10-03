@@ -10,20 +10,39 @@ export function hotelSavingsHeadline(savingsTotal: number): string {
   return `${money(savingsTotal)} hotel savings`
 }
 
-export function hotelSavingsDetail(hotelName: string, privateNightly: number, publicNightly: number): string {
+/**
+ * Detail line for a hotel saving. Marriott names its rate:
+ * "F&F rate $189/night at JW Marriott Chicago (public $329)". Hilton keeps
+ * "Hilton Chicago, private $120 vs public $320/night".
+ */
+export function hotelSavingsDetail(hotelName: string, privateNightly: number, publicNightly: number, provider?: string | null): string {
+  if (provider === "marriott") return `F&F rate ${money(privateNightly)}/night at ${hotelName} (public ${money(publicNightly)})`
   return `${hotelName}, private ${money(privateNightly)} vs public ${money(publicNightly)}/night`
 }
 
 /** Informational only (no public comparable): never phrased as a saving. */
 export const GO_RATE_HEADLINE_PREFIX = "Go rate from "
+export const FF_RATE_HEADLINE_PREFIX = "F&F rate from "
 
 export function goRateHeadline(nightly: number, hotelName: string, currency = "USD"): string {
   return `${GO_RATE_HEADLINE_PREFIX}${money(nightly, currency)}/night at ${hotelName}`
 }
 
-/** A hotelValue reason that only reports a Go rate, as opposed to a deal. */
+/** "Go rate from $207/night at …" (Hilton) or "F&F rate from $189/night at …" (Marriott). */
+export function privateRateHeadline(provider: string | null | undefined, nightly: number, hotelName: string, currency = "USD"): string {
+  if (provider === "marriott") return `${FF_RATE_HEADLINE_PREFIX}${money(nightly, currency)}/night at ${hotelName}`
+  return goRateHeadline(nightly, hotelName, currency)
+}
+
+/** "Go rate" / "F&F rate"; long form "Your Go Hilton rate" / "Your Marriott Friends & Family rate". */
+export function privateRateNote(provider: string | null | undefined, long = false): string {
+  if (provider === "marriott") return long ? "Your Marriott Friends & Family rate" : "F&F rate"
+  return long ? "Your Go Hilton rate" : "Go rate"
+}
+
+/** A hotelValue reason that only reports a private rate, as opposed to a deal. */
 export function isInformationalHotelReason(headline: string): boolean {
-  return headline.startsWith(GO_RATE_HEADLINE_PREFIX)
+  return headline.startsWith(GO_RATE_HEADLINE_PREFIX) || headline.startsWith(FF_RATE_HEADLINE_PREFIX)
 }
 
 const PARTY_WORDS = ["", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"]

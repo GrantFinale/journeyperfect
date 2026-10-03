@@ -1,7 +1,8 @@
 "use server"
 
 /**
- * Private Rates (Hilton Go) server actions.
+ * Private Rates server actions: Hilton Go (runner + Go Rates extension) and
+ * Marriott Friends & Family (Go Rates extension only).
  * See docs/plans/opportunity-discovery-engine.md §6.
  *
  * Every action re-checks both gates (kill switch + entitlement) on the server;
@@ -20,17 +21,34 @@ import { prisma } from "@/lib/db"
 import { setConfig } from "@/lib/config"
 import { getConfigKey, getConfigKeyNumber } from "@/lib/config-keys"
 import { signCaptureToken } from "@/lib/private-rates/capture-token"
-import { GO_RATES_MAX_CONCURRENT_TABS, adultsForTravelerCount, buildGoRatesItems, type GoRatesPlan } from "@/lib/private-rates/go-rates-plan"
+import {
+  GO_RATES_MAX_CONCURRENT_TABS,
+  GO_RATES_MAX_ITEMS,
+  adultsForTravelerCount,
+  buildGoRatesItems,
+  parseGoRatesItemKey,
+  type BuildGoRatesItemsOptions,
+  type GoRatesPlan,
+} from "@/lib/private-rates/go-rates-plan"
 import { repairCapturedHotelNames } from "@/lib/private-rates/capture"
-import { EMPTY_CAPTURED_RATES, groupCapturedRates, type CapturedHotelRates } from "@/lib/private-rates/captured-view"
+import {
+  EMPTY_CAPTURED_RATES,
+  groupCapturedRates,
+  summariseCaptureAudits,
+  type CaptureTabStats,
+  type CapturedHotelRates,
+} from "@/lib/private-rates/captured-view"
+import { GO_RATES_BRANDS, isGoRatesBrand, type GoRatesBrand } from "@/lib/private-rates/brands"
 import { revalidatePath } from "next/cache"
 import {
   DEFAULT_PROVIDER,
   PrivateRatesGateError,
   assertCanRun,
   assertEnabledAndEntitled,
+  assertEnabledAndEntitledAny,
   audit,
   checksRemainingToday,
+  entitledProviders,
   getRateProvider,
   getRunner,
   isPrivateRatesEnabled,
@@ -102,21 +120,35 @@ function sessionWhere(userId: string) {
 
 export async function getPrivateRateStatus(): Promise<{
   enabled: boolean
+  /** Entitled to at least one provider */
   entitled: boolean
+  /** Per-provider entitlement (only meaningful when enabled) */
+  providers: Record<GoRatesBrand, boolean>
+  /** Entitled to Hilton: the runner session / "Connect Hilton" applies */
+  hiltonEntitled: boolean
+  /** Whether privateRates.marriott.rateCode is set (never the value); false unless entitled to Marriott */
+  marriottRateCodeSet: boolean
   session: { status: SessionStatus; challengeKind?: ChallengeKind; lastValidatedAt?: string; lastUsedAt?: string } | null
   checksRemainingToday: number
 }> {
   const { id: userId } = await requireUser()
-  const [enabled, entitled] = await Promise.all([isPrivateRatesEnabled(), userIsEntitled(userId, PROVIDER)])
+  const [enabled, providerList] = await Promise.all([isPrivateRatesEnabled(), entitledProviders(userId)])
+  const providers = { hilton: providerList.includes("hilton"), marriott: providerList.includes("marriott") }
+  const entitled = providerList.length > 0
+  const hiltonEntitled = providers.hilton
   // Hidden unless enabled AND entitled: do not even reveal whether a session exists.
-  if (!enabled || !entitled) return { enabled, entitled, session: null, checksRemainingToday: 0 }
+  if (!enabled || !entitled) {
+    return { enabled, entitled, providers, hiltonEntitled, marriottRateCodeSet: false, session: null, checksRemainingToday: 0 }
+  }
 
-  const [row, remaining] = await Promise.all([
-    prisma.privateRateSession.findUnique({ where: sessionWhere(userId) }),
+  const [row, remaining, marriottRateCode] = await Promise.all([
+    hiltonEntitled ? prisma.privateRateSession.findUnique({ where: sessionWhere(userId) }) : Promise.resolve(null),
     checksRemainingToday(userId, PROVIDER),
+    providers.marriott ? getConfigKey("privateRates.marriott.rateCode") : Promise.resolve(""),
   ])
+  const base = { enabled, entitled, providers, hiltonEntitled, marriottRateCodeSet: marriottRateCode.trim().length > 0 }
 
-  if (!row) return { enabled, entitled, session: null, checksRemainingToday: remaining }
+  if (!row) return { ...base, session: null, checksRemainingToday: remaining }
 
   // An AWAITING_LOGIN row older than the login timeout is expired; report it that way.
   let status = row.status as SessionStatus
@@ -126,8 +158,7 @@ export async function getPrivateRateStatus(): Promise<{
   }
 
   return {
-    enabled,
-    entitled,
+    ...base,
     session: {
       status,
       challengeKind: asChallengeKind(row.challengeKind),
@@ -497,20 +528,25 @@ function gateMessage(reason: string): string {
 }
 
 /**
- * Build the plan the Go Rates extension executes in the user's own Chrome:
- * one Hilton search tab per (destination, dates) group, plus a 45-minute
- * capture token bound to this user and search. Never touches the browser
- * runner or the PrivateRateSession.
+ * Build the plan the Go Rates extension executes in the user's own Chrome: per
+ * (destination, dates) group a private and a public search tab for each brand
+ * the user is entitled to (Hilton Go; Marriott F&F when its rate code is set),
+ * capped at privateRates.maxCaptureTabs, plus a 45-minute capture token bound
+ * to this user and search. Never touches the browser runner or the
+ * PrivateRateSession.
  *
- * Gates: enabled + entitled + daily cap. One plan = one check: a CHECK_RATES
- * audit row (detail.mode "extension") is written here, before any tab opens,
- * so two quick clicks cannot both slip under the cap. An empty plan consumes
+ * Gates: enabled + entitled to at least one provider + daily cap. One plan =
+ * one check: a CHECK_RATES audit row (provider "hilton", the app-wide check
+ * counter; detail.mode "extension") is written here, before any tab opens, so
+ * two quick clicks cannot both slip under the cap. An empty plan consumes
  * nothing.
  */
 export async function createGoRatesCapturePlan(searchId: string): Promise<{ plan: GoRatesPlan } | { error: string }> {
   const { id: userId } = await requireUser()
+  let providers: GoRatesBrand[]
   try {
-    await assertCanRun(userId, PROVIDER)
+    providers = await assertEnabledAndEntitledAny(userId)
+    if ((await checksRemainingToday(userId, PROVIDER)) <= 0) throw new PrivateRatesGateError("LIMIT")
   } catch (err) {
     if (err instanceof PrivateRatesGateError) return { error: gateMessage(err.reason) }
     throw err
@@ -522,7 +558,7 @@ export async function createGoRatesCapturePlan(searchId: string): Promise<{ plan
   })
   if (!search) return { error: "Search not found." }
 
-  const [rows, maxItems, urlTemplate] = await Promise.all([
+  const [rows, maxTabs, hiltonPrivate, hiltonPublic, marriottRateCode, marriottPrivate, marriottPublic] = await Promise.all([
     prisma.opportunityCandidate.findMany({
       where: { searchId, pruned: false, stage: { gte: 1 } },
       select: {
@@ -538,9 +574,22 @@ export async function createGoRatesCapturePlan(searchId: string): Promise<{ plan
         score: true,
       },
     }),
-    getConfigKeyNumber("privateRates.maxPropertiesPerCheck"),
+    getConfigKeyNumber("privateRates.maxCaptureTabs"),
     getConfigKey("privateRates.hilton.searchUrlTemplate"),
+    getConfigKey("privateRates.hilton.publicSearchUrlTemplate"),
+    getConfigKey("privateRates.marriott.rateCode"),
+    getConfigKey("privateRates.marriott.searchUrlTemplate"),
+    getConfigKey("privateRates.marriott.publicSearchUrlTemplate"),
   ])
+
+  const brands: NonNullable<BuildGoRatesItemsOptions["brands"]> = {}
+  if (providers.includes("hilton")) brands.hilton = { privateTemplate: hiltonPrivate, publicTemplate: hiltonPublic }
+  if (providers.includes("marriott") && marriottRateCode.trim()) {
+    brands.marriott = { rateCode: marriottRateCode, privateTemplate: marriottPrivate, publicTemplate: marriottPublic }
+  }
+  if (!brands.hilton && !brands.marriott) {
+    return { error: "Marriott Friends & Family rates are not set up yet (no rate code configured)." }
+  }
 
   const candidates: PlanCandidate[] = rows.map((r) => ({
     id: r.id,
@@ -555,8 +604,8 @@ export async function createGoRatesCapturePlan(searchId: string): Promise<{ plan
     score: r.score,
   }))
   const items = buildGoRatesItems(candidates, {
-    maxItems,
-    urlTemplate,
+    maxItems: Math.min(GO_RATES_MAX_ITEMS, Math.max(1, Math.floor(maxTabs))),
+    brands,
     travelerCount: Math.max(1, search.travelerProfileIds.length),
   })
   if (items.length === 0) return { error: "Nothing to price yet for this search." }
@@ -576,7 +625,12 @@ export async function createGoRatesCapturePlan(searchId: string): Promise<{ plan
       provider: PROVIDER,
       action: "CHECK_RATES",
       searchId,
-      detail: { mode: "extension", status: "PLANNED", itemsPlanned: items.length },
+      detail: {
+        mode: "extension",
+        status: "PLANNED",
+        itemsPlanned: items.length,
+        brands: Object.keys(brands),
+      },
     },
   })
   revalidatePath("/settings/private-rates")
@@ -607,7 +661,9 @@ export async function finishGoRatesCapture(
   opportunityCount: number
   quotesUsed: number
   blockedPages: number
-  /** Captured quotes shown in "Hotel rates from your Hilton tabs" for this search */
+  /** Blocked tabs per brand (only brands with any) */
+  blockedByBrand: Partial<Record<GoRatesBrand, number>>
+  /** Captured quotes shown in "Hotel rates from your tabs" for this search */
   capturedQuotes: number
   /** Distinct hotels among them */
   capturedHotels: number
@@ -618,8 +674,9 @@ export async function finishGoRatesCapture(
 
   const countOpportunities = () => prisma.travelOpportunity.count({ where: { searchId, userId } })
 
+  let providers: GoRatesBrand[]
   try {
-    await assertEnabledAndEntitled(userId, PROVIDER)
+    providers = await assertEnabledAndEntitledAny(userId)
   } catch (err) {
     if (err instanceof PrivateRatesGateError) {
       return {
@@ -627,6 +684,7 @@ export async function finishGoRatesCapture(
         opportunityCount: await countOpportunities(),
         quotesUsed: 0,
         blockedPages: 0,
+        blockedByBrand: {},
         capturedQuotes: 0,
         capturedHotels: 0,
       }
@@ -638,13 +696,18 @@ export async function finishGoRatesCapture(
     await prisma.opportunitySearch.update({ where: { id: searchId }, data: { privateRatesAuthorizedAt: new Date() } })
   }
 
-  const blockedPages = await blockedPagesSinceLatestPlan(userId, searchId)
+  const tabs = await tabStatsSinceLatestPlan(userId, searchId)
+  const blockedByBrand: Partial<Record<GoRatesBrand, number>> = {}
+  for (const b of GO_RATES_BRANDS) if (tabs[b]?.blocked) blockedByBrand[b] = tabs[b]!.blocked
+  const blockedPages = Object.values(blockedByBrand).reduce((a, n) => a + (n ?? 0), 0)
 
   // Fix names the 0.1.0 extension stored as prices ("$317") before anything reads them.
-  try {
-    await repairCapturedHotelNames(userId, undefined, PROVIDER)
-  } catch (err) {
-    console.error("[private-rates] hotel name repair failed:", err)
+  for (const provider of providers) {
+    try {
+      await repairCapturedHotelNames(userId, undefined, provider)
+    } catch (err) {
+      console.error("[private-rates] hotel name repair failed:", err)
+    }
   }
 
   // Dynamic import: the pipeline imports this module (runner-mode stage 3).
@@ -669,25 +732,29 @@ export async function finishGoRatesCapture(
     opportunityCount: await countOpportunities(),
     quotesUsed,
     blockedPages,
+    blockedByBrand,
     capturedQuotes: captured.totalQuotes,
     capturedHotels: captured.totalHotels,
   }
 }
 
 /**
- * Captured Hilton quotes for one of the caller's searches, grouped by
- * candidate destination + dates (see captured-view.ts). Hidden (empty) unless
- * private rates are enabled AND the user is entitled. Reads only the caller's
- * own quotes; never contacts Hilton.
+ * Captured Hilton and Marriott quotes for one of the caller's searches,
+ * grouped by candidate destination + dates (see captured-view.ts), for the
+ * providers the user is entitled to. Hidden (empty) unless private rates are
+ * enabled AND the user is entitled to at least one provider. Reads only the
+ * caller's own quotes; never contacts Hilton or Marriott.
  */
 export async function getCapturedHotelRates(searchId: string): Promise<CapturedHotelRates> {
   const { id: userId } = await requireUser()
-  const [enabled, entitled] = await Promise.all([isPrivateRatesEnabled(), userIsEntitled(userId, PROVIDER)])
-  if (!enabled || !entitled) return EMPTY_CAPTURED_RATES
-  return loadCapturedHotelRates(userId, searchId)
+  const [enabled, providers] = await Promise.all([isPrivateRatesEnabled(), entitledProviders(userId)])
+  if (!enabled || providers.length === 0) return EMPTY_CAPTURED_RATES
+  return loadCapturedHotelRates(userId, searchId, providers)
 }
 
-async function loadCapturedHotelRates(userId: string, searchId: string): Promise<CapturedHotelRates> {
+async function loadCapturedHotelRates(userId: string, searchId: string, providers?: GoRatesBrand[]): Promise<CapturedHotelRates> {
+  const providerList = providers ?? (await entitledProviders(userId))
+  if (providerList.length === 0) return EMPTY_CAPTURED_RATES
   const search = await prisma.opportunitySearch.findFirst({
     where: { id: searchId, userId },
     select: { id: true, travelerProfileIds: true },
@@ -712,12 +779,13 @@ async function loadCapturedHotelRates(userId: string, searchId: string): Promise
   const rows = await prisma.hotelRateQuote.findMany({
     where: {
       userId,
-      provider: PROVIDER,
+      provider: { in: providerList },
       available: true,
       OR: [...dateKeys.values()].map((d) => ({ checkIn: d.checkIn, checkOut: d.checkOut })),
     },
     select: {
       id: true,
+      provider: true,
       propertyCode: true,
       propertyName: true,
       brand: true,
@@ -736,14 +804,20 @@ async function loadCapturedHotelRates(userId: string, searchId: string): Promise
     take: 2000,
   })
 
-  return groupCapturedRates(
+  const [marriottRateCode, tabs] = await Promise.all([
+    providerList.includes("marriott") ? getConfigKey("privateRates.marriott.rateCode") : Promise.resolve(""),
+    tabStatsSinceLatestPlan(userId, searchId),
+  ])
+  const out = groupCapturedRates(
     candidates.map((c) => ({ ...c, checkIn: ymd(c.checkIn), checkOut: ymd(c.checkOut) })),
     rows.map((r) => ({ ...r, checkIn: ymd(r.checkIn), checkOut: ymd(r.checkOut) })),
-    { adults: adultsForTravelerCount(Math.max(1, search.travelerProfileIds.length)) },
+    { adults: adultsForTravelerCount(Math.max(1, search.travelerProfileIds.length)), marriottRateCode },
   )
+  return Object.keys(tabs).length > 0 ? { ...out, tabs } : out
 }
 
-async function blockedPagesSinceLatestPlan(userId: string, searchId: string): Promise<number> {
+/** Per-brand tab outcomes (blocked / empty / captured) since this search's latest extension plan. */
+async function tabStatsSinceLatestPlan(userId: string, searchId: string): Promise<Partial<Record<GoRatesBrand, CaptureTabStats>>> {
   try {
     const plans = await prisma.privateRateAuditLog.findMany({
       where: { userId, provider: PROVIDER, action: "CHECK_RATES", searchId },
@@ -752,15 +826,22 @@ async function blockedPagesSinceLatestPlan(userId: string, searchId: string): Pr
       select: { createdAt: true, detail: true },
     })
     const latest = plans.find((p) => (p.detail as { mode?: unknown } | null)?.mode === "extension")
-    if (!latest) return 0
+    if (!latest) return {}
     const captures = await prisma.privateRateAuditLog.findMany({
-      where: { userId, provider: PROVIDER, action: "CAPTURE", searchId, createdAt: { gte: latest.createdAt } },
+      where: { userId, provider: { in: [...GO_RATES_BRANDS] }, action: "CAPTURE", searchId, createdAt: { gte: latest.createdAt } },
+      orderBy: { createdAt: "asc" },
       select: { detail: true },
       take: 1000,
     })
-    return captures.filter((c) => (c.detail as { blocked?: unknown } | null)?.blocked === true).length
+    // Legacy details carry no brand; the item key says which brand the tab was.
+    return summariseCaptureAudits(
+      captures.map((c) => {
+        const d = (c.detail ?? {}) as Record<string, unknown>
+        return typeof d.brand === "string" ? d : { ...d, brand: parseGoRatesItemKey(d.itemKey)?.brand }
+      }),
+    )
   } catch {
-    return 0
+    return {}
   }
 }
 
@@ -768,8 +849,11 @@ async function blockedPagesSinceLatestPlan(userId: string, searchId: string): Pr
 
 export async function adminListPrivateRates(): Promise<{
   enabled: boolean
+  /** Whether privateRates.marriott.rateCode is set (never the value) */
+  marriottRateCodeSet: boolean
   entitlements: {
     id: string
+    provider: string
     userId: string
     email: string
     name: string | null
@@ -790,10 +874,10 @@ export async function adminListPrivateRates(): Promise<{
   }[]
 }> {
   await requireAdmin()
-  const [enabled, entitlements, sessions] = await Promise.all([
+  const [enabled, entitlements, sessions, marriottRateCode] = await Promise.all([
     isPrivateRatesEnabled(),
     prisma.privateRateEntitlement.findMany({
-      where: { provider: PROVIDER },
+      where: { provider: { in: [...GO_RATES_BRANDS] } },
       include: { user: { select: { email: true, name: true } } },
       orderBy: { grantedAt: "desc" },
     }),
@@ -802,11 +886,14 @@ export async function adminListPrivateRates(): Promise<{
       include: { user: { select: { email: true } } },
       orderBy: { updatedAt: "desc" },
     }),
+    getConfigKey("privateRates.marriott.rateCode"),
   ])
   return {
     enabled,
+    marriottRateCodeSet: marriottRateCode.trim().length > 0,
     entitlements: entitlements.map((e) => ({
       id: e.id,
+      provider: e.provider,
       userId: e.userId,
       email: e.user.email,
       name: e.user.name,
@@ -829,14 +916,17 @@ export async function adminListPrivateRates(): Promise<{
 }
 
 /**
- * Grant (or re-grant) the Hilton entitlement. `userId` may be a User id or, when
- * it contains "@", the user's email; the admin UI works by email lookup.
+ * Grant (or re-grant) a provider entitlement ("hilton" Go or "marriott" F&F).
+ * `userId` may be a User id or, when it contains "@", the user's email; the
+ * admin UI works by email lookup.
  */
 export async function adminGrantEntitlement(
   userId: string,
   notes?: string,
-): Promise<{ ok: true; userId: string; email: string } | { error: string }> {
+  provider: string = PROVIDER,
+): Promise<{ ok: true; userId: string; email: string; provider: GoRatesBrand } | { error: string }> {
   const admin = await requireAdmin()
+  if (!isGoRatesBrand(provider)) return { error: "Unknown provider." }
   const needle = userId.trim()
   if (!needle) return { error: "Enter a user id or email." }
   const user = needle.includes("@")
@@ -845,21 +935,30 @@ export async function adminGrantEntitlement(
   if (!user) return { error: "No user with that email." }
 
   await prisma.privateRateEntitlement.upsert({
-    where: { userId_provider: { userId: user.id, provider: PROVIDER } },
+    where: { userId_provider: { userId: user.id, provider } },
     update: { revokedAt: null, grantedBy: admin.id, grantedAt: new Date(), notes: notes?.trim() || null },
-    create: { userId: user.id, provider: PROVIDER, grantedBy: admin.id, notes: notes?.trim() || null },
+    create: { userId: user.id, provider, grantedBy: admin.id, notes: notes?.trim() || null },
   })
   revalidatePath("/admin/private-rates")
-  return { ok: true, userId: user.id, email: user.email }
+  return { ok: true, userId: user.id, email: user.email, provider }
 }
 
-/** Revoke the entitlement and destroy the user's session (blob + row), per §6.3/§6.4. */
-export async function adminRevokeEntitlement(userId: string): Promise<{ ok: true } | { error: string }> {
+/**
+ * Revoke a provider entitlement. For Hilton also destroy the user's runner
+ * session (blob + row), per §6.3/§6.4; Marriott has no runner session.
+ */
+export async function adminRevokeEntitlement(userId: string, provider: string = PROVIDER): Promise<{ ok: true } | { error: string }> {
   const admin = await requireAdmin()
-  const existing = await prisma.privateRateEntitlement.findUnique({ where: { userId_provider: { userId, provider: PROVIDER } } })
+  if (!isGoRatesBrand(provider)) return { error: "Unknown provider." }
+  const existing = await prisma.privateRateEntitlement.findUnique({ where: { userId_provider: { userId, provider } } })
   if (!existing) return { error: "No entitlement for that user." }
 
   await prisma.privateRateEntitlement.update({ where: { id: existing.id }, data: { revokedAt: new Date() } })
+  if (provider === "marriott") {
+    await audit(userId, "REVOKE", { by: admin.id }, { provider })
+    revalidatePath("/admin/private-rates")
+    return { ok: true }
+  }
 
   let runnerDestroyed = true
   try {
@@ -885,11 +984,11 @@ export async function adminSetKillSwitch(enabled: boolean): Promise<{ ok: true; 
 }
 
 export async function adminListAudit(limit = 100): Promise<
-  { id: string; userId: string; email: string | null; action: string; searchId: string | null; detail: unknown; createdAt: string }[]
+  { id: string; provider: string; userId: string; email: string | null; action: string; searchId: string | null; detail: unknown; createdAt: string }[]
 > {
   await requireAdmin()
   const take = Math.min(Math.max(1, Math.floor(limit)), 500)
-  const rows = await prisma.privateRateAuditLog.findMany({ where: { provider: PROVIDER }, orderBy: { createdAt: "desc" }, take })
+  const rows = await prisma.privateRateAuditLog.findMany({ where: { provider: { in: [...GO_RATES_BRANDS] } }, orderBy: { createdAt: "desc" }, take })
   const userIds = [...new Set(rows.map((r) => r.userId))]
   const users = userIds.length
     ? await prisma.user.findMany({ where: { id: { in: userIds } }, select: { id: true, email: true } })
@@ -897,6 +996,7 @@ export async function adminListAudit(limit = 100): Promise<
   const emailById = new Map(users.map((u) => [u.id, u.email]))
   return rows.map((r) => ({
     id: r.id,
+    provider: r.provider,
     userId: r.userId,
     email: emailById.get(r.userId) ?? null,
     action: r.action,

@@ -76,7 +76,8 @@ export function CheckPrivateRatesButton({ searchId, onDone }: { searchId: string
   }, [])
 
   // Hidden unless enabled AND entitled (§6.1 rule 5).
-  if (!status || !status.enabled || !status.entitled) return null
+  // The runner path is Hilton-only: a Marriott-only entitlement does not show it.
+  if (!status || !status.enabled || !status.hiltonEntitled) return null
 
   if (status.session?.status !== "ACTIVE") {
     return (

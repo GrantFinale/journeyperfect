@@ -1,8 +1,9 @@
 /*
- * JourneyPerfect Go Rates: Hilton page extraction.
+ * JourneyPerfect Go Rates: Hilton and Marriott page extraction.
  *
  * Plain JS, no build step. Loaded three ways:
- *   - as a content script on www.hilton.com (attaches globalThis.JPGoRatesExtract)
+ *   - as a content script on www.hilton.com and www.marriott.com
+ *     (attaches globalThis.JPGoRatesExtract)
  *   - by node tests (module.exports)
  *   - nowhere else: the background worker never parses pages.
  *
@@ -28,12 +29,29 @@
  *   struck         strikethrough / "was" price containers. A computed
  *                  text-decoration of line-through also counts.
  *   codeAttrs      data attributes that may carry the ctyhocn on a card
+ *
+ * MARRIOTT_SELECTORS (same idea, also assumptions, written without seeing a
+ * live Marriott page): property cards on /search/findHotels.mi results, the
+ * MARSHA property code (5 letters) from links (`propertyCode=` param,
+ * `/hotels/travel/<code>-…` or `/en-us/hotels/<code>-…` paths) or data
+ * attributes, and the nightly price shown per card.
+ *
+ * Rate classification. When the run gives the item's INTENT (every tab the
+ * extension opens, and manual captures matched to an item), the item decides:
+ *   PUBLIC item   cheapest displayed (non-strikethrough) price → PUBLIC,
+ *                 rateLabel "public search"
+ *   PRIVATE item  cheapest displayed price → PRIVATE_HILTON_GO (hilton) or
+ *                 PRIVATE_MARRIOTT_FF (marriott), rateLabel = the rate label
+ *                 next to the price, else "Go Hilton search" / "MMF search".
+ *                 Signed out of Hilton: PUBLIC with rateLabel "signed-out".
+ * Strikethrough prices are ignored. Without an intent (legacy callers) the
+ * page-guessing rules below (classifyEntry etc.) still apply.
  * ────────────────────────────────────────────────────────────────────────────
  */
 ;(function (root) {
   "use strict"
 
-  const VERSION = "0.2.0"
+  const VERSION = "0.3.0"
 
   const SELECTORS = {
     signedIn: [
@@ -110,6 +128,48 @@
     jsonLd: 'script[type="application/ld+json"]',
     nextData: "script#__NEXT_DATA__",
   }
+
+  const MARRIOTT_SELECTORS = {
+    search: {
+      card: [
+        '[data-testid="property-card"]',
+        '[data-testid*="property-card" i]',
+        '[data-component-name*="PropertyCard" i]',
+        'div[class*="property-card" i]',
+        'li[class*="property-card" i]',
+        '[class*="PropertyCard" i]',
+        "[data-marsha]",
+      ],
+      // Tried in order; every candidate must pass isPlausibleName (never a price).
+      name: [
+        '[data-testid*="property-name" i]',
+        '[data-testid*="hotel-name" i]',
+        '[class*="property-name" i]',
+        '[class*="hotel-name" i]',
+        "h2",
+        "h3",
+        "h4",
+      ],
+      price: ['[data-testid*="price" i]', '[data-testid*="rate" i]', '[class*="price" i]', '[class*="rate" i]'],
+      link: ['a[href*="propertyCode="]', 'a[href*="/hotels/travel/"]', 'a[href*="/hotels/"]'],
+    },
+    room: {
+      card: ['[data-testid*="rate-card" i]', '[data-testid*="room-rate" i]', '[class*="rate-card" i]', '[class*="RateCard" i]'],
+      price: ['[data-testid*="price" i]', '[class*="price" i]', '[class*="rate" i]'],
+    },
+    propertyName: ['[data-testid*="property-name" i]', "h1", 'meta[property="og:title"]'],
+    codeAttrs: ["data-marsha", "data-marsha-code", "data-property-code", "data-propertycode", "data-property-id"],
+    // Labels Marriott may print next to a corporate/F&F price.
+    rateLabel: ['[data-testid*="rate-name" i]', '[class*="rate-name" i]', '[class*="rateName" i]', '[class*="rate-label" i]'],
+  }
+
+  /** Marriott sub-brands, matched longest first against a hotel name or logo alt. */
+  const MARRIOTT_BRANDS = [
+    "The Ritz-Carlton", "Ritz-Carlton", "St. Regis", "JW Marriott", "EDITION", "The Luxury Collection", "W Hotels",
+    "Bulgari", "Autograph Collection", "Tribute Portfolio", "Le Méridien", "Le Meridien", "Westin", "Sheraton",
+    "Renaissance", "Gaylord", "Delta Hotels", "Courtyard", "Residence Inn", "SpringHill Suites", "Fairfield",
+    "TownePlace Suites", "AC Hotel", "Aloft", "Moxy", "Four Points", "Element", "Design Hotels", "Marriott",
+  ]
 
   // Text patterns (also assumptions about Hilton copy).
   const SIGN_IN_TEXT = /^\s*(sign in|sign in or join|log in|join\s*\/\s*sign in)\s*$/i
@@ -192,6 +252,53 @@
     return CTYHOCN_BRANDS[String(code).trim().toUpperCase().slice(-2)]
   }
 
+  const MARSHA_RE = /^[A-Za-z]{5}$/
+
+  /**
+   * Marriott MARSHA code (5 letters, upper-cased) from a URL: `propertyCode=`
+   * param, else `/hotels/travel/<code>-…` or `/<locale>/hotels/<code>-…`.
+   */
+  function marriottCodeFromUrl(href, base) {
+    if (!href) return undefined
+    try {
+      const u = new URL(href, base || "https://www.marriott.com")
+      const q = u.searchParams.get("propertyCode") || u.searchParams.get("marshaCode")
+      if (q && MARSHA_RE.test(q)) return q.toUpperCase()
+      const m = /\/hotels\/(?:travel\/)?([a-z]{5})-/i.exec(u.pathname)
+      if (m) return m[1].toUpperCase()
+    } catch (_e) {
+      // not a URL
+    }
+    return undefined
+  }
+
+  /** A data-attribute value that is a MARSHA code, upper-cased; else undefined. */
+  function marriottCodeFromAttr(v) {
+    const t = String(v || "").trim()
+    return MARSHA_RE.test(t) ? t.toUpperCase() : undefined
+  }
+
+  /** Marriott sub-brand named in a hotel name ("JW Marriott Chicago" → "JW Marriott"). */
+  function marriottBrandFromName(name) {
+    const n = String(name || "").toLowerCase()
+    if (!n) return undefined
+    const sorted = MARRIOTT_BRANDS.slice().sort((a, b) => b.length - a.length)
+    for (const b of sorted) if (n.includes(b.toLowerCase())) return b.replace(/^The /, "")
+    return undefined
+  }
+
+  /** "hilton" | "marriott" from a page URL's host; null for anything else. */
+  function brandFromUrl(url) {
+    try {
+      const h = new URL(url).host
+      if (h === "www.hilton.com") return "hilton"
+      if (h === "www.marriott.com") return "marriott"
+    } catch (_e) {
+      // ignore
+    }
+    return null
+  }
+
   // Card text that is never a hotel name: calls to action and rate/price chrome.
   const CTA_RE = /^(view|see|book|select|check|choose|show|more|reserve|explore|compare|find|learn|go to)\b|\b(rates?|details|deals?|availability|more info)$/i
   const NOT_NAME_RE = /^(sold out|not available|unavailable|per night|nightly|total|from|team member|go hilton|member rate|lowest|price|rate|save|free)\b/i
@@ -244,6 +351,9 @@
     if (/reference\s*(no\.?|#|number)\s*:?\s*\d+\.[0-9a-f]{4,}/.test(body)) return true
     if (/you don.t have permission to access/.test(body)) return true
     if (/something went wrong/.test(body) && /reference/.test(body)) return true
+    // Marriott's error page; on a real results page this phrase never appears alone.
+    if (/we.re having trouble/.test(title)) return true
+    if (/we.re having trouble/.test(body) && body.length < 4000) return true
     return false
   }
 
@@ -255,6 +365,7 @@
       return "OTHER"
     }
     if (/\/book\/reservation\/rooms/.test(path)) return "ROOMS"
+    if (/\/reservation\/(availabilitysearch|ratelistmenu)/.test(path)) return "ROOMS"
     if (/\/search(\/|$)/.test(path) || /\/locations\//.test(path)) return "SEARCH"
     return "OTHER"
   }
@@ -275,7 +386,12 @@
   function sanitizeUrl(href) {
     try {
       const u = new URL(href)
-      const keep = ["ctyhocn", "arrivalDate", "departureDate", "query", "room1NumAdults", "numRooms", "flexibleDates"]
+      // Never the Marriott corporateCode/clusterCode: the rate code stays out of snapshots.
+      const keep = [
+        "ctyhocn", "arrivalDate", "departureDate", "query", "room1NumAdults", "numRooms", "flexibleDates",
+        "propertyCode", "fromDate", "toDate", "roomCount", "numberOfRooms", "numAdultsPerRoom", "numberOfAdults",
+        "destinationAddress.destination",
+      ]
       const out = new URL(u.origin + u.pathname)
       for (const k of keep) if (u.searchParams.has(k)) out.searchParams.set(k, u.searchParams.get(k))
       return out.toString()
@@ -309,10 +425,46 @@
     return redact(l).slice(0, 80) || undefined
   }
 
+  const RATE_WORD_RE = /\b(rate|team\s*member|go\s*hilton|tmtp|friends|family|f&f|mmf|corporate|special|discount|package)\b/i
+  const PRIVATE_KIND = { hilton: "PRIVATE_HILTON_GO", marriott: "PRIVATE_MARRIOTT_FF" }
+  const PRIVATE_FALLBACK_LABEL = { hilton: "Go Hilton search", marriott: "MMF search" }
+
+  /**
+   * Classification driven by the run item's intent (see the header): one
+   * observation per card from the cheapest displayed, non-strikethrough price.
+   */
+  function buildIntentObservation(nightly, totals, base, ctx) {
+    const shown = nightly.filter((e) => !e.struck)
+    if (!shown.length) return []
+    const best = shown.reduce((a, b) => (b.amount < a.amount ? b : a))
+    const brand = ctx.brand === "marriott" ? "marriott" : "hilton"
+    let rateKind
+    let rateLabel
+    if (ctx.intent === "PUBLIC") {
+      rateKind = "PUBLIC"
+      rateLabel = "public search"
+    } else if (ctx.signedOut && brand === "hilton") {
+      rateKind = "PUBLIC"
+      rateLabel = "signed-out"
+    } else {
+      rateKind = PRIVATE_KIND[brand]
+      // Only text that reads like a rate name counts ("Team Member Rate", "Friends & Family"), never "Select".
+      const near = [ctx.rateLabel && redact(stripMoney(ctx.rateLabel)).slice(0, 80), cleanLabel(best)]
+      rateLabel = near.find((l) => l && RATE_WORD_RE.test(l)) || PRIVATE_FALLBACK_LABEL[brand]
+    }
+    const obs = Object.assign({}, base, { nightlyRate: best.amount, currency: best.currency, rateKind, rateLabel, available: true })
+    const total = totals.length ? totals.slice().sort((a, b) => a.amount - b.amount)[0] : null
+    if (total && total.amount >= best.amount && total.currency === best.currency) obs.totalRate = total.amount
+    return [obs]
+  }
+
   /**
    * Turn one card's raw price entries into observations.
    * card: { name, code?, url?, brand?, lat?, lng?, soldOut?, entries: [{ text, struck?, label? }] }
-   * ctx:  { signedOut?: boolean, goContext?: boolean }
+   * ctx:  { signedOut?: boolean, goContext?: boolean,
+   *         brand?: "hilton" | "marriott", intent?: "PRIVATE" | "PUBLIC", rateLabel?: string }
+   * With ctx.intent the item decides the rate kind (buildIntentObservation);
+   * without it the legacy page-guessing rules apply.
    */
   function buildCardObservations(card, ctx) {
     ctx = ctx || {}
@@ -346,6 +498,7 @@
       }
       return []
     }
+    if (ctx.intent === "PRIVATE" || ctx.intent === "PUBLIC") return buildIntentObservation(nightly, totals, base, ctx)
 
     for (const e of nightly) {
       e.kind = classifyEntry(e)
@@ -414,8 +567,7 @@
       }
     }
     const out = []
-    if (best.PRIVATE_HILTON_GO) out.push(best.PRIVATE_HILTON_GO)
-    if (best.PUBLIC) out.push(best.PUBLIC)
+    for (const kind of ["PRIVATE_HILTON_GO", "PRIVATE_MARRIOTT_FF", "PUBLIC"]) if (best[kind]) out.push(best[kind])
     if (!out.length && rooms.length) {
       const soldOut = rooms.find((r) => r.observations.some((o) => !o.available))
       if (soldOut) out.push(soldOut.observations.find((o) => !o.available))
@@ -450,14 +602,14 @@
         continue
       }
       // Names keyed by property code, with or without coordinates.
-      const anyCode = [n.ctyhocn, n.propCode, n.propertyCode].find((v) => typeof v === "string" && /^[A-Za-z0-9]{4,10}$/.test(v))
+      const anyCode = [n.ctyhocn, n.propCode, n.propertyCode, n.marshaCode, n.marsha].find((v) => typeof v === "string" && /^[A-Za-z0-9]{4,10}$/.test(v))
       if (anyCode && !index.nameByCode.has(anyCode.toUpperCase())) {
         const nm = [n.name, n.propertyName, n.hotelName].find((v) => typeof v === "string" && isPlausibleName(v))
         if (nm) index.nameByCode.set(anyCode.toUpperCase(), norm(nm).slice(0, 160))
       }
       const c = coords(n)
       if (c) {
-        const code = [n.ctyhocn, n.propCode, n.propertyCode].find((v) => typeof v === "string" && /^[A-Za-z0-9]{4,10}$/.test(v))
+        const code = [n.ctyhocn, n.propCode, n.propertyCode, n.marshaCode, n.marsha].find((v) => typeof v === "string" && /^[A-Za-z0-9]{4,10}$/.test(v))
         const name = typeof n.name === "string" ? n.name : typeof n.propertyName === "string" ? n.propertyName : null
         const url = typeof n.url === "string" ? n.url : undefined
         if (code && !index.byCode.has(code.toUpperCase())) index.byCode.set(code.toUpperCase(), Object.assign({ url }, c))
@@ -610,7 +762,8 @@
     return out
   }
 
-  function findCards(doc, cardSels, linkSels) {
+  function findCards(doc, cardSels, linkSels, codeFn) {
+    codeFn = codeFn || codeFromUrl
     for (const q of cardSels) {
       const cards = safeAll(doc, q)
       if (cards.length) return { cards, selector: q }
@@ -620,7 +773,7 @@
     const cards = []
     for (const lq of linkSels) {
       for (const a of safeAll(doc, lq)) {
-        if (!codeFromUrl(a.getAttribute("href"))) continue
+        if (!codeFn(a.getAttribute("href"))) continue
         let node = a
         for (let i = 0; i < 4 && node && node.parentElement && node.parentElement !== doc.body; i++) node = node.parentElement
         if (node && !seen.has(node)) {
@@ -653,17 +806,24 @@
     return index
   }
 
-  function cardCode(card, linkSels, base) {
-    for (const attr of SELECTORS.codeAttrs) {
+  /**
+   * Property code (and sanitized link) for a card. `site` defaults to Hilton:
+   * { codeAttrs, codeFn(href, base), attrFn(value) }.
+   */
+  function cardCode(card, linkSels, base, site) {
+    const attrs = (site && site.codeAttrs) || SELECTORS.codeAttrs
+    const codeFn = (site && site.codeFn) || codeFromUrl
+    const attrFn = (site && site.attrFn) || ((v) => String(v || "").toUpperCase() || undefined)
+    for (const attr of attrs) {
       const v = card.getAttribute && card.getAttribute(attr)
-      if (v) return { code: v.toUpperCase() }
+      if (v && attrFn(v)) return { code: attrFn(v) }
       const el = safeOne(card, "[" + attr + "]")
-      if (el) return { code: (el.getAttribute(attr) || "").toUpperCase() || undefined }
+      if (el && attrFn(el.getAttribute(attr))) return { code: attrFn(el.getAttribute(attr)) }
     }
     for (const q of linkSels) {
       for (const a of safeAll(card, q)) {
         const href = a.getAttribute("href")
-        const code = codeFromUrl(href, base)
+        const code = codeFn(href, base)
         if (code) {
           let url
           try {
@@ -687,12 +847,13 @@
    * choosePropertyName() rejects anything money-like, so a price that comes
    * before the heading can never become the name.
    */
-  function cardNameCandidates(card, code, linkSels, nameByCode, base) {
+  function cardNameCandidates(card, code, linkSels, nameByCode, base, nameSels, codeFn) {
     const out = []
-    for (const q of SELECTORS.search.name) for (const el of safeAll(card, q).slice(0, 6)) out.push(textOf(el))
+    codeFn = codeFn || codeFromUrl
+    for (const q of nameSels || SELECTORS.search.name) for (const el of safeAll(card, q).slice(0, 6)) out.push(textOf(el))
     for (const q of linkSels) {
       for (const a of safeAll(card, q)) {
-        const c = codeFromUrl(a.getAttribute("href"), base)
+        const c = codeFn(a.getAttribute("href"), base)
         if (!c || (code && c !== code)) continue
         out.push(textOf(a), a.getAttribute("aria-label") || "", a.getAttribute("title") || "")
       }
@@ -717,8 +878,10 @@
     const body = doc.body ? norm(doc.body.textContent).slice(0, 30000) : ""
     const blocked = detectBlocked({ title: doc.title, text: body, url: loc })
     const kind = detectPageKind(loc)
-    const sels = kind === "ROOMS" ? SELECTORS.room.card : SELECTORS.search.card
-    const { cards } = findCards(doc, sels, kind === "ROOMS" ? null : SELECTORS.search.link)
+    const marriott = brandFromUrl(loc) === "marriott"
+    const S = marriott ? MARRIOTT_SELECTORS : SELECTORS
+    const sels = kind === "ROOMS" ? S.room.card : S.search.card
+    const { cards } = findCards(doc, sels, kind === "ROOMS" ? null : S.search.link, marriott ? marriottCodeFromUrl : codeFromUrl)
     const moneyRe = new RegExp(MONEY_SRC)
     let priced = 0
     let soldOut = 0
@@ -731,13 +894,20 @@
   }
 
   /**
-   * Extract everything we can from a rendered Hilton document.
-   * Returns { pageKind, blocked, auth, goContext, observations, debug }.
+   * Extract everything we can from a rendered Hilton or Marriott document.
+   * opts: { url?, brand?: "hilton" | "marriott", intent?: "PRIVATE" | "PUBLIC" }.
+   * The brand defaults to the URL's host (Hilton otherwise). Without an intent
+   * the legacy page-guessing classification applies.
+   * Returns { pageKind, blocked, auth, goContext, brand, intent, observations, debug }.
    */
   function extractFromDocument(doc, opts) {
     opts = opts || {}
+    const loc0 = opts.url || (doc.location && doc.location.href) || ""
+    const brand = opts.brand === "marriott" || opts.brand === "hilton" ? opts.brand : brandFromUrl(loc0) || "hilton"
+    const intent = opts.intent === "PRIVATE" || opts.intent === "PUBLIC" ? opts.intent : undefined
+    if (brand === "marriott") return extractMarriott(doc, Object.assign({}, opts, { url: loc0, intent }))
     const win = doc.defaultView || null
-    const loc = opts.url || (doc.location && doc.location.href) || ""
+    const loc = loc0
     const title = doc.title || ""
     const bodyText = doc.body ? norm(doc.body.innerText || doc.body.textContent).slice(0, 30000) : ""
     const pageKind = detectPageKind(loc)
@@ -746,6 +916,8 @@
       extractorVersion: VERSION,
       pageKind,
       blocked,
+      brand: "hilton",
+      intent: intent || null,
       auth: { signedIn: false, signedOut: false },
       goContext: false,
       observations: [],
@@ -762,7 +934,7 @@
     })
     result.auth = auth
     result.goContext = goContext
-    const ctx = { signedOut: auth.signedOut, goContext }
+    const ctx = { signedOut: auth.signedOut, goContext, brand: "hilton", intent }
     const geo = geoIndexFor(doc)
 
     if (pageKind === "ROOMS") {
@@ -829,6 +1001,86 @@
     return result
   }
 
+  /** Marriott results (or rate) page. Same output shape as the Hilton path. */
+  function extractMarriott(doc, opts) {
+    const win = doc.defaultView || null
+    const loc = opts.url || ""
+    const base = loc || "https://www.marriott.com/"
+    const title = doc.title || ""
+    const bodyText = doc.body ? norm(doc.body.innerText || doc.body.textContent).slice(0, 30000) : ""
+    const pageKind = detectPageKind(loc)
+    const blocked = detectBlocked({ title, text: bodyText, url: loc })
+    const result = {
+      extractorVersion: VERSION,
+      pageKind,
+      blocked,
+      brand: "marriott",
+      intent: opts.intent || null,
+      auth: { signedIn: false, signedOut: false },
+      goContext: false,
+      observations: [],
+      debug: { url: sanitizeUrl(loc), title: redact(title), cardSelector: null, cardCount: 0, cards: [] },
+    }
+    if (blocked) return result
+    const M = MARRIOTT_SELECTORS
+    // Marriott's F&F rate is a rate code on the search, not a member sign-in: never "signed-out".
+    const ctx = { signedOut: false, goContext: false, brand: "marriott", intent: opts.intent }
+    const geo = geoIndexFor(doc)
+    const site = { codeAttrs: M.codeAttrs, codeFn: marriottCodeFromUrl, attrFn: marriottCodeFromAttr }
+
+    if (pageKind === "ROOMS") {
+      const code = marriottCodeFromUrl(loc)
+      const nameCands = []
+      for (const q of M.propertyName) for (const el of safeAll(doc, q).slice(0, 3)) nameCands.push(textOf(el))
+      if (code && geo.nameByCode.get(code)) nameCands.push(geo.nameByCode.get(code))
+      const name = choosePropertyName(nameCands, code)
+      const g = (code && geo.byCode.get(code)) || geo.byName.get(name.toLowerCase()) || {}
+      const found = findCards(doc, M.room.card, null)
+      let cards = found.cards
+      result.debug.cardSelector = found.selector
+      if (!cards.length) {
+        const main = safeOne(doc, "main") || doc.body
+        cards = main ? [main] : []
+        result.debug.cardSelector = "fallback:main"
+      }
+      result.debug.cardCount = cards.length
+      const rooms = []
+      for (const card of cards.slice(0, 40)) {
+        const entries = collectEntries(card, M.room.price, win)
+        const c = {
+          name, code, brand: marriottBrandFromName(name), lat: g.lat, lng: g.lng, url: sanitizeUrl(loc),
+          soldOut: SOLD_OUT_RE.test(textOf(card)), entries,
+        }
+        const cardCtx = Object.assign({}, ctx, { rateLabel: firstText(card, M.rateLabel) })
+        rooms.push({ roomName: "", observations: buildCardObservations(c, cardCtx) })
+        result.debug.cards.push({ name: redact(name), code, soldOut: c.soldOut, entries: entries.map(debugEntry) })
+      }
+      result.observations = reduceRoomObservations(rooms)
+      return result
+    }
+
+    const found = findCards(doc, M.search.card, M.search.link, marriottCodeFromUrl)
+    result.debug.cardSelector = found.selector
+    result.debug.cardCount = found.cards.length
+    const codes = new Set()
+    for (const card of found.cards.slice(0, 60)) {
+      const { code, url } = cardCode(card, M.search.link, base, site)
+      if (code && codes.has(code)) continue
+      if (code) codes.add(code)
+      const name = choosePropertyName(cardNameCandidates(card, code, M.search.link, geo.nameByCode, base, M.search.name, marriottCodeFromUrl), code)
+      const g = (code && geo.byCode.get(code)) || geo.byName.get(name.toLowerCase()) || {}
+      const entries = collectEntries(card, M.search.price, win)
+      const c = {
+        name, code, url: url || g.url, brand: marriottBrandFromName(cardBrand(card)) || marriottBrandFromName(name),
+        lat: g.lat, lng: g.lng, soldOut: SOLD_OUT_RE.test(textOf(card)), entries,
+      }
+      const cardCtx = Object.assign({}, ctx, { rateLabel: firstText(card, M.rateLabel) })
+      result.observations.push(...buildCardObservations(c, cardCtx))
+      result.debug.cards.push({ name: redact(name), code, brand: c.brand, soldOut: c.soldOut, entries: entries.map(debugEntry) })
+    }
+    return result
+  }
+
   function debugEntry(e) {
     return { text: redact(e.text).slice(0, 60), struck: !!e.struck, label: redact(e.label || "").slice(0, 120), via: e.via }
   }
@@ -844,6 +1096,8 @@
       title: r.debug.title,
       pageKind: r.pageKind,
       blocked: r.blocked,
+      brand: r.brand,
+      intent: r.intent,
       auth: r.auth,
       goContext: r.goContext,
       cardSelector: r.debug.cardSelector,
@@ -855,12 +1109,13 @@
   }
 
   const api = {
-    VERSION, SELECTORS, CTYHOCN_BRANDS,
+    VERSION, SELECTORS, MARRIOTT_SELECTORS, CTYHOCN_BRANDS, MARRIOTT_BRANDS,
     TEAM_RE, PUBLIC_RE, TOTAL_RE, IGNORE_RE, SOLD_OUT_RE, NO_RESULTS_RE,
     parseMoney, parseAllMoney, stripMoney, codeFromUrl, brandFromCode, detectBlocked, detectPageKind,
     detectGoContext, sanitizeUrl, redact, classifyEntry, buildCardObservations, reduceRoomObservations, indexGeo,
     detectAuth, quickProbe, extractFromDocument, snapshot,
     isPlausibleName, choosePropertyName, cardNameCandidates,
+    marriottCodeFromUrl, marriottCodeFromAttr, marriottBrandFromName, brandFromUrl, extractMarriott,
   }
   root.JPGoRatesExtract = api
   if (typeof module !== "undefined" && module.exports) module.exports = api

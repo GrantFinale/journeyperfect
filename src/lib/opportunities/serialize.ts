@@ -39,7 +39,11 @@ function asReasons(v: unknown): OpportunityReason[] {
   return Array.isArray(v) ? (v as OpportunityReason[]) : []
 }
 
-export function toOpportunityView(row: TravelOpportunity): TravelOpportunityView {
+/**
+ * `extras.hotelProvider` comes from the candidate's stage-3 facts
+ * (TravelOpportunity has no provider column); absent = unknown.
+ */
+export function toOpportunityView(row: TravelOpportunity, extras: { hotelProvider?: string | null } = {}): TravelOpportunityView {
   const all = asReasons(row.opportunityReasons)
   return {
     id: row.id,
@@ -60,6 +64,7 @@ export function toOpportunityView(row: TravelOpportunity): TravelOpportunityView
     hotelRateQuoteId: row.hotelRateQuoteId,
     publicRateQuoteId: row.publicRateQuoteId,
     hotelName: row.hotelName,
+    hotelProvider: extras.hotelProvider === "marriott" ? "marriott" : extras.hotelProvider === "hilton" ? "hilton" : null,
     privateNightlyRate: row.privateNightlyRate,
     comparablePublicRate: row.comparablePublicRate,
     hotelSavingsTotal: row.hotelSavingsTotal,

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import {
   CaptureCounter,
   MAX_CAPTURE_BODY_BYTES,
+  applyItemIntent,
   namePropertyCode,
   nightsBetween,
   codesNeedingNames,
@@ -145,6 +146,33 @@ describe("normaliseObservations", () => {
   })
 })
 
+describe("applyItemIntent", () => {
+  const o = (rateKind: CaptureObservation["rateKind"], rateLabel?: string) => obs({ rateKind, rateLabel })
+
+  it("PUBLIC item: everything becomes PUBLIC", () => {
+    const r = applyItemIntent([o("PRIVATE_HILTON_GO"), o("PRIVATE_MARRIOTT_FF"), o("PUBLIC")], { brand: "marriott", intent: "PUBLIC" })
+    expect(r.observations.map((x) => x.rateKind)).toEqual(["PUBLIC", "PUBLIC", "PUBLIC"])
+    expect([r.coerced, r.dropped]).toEqual([2, 0])
+  })
+
+  it("PRIVATE item: the brand's private kind; PUBLIC only when signed-out", () => {
+    const r = applyItemIntent([o("PRIVATE_HILTON_GO"), o("PRIVATE_MARRIOTT_FF"), o("PUBLIC", "signed-out"), o("PUBLIC", "strikethrough"), o("PUBLIC")], {
+      brand: "hilton",
+      intent: "PRIVATE",
+    })
+    expect(r.observations.map((x) => [x.rateKind, x.rateLabel])).toEqual([
+      ["PRIVATE_HILTON_GO", undefined],
+      ["PRIVATE_HILTON_GO", undefined],
+      ["PUBLIC", "signed-out"],
+    ])
+    expect([r.coerced, r.dropped]).toEqual([1, 2])
+  })
+
+  it("accepts the PRIVATE_MARRIOTT_FF kind in the schema", () => {
+    expect(parseCaptureBody(body({ itemKey: "ORD|2026-11-06|2026-11-08|marriott|PRIVATE", observations: [obs({ rateKind: "PRIVATE_MARRIOTT_FF" })] })).ok).toBe(true)
+  })
+})
+
 describe("CaptureCounter", () => {
   it("allows exactly the limit per token", () => {
     const c = new CaptureCounter(3)
@@ -264,11 +292,23 @@ describe("POST /api/private-rates/capture", () => {
     return new Request("http://localhost/api/private-rates/capture", { method, headers: { "content-type": "application/json" }, body: text }) as any
   }
 
-  it("writes quotes and audits counts only", async () => {
+  it("writes quotes and audits counts only (legacy 3-part key = hilton PRIVATE)", async () => {
     const { POST } = await import("@/app/api/private-rates/capture/route")
-    const res = await POST(req(body({ token: await token(), observations: [obs({ propertyCode: "CHICNCI" }), obs({ propertyCode: "CHICNCI", rateKind: "PUBLIC", nightlyRate: 200 })] })))
+    const res = await POST(
+      req(
+        body({
+          token: await token(),
+          observations: [
+            obs({ propertyCode: "CHICNCI" }),
+            obs({ propertyCode: "CHICNCI", rateKind: "PUBLIC", nightlyRate: 200, rateLabel: "signed-out" }),
+            obs({ propertyCode: "CHICNCI", rateKind: "PUBLIC", nightlyRate: 250, rateLabel: "strikethrough" }), // dropped: public comes from the PUBLIC tab
+          ],
+        }),
+      ),
+    )
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({ ok: true, written: 2, itemKey: "ORD|2026-11-06|2026-11-08" })
+    expect(gates.assertEnabledAndEntitled).toHaveBeenCalledWith("user-1", "hilton")
 
     expect(db.candidateFindFirst).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -281,7 +321,18 @@ describe("POST /api/private-rates/capture", () => {
     expect(gates.audit).toHaveBeenCalledWith(
       "user-1",
       "CAPTURE",
-      { searchId: "search-1", itemKey: "ORD|2026-11-06|2026-11-08", written: 2, blocked: false, pageKind: "SEARCH", observations: 2 },
+      {
+        searchId: "search-1",
+        itemKey: "ORD|2026-11-06|2026-11-08",
+        brand: "hilton",
+        intent: "PRIVATE",
+        written: 2,
+        blocked: false,
+        pageKind: "SEARCH",
+        observations: 3,
+        coerced: 0,
+        dropped: 1,
+      },
       { provider: "hilton", searchId: "search-1" },
     )
   })
@@ -296,6 +347,69 @@ describe("POST /api/private-rates/capture", () => {
     expect(db.quoteFindMany.mock.calls[0][0].where).toEqual({ userId: "user-1", provider: "hilton", propertyCode: { in: ["CHICHHH", "CHIDWES"] } })
     const data = db.createMany.mock.calls[0][0].data
     expect(data.map((d: { propertyName: string }) => d.propertyName)).toEqual(["Hilton Chicago", "CHIDWES"])
+  })
+
+  it("PUBLIC item: every observation is stored as PUBLIC under the item's brand", async () => {
+    const { POST } = await import("@/app/api/private-rates/capture/route")
+    const res = await POST(
+      req(
+        body({
+          token: await token(),
+          itemKey: "ORD|2026-11-06|2026-11-08|hilton|PUBLIC",
+          observations: [obs({ propertyCode: "CHICHHH", nightlyRate: 329 }), obs({ propertyCode: "CHITDHX", rateKind: "PUBLIC", nightlyRate: 180 })],
+        }),
+      ),
+    )
+    expect(res.status).toBe(200)
+    const data = db.createMany.mock.calls[0][0].data
+    expect(data.map((d: { rateKind: string; provider: string }) => [d.rateKind, d.provider])).toEqual([
+      ["PUBLIC", "hilton"],
+      ["PUBLIC", "hilton"],
+    ])
+    expect(gates.audit.mock.calls[0][2]).toMatchObject({ brand: "hilton", intent: "PUBLIC", coerced: 1, dropped: 0, written: 2 })
+  })
+
+  it("Marriott PRIVATE item: gated on the marriott entitlement, stored as PRIVATE_MARRIOTT_FF with provider marriott", async () => {
+    const { POST } = await import("@/app/api/private-rates/capture/route")
+    const res = await POST(
+      req(
+        body({
+          token: await token(),
+          itemKey: "ORD|2026-11-06|2026-11-08|marriott|PRIVATE",
+          pageUrl: "https://www.marriott.com/search/findHotels.mi",
+          observations: [
+            obs({ propertyCode: "CHIJW", propertyName: "JW Marriott Chicago", rateKind: "PRIVATE_MARRIOTT_FF", nightlyRate: 189 }),
+            obs({ propertyCode: "CHIDT", propertyName: "Chicago Marriott", rateKind: "PRIVATE_HILTON_GO", nightlyRate: 219 }), // wrong brand → coerced
+            obs({ propertyCode: "CHIRZ", propertyName: "Ritz-Carlton", rateKind: "PUBLIC", nightlyRate: 400 }), // not signed-out → dropped
+          ],
+        }),
+      ),
+    )
+    expect(res.status).toBe(200)
+    expect(gates.assertEnabledAndEntitled).toHaveBeenCalledWith("user-1", "marriott")
+    const data = db.createMany.mock.calls[0][0].data
+    expect(data.map((d: { propertyCode: string; rateKind: string; provider: string }) => [d.propertyCode, d.rateKind, d.provider])).toEqual([
+      ["CHIJW", "PRIVATE_MARRIOTT_FF", "marriott"],
+      ["CHIDT", "PRIVATE_MARRIOTT_FF", "marriott"],
+    ])
+    expect(db.deleteMany.mock.calls[0][0].where).toMatchObject({ userId: "user-1", provider: "marriott" })
+    expect(gates.audit.mock.calls[0][3]).toEqual({ provider: "marriott", searchId: "search-1" })
+    expect(gates.audit.mock.calls[0][2]).toMatchObject({ brand: "marriott", intent: "PRIVATE", coerced: 1, dropped: 1, written: 2 })
+  })
+
+  it("403 when entitled to Hilton but not Marriott, for a Marriott item only", async () => {
+    const { PrivateRatesGateError } = await import("@/lib/private-rates")
+    gates.assertEnabledAndEntitled.mockImplementation(async (_u: string, provider: string) => {
+      if (provider === "marriott") throw new PrivateRatesGateError("NOT_ENTITLED")
+    })
+    const { POST } = await import("@/app/api/private-rates/capture/route")
+    const t = await token()
+    const m = await POST(req(body({ token: t, itemKey: "ORD|2026-11-06|2026-11-08|marriott|PUBLIC" })))
+    expect(m.status).toBe(403)
+    expect((await m.json()).error).toMatch(/marriott/)
+    expect(db.createMany).not.toHaveBeenCalled()
+    const h = await POST(req(body({ token: t, itemKey: "ORD|2026-11-06|2026-11-08|hilton|PRIVATE" })))
+    expect(h.status).toBe(200)
   })
 
   it("blocked=true writes nothing but is audited", async () => {
@@ -327,6 +441,7 @@ describe("POST /api/private-rates/capture", () => {
     const { POST } = await import("@/app/api/private-rates/capture/route")
     expect((await POST(req(body({ token: await token() })))).status).toBe(400)
     expect((await POST(req(body({ token: await token(), itemKey: "garbage" })))).status).toBe(400)
+    expect((await POST(req(body({ token: await token(), itemKey: "ORD|2026-11-06|2026-11-08|ihg|PRIVATE" })))).status).toBe(400)
   })
 
   it("400 for invalid JSON or schema", async () => {

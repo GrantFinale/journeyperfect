@@ -63,6 +63,8 @@ export interface TravelOpportunityView {
   hotelRateQuoteId: string | null
   publicRateQuoteId: string | null
   hotelName: string | null
+  /** Chain of the private rate ("hilton" Go / "marriott" F&F), from stage 3's facts; null when unknown */
+  hotelProvider: "hilton" | "marriott" | null
   privateNightlyRate: number | null
   comparablePublicRate: number | null
   hotelSavingsTotal: number | null

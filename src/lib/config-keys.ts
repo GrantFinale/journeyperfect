@@ -153,11 +153,40 @@ export const CONFIG_KEYS = {
     desc: "Rate/corporate code the runner appends to Hilton searches to surface the Team Member (Go Hilton) rate. Empty = public rates only.",
     secret: true,
   },
+  "privateRates.maxCaptureTabs": {
+    default: "24",
+    group: "privateRates",
+    desc: "Max tabs in one Go Rates extension plan (1-24). Each destination + dates opens up to four tabs (Hilton Go, Hilton public, Marriott F&F, Marriott public); the lowest-ranked destinations are dropped whole so a private search never loses its public pair.",
+  },
   "privateRates.hilton.searchUrlTemplate": {
     default:
       "https://www.hilton.com/en/search/?query={location}&arrivalDate={checkIn}&departureDate={checkOut}&flexibleDates=false&room1NumAdults={adults}",
     group: "privateRates",
-    desc: "Hilton search URL the Go Rates Chrome extension opens per destination + dates. Placeholders (URL-encoded): {location} {checkIn} {checkOut} {adults} {lat} {lng}. Must be https; an invalid template falls back to the default.",
+    desc: "Hilton PRIVATE (Go Hilton) search URL the Go Rates extension opens per destination + dates, in your signed-in Chrome. Placeholders (URL-encoded): {location} {checkIn} {checkOut} (YYYY-MM-DD) {checkInMDY} {checkOutMDY} (MM/DD/YYYY) {adults} {lat} {lng} {rateCode}. Must be https on www.hilton.com, else the default is used. The default is a best guess: paste a real URL from your own Go Hilton search with the values replaced by placeholders.",
+  },
+  "privateRates.hilton.publicSearchUrlTemplate": {
+    default:
+      "https://www.hilton.com/en/search/?query={location}&arrivalDate={checkIn}&departureDate={checkOut}&flexibleDates=false&room1NumAdults={adults}&redeemPts=false",
+    group: "privateRates",
+    desc: "Hilton PUBLIC search URL opened next to each Go search so hotels can be paired by property code for savings. Same placeholders and https/www.hilton.com rule as the private template. Best-guess default: paste a real public search URL with the values replaced by placeholders. If Hilton still shows your Go rate on it, the app detects that and shows no savings.",
+  },
+  "privateRates.marriott.rateCode": {
+    default: "",
+    group: "privateRates",
+    desc: 'Marriott corporate/rate code for the Friends & Family rate (e.g. "MMF"), filled into {rateCode}. Empty = no Marriott tabs are opened, even for entitled users.',
+    secret: true,
+  },
+  "privateRates.marriott.searchUrlTemplate": {
+    default:
+      "https://www.marriott.com/search/findHotels.mi?destinationAddress.destination={location}&fromDate={checkInMDY}&toDate={checkOutMDY}&roomCount=1&numAdultsPerRoom={adults}&clusterCode=corp&corporateCode={rateCode}",
+    group: "privateRates",
+    desc: "Marriott PRIVATE (Friends & Family) search URL. Placeholders as for Hilton, plus {rateCode} (privateRates.marriott.rateCode). Must be https on www.marriott.com, else the default is used. The default is a best guess: paste a real URL from your own Marriott search with the rate code applied, values replaced by placeholders.",
+  },
+  "privateRates.marriott.publicSearchUrlTemplate": {
+    default:
+      "https://www.marriott.com/search/findHotels.mi?destinationAddress.destination={location}&fromDate={checkInMDY}&toDate={checkOutMDY}&roomCount=1&numAdultsPerRoom={adults}",
+    group: "privateRates",
+    desc: "Marriott PUBLIC search URL (no rate code) opened next to each F&F search for pairing by MARSHA property code. Must be https on www.marriott.com, else the default is used. Best-guess default: paste a real public search URL with the values replaced by placeholders.",
   },
 
   // ─── AI models ─────────────────────────────────────────────────────────

@@ -8,6 +8,8 @@
  * imports Prisma lazily when none is given.
  */
 import { z } from "zod"
+import { PRIVATE_RATE_KIND, isPrivateRateKind, type GoRatesBrand, type GoRatesIntent } from "./brands"
+import type { RateKind } from "./types"
 import { fallbackNameForCode, isMoneyLikeName, knownNamesByCode, needsBetterName, resolveHotelName } from "./names"
 
 export const MAX_CAPTURE_BODY_BYTES = 512 * 1024
@@ -28,7 +30,7 @@ export const captureObservationSchema = z.object({
   nightlyRate: rate,
   totalRate: rate.optional(),
   currency: z.string().trim().regex(/^[A-Za-z]{3}$/, "currency must be a 3-letter code"),
-  rateKind: z.enum(["PRIVATE_HILTON_GO", "PUBLIC"]),
+  rateKind: z.enum(["PRIVATE_HILTON_GO", "PRIVATE_MARRIOTT_FF", "PUBLIC"]),
   rateLabel: str.optional(),
   available: z.boolean(),
   lat: z.number().finite().min(-90).max(90).optional(),
@@ -65,7 +67,46 @@ export function parseCaptureBody(raw: unknown): { ok: true; body: CaptureBody } 
   return { ok: false, error: `Invalid ${where}: ${first?.message ?? "bad request"}` }
 }
 
-/** "Hilton Chicago" + (41.87, -87.62) → "name:hilton-chicago@41.872,-87.624". Stable across captures. */
+/** rateLabel the extension uses for prices read while signed out of the brand's site. */
+export const SIGNED_OUT_LABEL = "signed-out"
+
+/**
+ * Make observations consistent with the plan item they were captured for. The
+ * item, not the page, decides what a price is:
+ *   PUBLIC item   every observation becomes PUBLIC (a public search cannot
+ *                 produce a private rate).
+ *   PRIVATE item  private observations get the brand's private kind; a PUBLIC
+ *                 observation is kept only when labelled "signed-out" (the
+ *                 user was not signed in, so the price is honestly public),
+ *                 otherwise dropped: the public comparable comes from the
+ *                 item's PUBLIC twin, never from guesses on the private page.
+ */
+export function applyItemIntent(
+  observations: readonly CaptureObservation[],
+  item: { brand: GoRatesBrand; intent: GoRatesIntent },
+): { observations: CaptureObservation[]; coerced: number; dropped: number } {
+  const out: CaptureObservation[] = []
+  let coerced = 0
+  let dropped = 0
+  const privateKind = PRIVATE_RATE_KIND[item.brand]
+  for (const o of observations) {
+    if (item.intent === "PUBLIC") {
+      if (o.rateKind !== "PUBLIC") coerced++
+      out.push(o.rateKind === "PUBLIC" ? o : { ...o, rateKind: "PUBLIC" })
+      continue
+    }
+    if (isPrivateRateKind(o.rateKind)) {
+      if (o.rateKind !== privateKind) coerced++
+      out.push(o.rateKind === privateKind ? o : { ...o, rateKind: privateKind })
+      continue
+    }
+    if (o.rateLabel?.trim().toLowerCase() === SIGNED_OUT_LABEL) out.push(o)
+    else dropped++
+  }
+  return { observations: out, coerced, dropped }
+}
+
+/** "Hilton Chicago" + (41.87, -87.62) →"name:hilton-chicago@41.872,-87.624". Stable across captures. */
 export function namePropertyCode(propertyName: string, lat?: number, lng?: number): string {
   const slug =
     propertyName
@@ -102,7 +143,7 @@ export interface NormalisedQuote {
   lng: number | null
   checkIn: string
   checkOut: string
-  rateKind: "PRIVATE_HILTON_GO" | "PUBLIC"
+  rateKind: RateKind
   nightlyRate: number
   totalRate: number
   currency: string
@@ -190,7 +231,7 @@ export interface HotelNameStore {
 export const REPAIR_NAMES_MAX_ROWS = 5000
 
 /**
- * One-off, idempotent repair of one user's captured Hilton quotes whose
+ * One-off, idempotent repair of one user's captured quotes (one provider) whose
  * propertyName is money-like (the 0.1.0 extension bug) or only the code.
  * Same rules as capture time: a usable name stored for that property code in
  * any of the user's rows, else the code. Scoped to `userId`, touches only the

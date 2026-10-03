@@ -99,12 +99,13 @@ export function OpportunityCard({ opportunity: o }: { opportunity: TravelOpportu
         </section>
       )}
 
-      {/* Hotel Go-rate line: whenever a private rate exists. Savings only with a real public comparable. */}
+      {/* Hotel private-rate line (Go Hilton / Marriott F&F): whenever a private rate exists. Savings only with a real public comparable. */}
       {o.privateNightlyRate != null && (
         <section className="mb-4 rounded-xl bg-emerald-50/60 border border-emerald-100 px-3 py-2 text-sm">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <span className="text-gray-700 break-words">
-              Go rate <span className="font-semibold text-gray-900">{formatMoney(o.privateNightlyRate)}/night</span>
+              {o.hotelProvider === "marriott" ? "F&F rate" : "Go rate"}{" "}
+              <span className="font-semibold text-gray-900">{formatMoney(o.privateNightlyRate)}/night</span>
               {o.hotelName && (
                 <>
                   {" "}
@@ -117,10 +118,18 @@ export function OpportunityCard({ opportunity: o }: { opportunity: TravelOpportu
           {o.comparablePublicRate != null && (
             <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-gray-600">
               <span>
-                vs public <span className="line-through text-gray-400">{formatMoney(o.comparablePublicRate)}</span>/night
+                public <span className="line-through text-gray-400">{formatMoney(o.comparablePublicRate)}</span>
+                {o.comparablePublicRate > o.privateNightlyRate && (
+                  <>
+                    ,{" "}
+                    <span className="text-emerald-700 font-medium">
+                      save {formatMoney(o.comparablePublicRate - o.privateNightlyRate)}/night
+                    </span>
+                  </>
+                )}
               </span>
               {o.hotelSavingsTotal != null && o.hotelSavingsTotal > 0 && (
-                <span className="text-emerald-700 font-medium">saves {formatMoney(o.hotelSavingsTotal)}</span>
+                <span className="text-gray-500">({formatMoney(o.hotelSavingsTotal)} for the stay)</span>
               )}
             </div>
           )}

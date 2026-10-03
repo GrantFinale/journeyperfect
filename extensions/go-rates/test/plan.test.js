@@ -51,7 +51,7 @@ test("captureUrl must be on an allowed app origin", () => {
   ]) assert.equal(P.validatePlan(plan({ captureUrl: bad })).ok, false, bad)
 })
 
-test("drops non-www.hilton.com items, duplicates and caps at 12", () => {
+test("drops off-site items, duplicates and caps at 24", () => {
   const v = P.validatePlan(plan({
     items: [
       item(1),
@@ -65,9 +65,9 @@ test("drops non-www.hilton.com items, duplicates and caps at 12", () => {
   assert.equal(v.ok, true)
   assert.deepEqual(v.plan.items.map((i) => i.key), ["k1"])
   assert.equal(v.dropped, 5)
-  const many = P.validatePlan(plan({ items: Array.from({ length: 20 }, (_, i) => item(i)) }))
-  assert.equal(many.plan.items.length, 12)
-  assert.equal(many.dropped, 8)
+  const many = P.validatePlan(plan({ items: Array.from({ length: 30 }, (_, i) => item(i)) }))
+  assert.equal(many.plan.items.length, 24)
+  assert.equal(many.dropped, 6)
   assert.equal(P.validatePlan(plan({ items: [item(1, { url: "https://evil.com/" })] })).ok, false)
 })
 
@@ -109,4 +109,62 @@ test("captureOutcome: 401/403 fatal, 429/5xx retry, 400/413 failed", () => {
   assert.equal(P.captureOutcome(502), "retry")
   assert.equal(P.captureOutcome(400), "failed")
   assert.equal(P.captureOutcome(413), "failed")
+})
+
+const mItem = (n, extra) => ({
+  key: `ORD|2026-11-06|2026-11-08|marriott|${n}`,
+  brand: "marriott",
+  intent: "PRIVATE",
+  location: "Chicago, IL",
+  checkIn: "2026-11-06",
+  checkOut: "2026-11-08",
+  url: "https://www.marriott.com/search/findHotels.mi?destinationAddress.destination=Chicago&fromDate=11%2F06%2F2026&toDate=11%2F08%2F2026",
+  ...extra,
+})
+
+test("brand + intent: defaults for legacy items, origin must match the brand", () => {
+  const v = P.validatePlan(plan({
+    items: [
+      item(1),
+      item(2, { brand: "hilton", intent: "PUBLIC" }),
+      mItem("a"),
+      mItem("b", { intent: "PUBLIC" }),
+      mItem("c", { url: "https://www.hilton.com/en/search/" }), // marriott item on hilton
+      item(3, { brand: "marriott" }), // hilton URL claiming marriott
+      item(4, { brand: "ihg" }),
+      item(5, { intent: "MAYBE" }),
+    ],
+  }))
+  assert.equal(v.ok, true)
+  assert.deepEqual(v.plan.items.map((i) => [i.key, i.brand, i.intent]), [
+    ["k1", "hilton", "PRIVATE"],
+    ["k2", "hilton", "PUBLIC"],
+    ["ORD|2026-11-06|2026-11-08|marriott|a", "marriott", "PRIVATE"],
+    ["ORD|2026-11-06|2026-11-08|marriott|b", "marriott", "PUBLIC"],
+  ])
+  assert.equal(v.dropped, 4)
+  assert.equal(P.brandOfOrigin("https://www.marriott.com"), "marriott")
+  assert.equal(P.brandOfOrigin("https://marriott.com"), null)
+})
+
+test("datesFromUrl reads Marriott MM/DD/YYYY dates", () => {
+  assert.deepEqual(
+    P.datesFromUrl("https://www.marriott.com/search/findHotels.mi?fromDate=11%2F06%2F2026&toDate=11/08/2026"),
+    { checkIn: "2026-11-06", checkOut: "2026-11-08" },
+  )
+  assert.equal(P.toYmd("1/2/2026"), "2026-01-02")
+  assert.equal(P.toYmd("garbage"), "")
+})
+
+test("matchItem only picks items of the tab's brand, preferring the private search", () => {
+  const items = [
+    { key: "h-pub", brand: "hilton", intent: "PUBLIC", checkIn: "2026-11-06", checkOut: "2026-11-08", status: "pending" },
+    { key: "h-priv", brand: "hilton", intent: "PRIVATE", checkIn: "2026-11-06", checkOut: "2026-11-08", status: "pending" },
+    { key: "m-priv", brand: "marriott", intent: "PRIVATE", checkIn: "2026-11-06", checkOut: "2026-11-08", status: "pending" },
+  ]
+  const mUrl = "https://www.marriott.com/search/findHotels.mi?fromDate=11/06/2026&toDate=11/08/2026"
+  assert.equal(P.matchItem(items, mUrl, "marriott").key, "m-priv")
+  assert.equal(P.matchItem(items, "https://www.hilton.com/en/search/?arrivalDate=2026-11-06&departureDate=2026-11-08", "hilton").key, "h-priv")
+  assert.equal(P.matchItem(items, mUrl, "marriott", "PUBLIC").key, "m-priv")
+  assert.equal(P.matchItem(items.slice(0, 2), mUrl, "marriott"), null)
 })

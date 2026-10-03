@@ -2,9 +2,10 @@
  * JourneyPerfect Go Rates: background service worker.
  *
  * Holds one run at a time in chrome.storage.session (survives service-worker
- * restarts, cleared when Chrome quits). Opens the plan's Hilton URLs as normal
- * tabs in a separate window, at most maxConcurrentTabs at once and at least
- * 3 s apart, waits for the Hilton content script to report what the page shows,
+ * restarts, cleared when Chrome quits). Opens the plan's Hilton and Marriott
+ * URLs as normal tabs in a separate window, at most maxConcurrentTabs at once
+ * and at least 3 s apart, waits for the brand's content script to report what
+ * the page shows (told the item's brand + intent, which decide the rate kind),
  * POSTs that to the plan's captureUrl, and closes the tab.
  */
 /* global importScripts, JPGoRatesPlan */
@@ -16,6 +17,7 @@ const STAGGER_MS = 3000
 const TAB_TIMEOUT_MS = 60000
 const POST_TIMEOUT_MS = 20000
 const MAX_POST_RETRIES = 2
+const BRAND_NAME = { hilton: "Hilton", marriott: "Marriott" }
 
 // ── State (serialised through one promise chain) ─────────────────────────────
 
@@ -63,7 +65,8 @@ function publicState(run) {
       lastError: run.lastError || null,
       ...c,
       items: run.items.map((it) => ({
-        key: it.key, location: it.location, checkIn: it.checkIn, checkOut: it.checkOut,
+        key: it.key, brand: it.brand || "hilton", intent: it.intent || "PRIVATE",
+        location: it.location, checkIn: it.checkIn, checkOut: it.checkOut,
         status: it.status, error: it.error || null, observations: it.observations || 0,
       })),
     },
@@ -114,7 +117,7 @@ async function ensureWindow(run) {
     }
   }
   // The window's first tab is a small status page so the window survives
-  // between Hilton tabs; closing the window stops the run.
+  // between site tabs; closing the window stops the run.
   const statusUrl = chrome.runtime.getURL("popup.html?view=tab")
   let win
   try {
@@ -301,9 +304,9 @@ async function deliver(itemKey, result, pageUrl, fromRunTab) {
       it.error = null
     } else {
       it.status = "failed"
-      it.error = result.blocked && outcome === "ok" ? "blocked by Hilton bot protection" : `capture ${status || "network error"}`
+      it.error = result.blocked && outcome === "ok" ? `blocked by ${BRAND_NAME[it.brand] || "the site"} bot protection` : `capture ${status || "network error"}`
     }
-    if (result.blocked) run.blocked = true // stop opening more tabs once Hilton refuses a page
+    if (result.blocked) run.blocked = true // stop opening more tabs once a site refuses a page
     if (outcome === "fatal") {
       run.fatal = `capture rejected (${status}); re-run from JourneyPerfect`
       for (const other of run.items) {
@@ -381,37 +384,47 @@ async function stopRun(reason) {
 
 // ── Manual capture / snapshot from the popup ────────────────────────────────
 
-async function activeHiltonTab() {
+async function activeSiteTab() {
   const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true })
-  if (!tab || !tab.url || P.originOf(tab.url) !== P.HILTON_ORIGIN) return { error: "The active tab is not a www.hilton.com page." }
-  return { tab }
+  const brand = tab && tab.url ? P.brandOfOrigin(P.originOf(tab.url)) : null
+  if (!brand) return { error: "The active tab is not a www.hilton.com or www.marriott.com page." }
+  return { tab, brand }
 }
 
 async function askTab(tabId, msg) {
   try {
     return await chrome.tabs.sendMessage(tabId, msg)
   } catch (_e) {
-    return { error: "The page is not ready. Reload the Hilton tab and try again." }
+    return { error: "The page is not ready. Reload the tab and try again." }
   }
 }
 
+/**
+ * Manual capture: file the active tab under the run's item for its brand and
+ * dates. A run tab keeps its own item; otherwise the private search is assumed
+ * (a public-search URL can be recognised only by the run that opened it).
+ */
 async function captureActiveTab() {
-  const { tab, error } = await activeHiltonTab()
+  const { tab, brand, error } = await activeSiteTab()
   if (error) return { ok: false, error }
   const run = await loadRun()
   if (!run) return { ok: false, error: "No run in progress. Start one from JourneyPerfect first." }
   if (run.fatal) return { ok: false, error: run.fatal }
-  const item = P.matchItem(run.items, tab.url)
-  const res = await askTab(tab.id, { type: "EXTRACT" })
+  const own = run.items.find((x) => x.tabId === tab.id)
+  const item = own || P.matchItem(run.items, tab.url, brand)
+  if (!item) return { ok: false, error: `This run has no ${BRAND_NAME[brand]} searches.` }
+  const res = await askTab(tab.id, { type: "EXTRACT", brand, intent: item.intent || "PRIVATE" })
   if (!res || res.error || !res.result) return { ok: false, error: (res && res.error) || "Nothing extracted." }
   const out = await deliver(item.key, res.result, tab.url, false)
   return { ...out, itemKey: item.key, observations: (res.result.observations || []).length, blocked: !!res.result.blocked }
 }
 
 async function snapshotActiveTab() {
-  const { tab, error } = await activeHiltonTab()
+  const { tab, brand, error } = await activeSiteTab()
   if (error) return { ok: false, error }
-  const res = await askTab(tab.id, { type: "SNAPSHOT" })
+  const run = await loadRun()
+  const own = run && run.items.find((x) => x.tabId === tab.id)
+  const res = await askTab(tab.id, { type: "SNAPSHOT", brand, intent: own ? own.intent : undefined })
   if (!res || res.error) return { ok: false, error: (res && res.error) || "No snapshot." }
   return { ok: true, snapshot: res.snapshot }
 }
@@ -421,8 +434,9 @@ async function snapshotActiveTab() {
 function senderIsApp(sender) {
   return !!(sender && sender.tab && sender.url && P.isAppOrigin(P.originOf(sender.url)))
 }
-function senderIsHilton(sender) {
-  return !!(sender && sender.tab && sender.url && P.originOf(sender.url) === P.HILTON_ORIGIN)
+/** The brand whose site sent this message ("hilton" | "marriott"), else null. */
+function senderSite(sender) {
+  return sender && sender.tab && sender.url ? P.brandOfOrigin(P.originOf(sender.url)) : null
 }
 function senderIsExtension(sender) {
   return !!(sender && sender.url && sender.url.startsWith(chrome.runtime.getURL("")))
@@ -438,34 +452,40 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       reply(startRun(msg.plan, sender.tab))
       return true
 
-    case "HILTON_HELLO":
-      if (!senderIsHilton(sender)) return false
+    case "SITE_HELLO": {
+      const site = senderSite(sender)
+      if (!site) return false
       reply(
         (async () => {
           const run = await loadRun()
           const it = run && run.items.find((x) => x.tabId === sender.tab.id && x.status === "open")
-          return it ? { active: true, itemKey: it.key } : { active: false }
+          // The tab must still be on the item's own site (no cross-brand redirects).
+          if (!it || (it.brand || "hilton") !== site) return { active: false }
+          return { active: true, itemKey: it.key, brand: it.brand || "hilton", intent: it.intent || "PRIVATE" }
         })(),
       )
       return true
+    }
 
-    case "HILTON_KEEPALIVE":
-      if (!senderIsHilton(sender)) return false
+    case "SITE_KEEPALIVE":
+      if (!senderSite(sender)) return false
       pump()
       sendResponse({ ok: true })
       return false
 
-    case "HILTON_RESULT":
-      if (!senderIsHilton(sender)) return false
+    case "SITE_RESULT": {
+      const site = senderSite(sender)
+      if (!site) return false
       reply(
         (async () => {
           const run = await loadRun()
           const it = run && run.items.find((x) => x.tabId === sender.tab.id)
-          if (!it) return { ok: false, error: "tab not in run" }
+          if (!it || (it.brand || "hilton") !== site) return { ok: false, error: "tab not in run" }
           return deliver(it.key, msg.result || {}, sender.tab.url, true)
         })(),
       )
       return true
+    }
 
     case "GET_STATE":
       if (!senderIsExtension(sender)) return false
@@ -508,7 +528,7 @@ chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
     })
     return
   }
-  if (P.originOf(url) === P.HILTON_ORIGIN) pump()
+  if (P.brandOfOrigin(P.originOf(url))) pump()
 })
 
 chrome.tabs.onRemoved.addListener((tabId) => {

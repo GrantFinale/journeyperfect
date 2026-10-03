@@ -24,11 +24,15 @@ export type ChallengeKind =
   /** Bot protection (e.g. Akamai "Access Denied" / "Reference No. 18.x") refused the page outright. */
   | "BLOCKED"
 
-/** `HotelRateQuote.rateKind` */
-export type RateKind = "PRIVATE_HILTON_GO" | "PUBLIC"
+/** `HotelRateQuote.rateKind`. Use isPrivateRateKind() (brands.ts) rather than listing private kinds. */
+export type RateKind = "PRIVATE_HILTON_GO" | "PRIVATE_MARRIOTT_FF" | "PUBLIC"
 
-/** `PrivateRateSession.provider`, `PrivateRateEntitlement.provider` */
-export type PrivateRateProviderId = "hilton"
+/**
+ * `PrivateRateSession.provider`, `PrivateRateEntitlement.provider`,
+ * `HotelRateQuote.provider`. Marriott (Friends & Family) is captured only by
+ * the Go Rates extension; the browser runner is Hilton-only.
+ */
+export type PrivateRateProviderId = "hilton" | "marriott"
 
 /** `PrivateRateAuditLog.action` */
 export type PrivateRateAuditAction = "CONNECT" | "CHECK_RATES" | "CHALLENGE" | "DISCONNECT" | "REVOKE" | "KILL_SWITCH" | "CAPTURE"

@@ -255,7 +255,7 @@ test("search page where the price precedes the heading: names never look like mo
   const url = "https://www.hilton.com/en/search/?query=Chicago&arrivalDate=2026-10-29&departureDate=2026-11-01"
   const doc = makeDocument(fixture("search-price-first.html"), url)
   const r = X.extractFromDocument(doc, { url })
-  assert.equal(r.extractorVersion, "0.2.0")
+  assert.equal(r.extractorVersion, "0.3.0")
   assert.equal(r.goContext, true)
   assert.equal(r.auth.signedIn, true)
   assert.equal(r.debug.cardSelector, '[data-testid="hotel-card"]')
@@ -284,4 +284,147 @@ test("original search fixture still extracts through the DOM layer", () => {
   assert.equal(r.observations.find((o) => o.propertyCode === "CHIRSCI").available, false)
   const hilton = r.observations.filter((o) => o.propertyCode === "CHICHHH")
   assert.deepEqual(hilton.map((o) => [o.rateKind, o.nightlyRate]), [["PRIVATE_HILTON_GO", 89], ["PUBLIC", 249]])
+})
+
+// ── Intent-driven classification (0.3.0) ────────────────────────────────────
+
+test("intent PUBLIC: every price is PUBLIC 'public search', one per card, strikethrough ignored", () => {
+  const obs = X.buildCardObservations(searchCards[0], { goContext: true, brand: "hilton", intent: "PUBLIC" })
+  assert.equal(obs.length, 1)
+  assert.deepEqual([obs[0].rateKind, obs[0].nightlyRate, obs[0].rateLabel, obs[0].totalRate], ["PUBLIC", 89, "public search", 201.4])
+  const m = X.buildCardObservations({ name: "JW Marriott Chicago", code: "CHIJW", entries: [{ text: "$189" }, { text: "$329", struck: true }] }, { brand: "marriott", intent: "PUBLIC" })
+  assert.deepEqual(m.map((o) => [o.rateKind, o.nightlyRate, o.rateLabel]), [["PUBLIC", 189, "public search"]])
+})
+
+test("intent PRIVATE: displayed price is the brand's private kind, labelled from nearby rate text or the default", () => {
+  const go = X.buildCardObservations(searchCards[0], { brand: "hilton", intent: "PRIVATE" })
+  assert.deepEqual(go.map((o) => [o.rateKind, o.nightlyRate, o.rateLabel]), [["PRIVATE_HILTON_GO", 89, "Team Member Rate"]])
+  const plain = X.buildCardObservations(searchCards[1], { brand: "hilton", intent: "PRIVATE" })
+  assert.deepEqual(plain.map((o) => [o.rateKind, o.rateLabel]), [["PRIVATE_HILTON_GO", "Go Hilton search"]])
+  const ff = X.buildCardObservations({ name: "JW Marriott Chicago", entries: [{ text: "$189", label: "$189 /night" }] }, { brand: "marriott", intent: "PRIVATE" })
+  assert.deepEqual(ff.map((o) => [o.rateKind, o.rateLabel]), [["PRIVATE_MARRIOTT_FF", "MMF search"]])
+  const labelled = X.buildCardObservations(
+    { name: "JW Marriott Chicago", entries: [{ text: "$189", label: "$189 Select" }] },
+    { brand: "marriott", intent: "PRIVATE", rateLabel: "Friends & Family Rate" },
+  )
+  assert.equal(labelled[0].rateLabel, "Friends & Family Rate")
+  // "Select" next to a price is not a rate name.
+  assert.equal(X.buildCardObservations({ name: "X Hotel", entries: [{ text: "$99", label: "$99 Select" }] }, { brand: "hilton", intent: "PRIVATE" })[0].rateLabel, "Go Hilton search")
+})
+
+test("intent PRIVATE on Hilton while signed out: PUBLIC with rateLabel signed-out", () => {
+  const obs = X.buildCardObservations(searchCards[0], { brand: "hilton", intent: "PRIVATE", signedOut: true })
+  assert.deepEqual(obs.map((o) => [o.rateKind, o.nightlyRate, o.rateLabel]), [["PUBLIC", 89, "signed-out"]])
+  // Marriott's F&F is a rate code, not a sign-in: never downgraded.
+  const m = X.buildCardObservations({ name: "JW Marriott Chicago", entries: [{ text: "$189" }] }, { brand: "marriott", intent: "PRIVATE", signedOut: true })
+  assert.equal(m[0].rateKind, "PRIVATE_MARRIOTT_FF")
+})
+
+test("Hilton DOM with an intent: one observation per card of the item's kind", () => {
+  const { makeDocument } = require("./mini-dom.js")
+  const url = "https://www.hilton.com/en/search/?query=Chicago&arrivalDate=2026-10-29&departureDate=2026-11-01"
+  const doc = makeDocument(fixture("search-price-first.html"), url)
+  const priv = X.extractFromDocument(doc, { url, brand: "hilton", intent: "PRIVATE" })
+  assert.equal(priv.observations.length, 5)
+  assert.ok(priv.observations.every((o) => o.rateKind === "PRIVATE_HILTON_GO" && o.rateLabel === "Go Hilton search"))
+  const pub = X.extractFromDocument(doc, { url, brand: "hilton", intent: "PUBLIC" })
+  assert.ok(pub.observations.every((o) => o.rateKind === "PUBLIC" && o.rateLabel === "public search"))
+  assert.deepEqual(pub.observations.map((o) => o.propertyCode).sort(), priv.observations.map((o) => o.propertyCode).sort())
+})
+
+// ── Marriott ─────────────────────────────────────────────────────────────────
+
+test("marriottCodeFromUrl reads propertyCode params and /hotels/ paths; attrs must be 5 letters", () => {
+  assert.equal(X.marriottCodeFromUrl("/reservation/availabilitySearch.mi?propertyCode=chidt&fromDate=11/06/2026"), "CHIDT")
+  assert.equal(X.marriottCodeFromUrl("https://www.marriott.com/hotels/travel/chicd-courtyard-chicago-downtown-river-north/"), "CHICD")
+  assert.equal(X.marriottCodeFromUrl("https://www.marriott.com/en-us/hotels/chijw-jw-marriott-chicago/overview/"), "CHIJW")
+  assert.equal(X.marriottCodeFromUrl("/en-us/hotels/chijw1-x/"), undefined)
+  assert.equal(X.marriottCodeFromUrl("/reservation/availabilitySearch.mi?propertyCode=CHI1W"), undefined)
+  assert.equal(X.marriottCodeFromUrl("https://www.marriott.com/default.mi"), undefined)
+  assert.equal(X.marriottCodeFromUrl(""), undefined)
+  assert.equal(X.marriottCodeFromAttr(" chijw "), "CHIJW")
+  assert.equal(X.marriottCodeFromAttr("12345"), undefined)
+  const codes = hrefs(fixture("marriott-search.html")).map((h) => X.marriottCodeFromUrl(h)).filter(Boolean)
+  assert.deepEqual(codes, ["CHIJW", "CHIDT", "CHICD"])
+  assert.equal(X.marriottBrandFromName("The Ritz-Carlton, Chicago"), "Ritz-Carlton")
+  assert.equal(X.marriottBrandFromName("JW Marriott Chicago"), "JW Marriott")
+  assert.equal(X.marriottBrandFromName("Residence Inn by Marriott"), "Residence Inn")
+})
+
+test("Marriott error / bot pages are blocked; results pages are not", () => {
+  const e = fixture("marriott-error.html")
+  assert.equal(X.detectBlocked({ title: titleOf(e), text: htmlToText(e), url: "https://www.marriott.com/search/findHotels.mi" }), true)
+  assert.equal(X.detectBlocked({ title: "Access Denied", text: "You don't have permission to access", url: "https://www.marriott.com/" }), true)
+  for (const f of ["marriott-search.html", "marriott-search-price-first.html"]) {
+    const h = fixture(f)
+    assert.equal(X.detectBlocked({ title: titleOf(h), text: htmlToText(h), url: "https://www.marriott.com/search/findHotels.mi" }), false, f)
+  }
+  assert.equal(X.detectPageKind("https://www.marriott.com/search/findHotels.mi?x=1"), "SEARCH")
+  assert.equal(X.detectPageKind("https://www.marriott.com/reservation/availabilitySearch.mi?propertyCode=CHIJW"), "ROOMS")
+})
+
+test("Marriott search page (3 cards) with a PRIVATE (F&F) item", () => {
+  const { makeDocument } = require("./mini-dom.js")
+  const url = "https://www.marriott.com/search/findHotels.mi?destinationAddress.destination=Chicago&fromDate=11/06/2026&toDate=11/08/2026&clusterCode=corp&corporateCode=MMF"
+  const r = X.extractFromDocument(makeDocument(fixture("marriott-search.html"), url), { url, intent: "PRIVATE" })
+  assert.equal(r.brand, "marriott")
+  assert.equal(r.intent, "PRIVATE")
+  assert.equal(r.blocked, false)
+  assert.equal(r.debug.cardSelector, '[data-testid="property-card"]')
+  assert.equal(r.debug.cardCount, 3)
+  assert.doesNotMatch(r.debug.url, /corporateCode|MMF/, "the rate code never lands in a snapshot")
+  const byCode = Object.fromEntries(r.observations.map((o) => [o.propertyCode, o]))
+  assert.deepEqual(Object.keys(byCode).sort(), ["CHICD", "CHIDT", "CHIJW"])
+  assert.deepEqual(
+    [byCode.CHIJW.propertyName, byCode.CHIJW.rateKind, byCode.CHIJW.nightlyRate, byCode.CHIJW.rateLabel, byCode.CHIJW.brand],
+    ["JW Marriott Chicago", "PRIVATE_MARRIOTT_FF", 189, "Friends & Family Rate", "JW Marriott"],
+  )
+  assert.equal(byCode.CHIJW.lat, 41.8794)
+  assert.deepEqual([byCode.CHIDT.rateKind, byCode.CHIDT.nightlyRate, byCode.CHIDT.rateLabel], ["PRIVATE_MARRIOTT_FF", 219, "MMF search"])
+  assert.doesNotMatch(byCode.CHIDT.propertyUrl, /corporateCode/)
+  assert.equal(byCode.CHICD.available, false)
+  // Exactly one observation per priced card: the struck $329 is not a public rate.
+  assert.equal(r.observations.filter((o) => o.available).length, 2)
+})
+
+test("Marriott search page with a PUBLIC item: same hotels, PUBLIC kind", () => {
+  const { makeDocument } = require("./mini-dom.js")
+  const url = "https://www.marriott.com/search/findHotels.mi?destinationAddress.destination=Chicago&fromDate=11/06/2026&toDate=11/08/2026"
+  const r = X.extractFromDocument(makeDocument(fixture("marriott-search.html"), url), { url, brand: "marriott", intent: "PUBLIC" })
+  const priced = r.observations.filter((o) => o.available)
+  assert.deepEqual(priced.map((o) => [o.propertyCode, o.rateKind, o.nightlyRate, o.rateLabel]), [
+    ["CHIJW", "PUBLIC", 189, "public search"],
+    ["CHIDT", "PUBLIC", 219, "public search"],
+  ])
+})
+
+test("Marriott cards where the price precedes the name: names never look like money", () => {
+  const { makeDocument } = require("./mini-dom.js")
+  const url = "https://www.marriott.com/search/findHotels.mi?destinationAddress.destination=Chicago&fromDate=11/06/2026&toDate=11/08/2026"
+  const r = X.extractFromDocument(makeDocument(fixture("marriott-search-price-first.html"), url), { url, intent: "PRIVATE" })
+  const byCode = Object.fromEntries(r.observations.map((o) => [o.propertyCode, o]))
+  assert.deepEqual(Object.keys(byCode).sort(), ["CHIAL", "CHIRZ", "CHIWI"])
+  assert.equal(byCode.CHIRZ.propertyName, "The Ritz-Carlton, Chicago") // heading after an <h3>$249</h3>
+  assert.equal(byCode.CHIRZ.nightlyRate, 249)
+  assert.equal(byCode.CHIRZ.brand, "Ritz-Carlton")
+  assert.equal(byCode.CHIWI.propertyName, "The Westin Michigan Avenue Chicago") // link aria-label
+  assert.equal(byCode.CHIWI.brand, "Westin")
+  assert.equal(byCode.CHIAL.propertyName, "Aloft Chicago Mag Mile") // __NEXT_DATA__
+  assert.equal(byCode.CHIAL.lat, 41.8935)
+  for (const o of r.observations) {
+    assert.doesNotMatch(o.propertyName, /^\s*(US)?\$\s?\d/, o.propertyCode)
+    assert.equal(o.rateKind, "PRIVATE_MARRIOTT_FF")
+  }
+})
+
+test("quickProbe and snapshot work on Marriott pages", () => {
+  const { makeDocument } = require("./mini-dom.js")
+  const url = "https://www.marriott.com/search/findHotels.mi?fromDate=11/06/2026&toDate=11/08/2026&corporateCode=MMF"
+  const doc = makeDocument(fixture("marriott-search.html"), url)
+  const p = X.quickProbe(doc, url)
+  assert.deepEqual([p.cardCount, p.priced, p.soldOut, p.blocked], [3, 2, 1, false])
+  const snap = X.snapshot(doc, { url, intent: "PRIVATE" })
+  assert.equal(snap.brand, "marriott")
+  assert.equal(snap.cardCount, 3)
+  assert.doesNotMatch(JSON.stringify(snap), /corporateCode|clusterCode/)
 })

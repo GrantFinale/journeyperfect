@@ -1,20 +1,21 @@
 /*
- * JourneyPerfect Go Rates: reader on www.hilton.com.
+ * JourneyPerfect Go Rates: reader on www.marriott.com.
  *
  * Does nothing on pages the run did not open, except answer the popup's
  * explicit "Capture this tab" / "Debug: copy page snapshot" requests.
  * Never clicks, types, scrolls or reads cookies/storage: it waits for the page
  * to render, reads the DOM via lib/extract.js, and hands the result to the
- * background worker. The run tells it the tab's item intent (PRIVATE Go search
- * or PUBLIC search); that, not the page, decides the rate kind.
+ * background worker. The run tells it the tab's item intent (PRIVATE Friends &
+ * Family search with the rate code, or PUBLIC search); that, not the page,
+ * decides the rate kind.
  *
- * content/marriott.js is the same script for www.marriott.com.
+ * Same lifecycle as content/hilton.js; only BRAND differs.
  */
 /* global JPGoRatesExtract */
 ;(function () {
   "use strict"
 
-  const BRAND = "hilton"
+  const BRAND = "marriott"
   const X = JPGoRatesExtract
   const READY_TIMEOUT_MS = 30000
   const SETTLE_MS = 1500

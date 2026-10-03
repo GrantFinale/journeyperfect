@@ -104,7 +104,7 @@ export function detectOutliers(
             "POSITIVE",
             hotelSavingsHeadline(savingsTotal),
             0.5 + savingsRatio + (num(hotel.facts.unlockedTier) ?? 0) * 0.5,
-            hotelSavingsDetail(String(hotel.facts.hotelName ?? "Hotel"), priv, pub)
+            hotelSavingsDetail(String(hotel.facts.hotelName ?? "Hotel"), priv, pub, typeof hotel.facts.provider === "string" ? hotel.facts.provider : null)
           )
         )
       }

@@ -23,8 +23,10 @@ export default async function PrivateRatesSettingsPage() {
 
   return (
     <div className="max-w-2xl mx-auto p-6">
-      <h1 className="text-2xl font-bold text-gray-900 mb-1">Hilton Go rates</h1>
-      <p className="text-sm text-gray-500 mb-6">Connect your own Hilton account so JourneyPerfect can check Team Member rates when you ask it to.</p>
+      <h1 className="text-2xl font-bold text-gray-900 mb-1">Private hotel rates</h1>
+      <p className="text-sm text-gray-500 mb-6">
+        Your Go Hilton and Marriott Friends &amp; Family rates, read from your own browser when you ask, compared with the public rates for the same hotels.
+      </p>
       <PrivateRatesView initial={status} />
     </div>
   )

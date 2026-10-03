@@ -1,12 +1,13 @@
 {
   "manifest_version": 3,
   "name": "JourneyPerfect Go Rates",
-  "version": "0.2.0",
-  "description": "Private helper: opens the Hilton searches JourneyPerfect asks for in your own signed-in Chrome, reads the displayed rates, and sends them to your JourneyPerfect account.",
+  "version": "0.3.0",
+  "description": "Private helper: opens the Hilton and Marriott searches JourneyPerfect asks for in your own Chrome, reads the displayed rates, and sends them to your JourneyPerfect account.",
   "minimum_chrome_version": "110",
   "permissions": ["tabs", "storage"],
   "host_permissions": [
     "https://www.hilton.com/*",
+    "https://www.marriott.com/*",
     "https://journeyperfect.com/*",
     "https://www.journeyperfect.com/*",
     "http://localhost:3000/*"
@@ -41,6 +42,11 @@
     {
       "matches": ["https://www.hilton.com/*"],
       "js": ["lib/extract.js", "content/hilton.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://www.marriott.com/*"],
+      "js": ["lib/extract.js", "content/marriott.js"],
       "run_at": "document_idle"
     }
   ]

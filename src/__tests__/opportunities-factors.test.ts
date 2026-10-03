@@ -6,7 +6,8 @@ import { anchorExperienceFromFacts, evaluateAnchor } from "@/lib/opportunities/f
 import { estimateDoorToDoor, evaluateDoorToDoor, transportationFromFacts } from "@/lib/opportunities/factors/door-to-door"
 import { ageBand, evaluateFamilyFit } from "@/lib/opportunities/factors/family-fit"
 import { evaluateGroundFriction } from "@/lib/opportunities/factors/ground-friction"
-import { evaluateHotelValue, pairQuotes, tierFromBrand, type RateQuoteLike } from "@/lib/opportunities/factors/hotel-value"
+import { evaluateHotelValue, pairQuotes, pairQuotesDetailed, tierFromBrand, type RateQuoteLike } from "@/lib/opportunities/factors/hotel-value"
+import { isInformationalHotelReason } from "@/lib/opportunities/reason-text"
 import { evaluateNonstopAirfare, pickBestOffer } from "@/lib/opportunities/factors/nonstop-airfare"
 import { evaluateTripLengthFit } from "@/lib/opportunities/factors/trip-length-fit"
 import { evaluateWeather, outdoorSuitability, weatherContextFromFacts } from "@/lib/opportunities/factors/weather"
@@ -64,6 +65,7 @@ function quote(over: Partial<RateQuoteLike> & { rateKind: string; nightlyRate: n
   const nights = 3
   return {
     id: over.id ?? `${over.propertyCode ?? "P"}-${over.rateKind}`,
+    provider: over.provider,
     propertyCode: over.propertyCode ?? "MCOCI",
     propertyName: over.propertyName ?? "Conrad Orlando",
     brand: over.brand ?? "Conrad",
@@ -507,5 +509,111 @@ describe("evaluateHotelValue", () => {
   it("is unavailable with no usable quotes", () => {
     expect(evaluateHotelValue({ quotes: [], nights: 3 }).available).toBe(false)
     expect(evaluateHotelValue({ quotes: [quote({ propertyCode: "X", rateKind: "PUBLIC", nightlyRate: 200 })], nights: 3 }).available).toBe(false)
+  })
+})
+
+describe("evaluateHotelValue with Marriott F&F", () => {
+  const m = (over: Partial<RateQuoteLike> & { rateKind: string; nightlyRate: number }) => quote({ provider: "marriott", ...over })
+
+  it("pairs a Marriott F&F rate with the Marriott public rate and names the brand in the reason", () => {
+    const r = evaluateHotelValue({
+      quotes: [
+        m({ propertyCode: "CHIJW", propertyName: "JW Marriott Chicago", brand: "JW Marriott", rateKind: "PRIVATE_MARRIOTT_FF", nightlyRate: 189 }),
+        m({ propertyCode: "CHIJW", propertyName: "JW Marriott Chicago", brand: "JW Marriott", rateKind: "PUBLIC", nightlyRate: 329 }),
+      ],
+      nights: 3,
+    })
+    expect(r.available).toBe(true)
+    expect(r.facts).toMatchObject({ provider: "marriott", rateKind: "PRIVATE_MARRIOTT_FF", privateNightlyRate: 189, comparablePublicRate: 329, savingsTotal: 420, tier: "LUXURY" })
+    expect(r.reasons[0].detail).toBe("F&F rate $189/night at JW Marriott Chicago (public $329)")
+    expect(r.reasons.map((x) => x.headline)).toContain("Luxury stay at a mid-tier price")
+    expect(r.reasons.find((x) => x.headline === "Luxury stay at a mid-tier price")!.detail).toBe("JW Marriott Chicago, $189/night F&F rate")
+  })
+
+  it("never pairs across chains, even for the same property code", () => {
+    const r = evaluateHotelValue({
+      quotes: [
+        m({ propertyCode: "SAME", rateKind: "PRIVATE_MARRIOTT_FF", nightlyRate: 150 }),
+        quote({ provider: "hilton", propertyCode: "SAME", rateKind: "PUBLIC", nightlyRate: 400 }),
+      ],
+      nights: 3,
+    })
+    expect(r.facts.hasPublicComparable).toBe(false)
+    expect(r.facts.savingsTotal).toBe("")
+  })
+
+  it("best deal = the largest savings across both chains", () => {
+    const r = evaluateHotelValue({
+      quotes: [
+        quote({ provider: "hilton", propertyCode: "HAM", propertyName: "Hampton Inn", brand: "Hampton", rateKind: "PRIVATE_HILTON_GO", nightlyRate: 99 }),
+        quote({ provider: "hilton", propertyCode: "HAM", propertyName: "Hampton Inn", brand: "Hampton", rateKind: "PUBLIC", nightlyRate: 149 }),
+        m({ propertyCode: "CHIMC", propertyName: "Chicago Marriott Downtown", brand: "Marriott", rateKind: "PRIVATE_MARRIOTT_FF", nightlyRate: 229 }),
+        m({ propertyCode: "CHIMC", propertyName: "Chicago Marriott Downtown", brand: "Marriott", rateKind: "PUBLIC", nightlyRate: 379 }),
+      ],
+      nights: 3,
+    })
+    expect(r.facts.propertyCode).toBe("CHIMC")
+    expect(r.facts.savingsTotal).toBe(450)
+    expect(r.facts.bestPrivateCode).toBe("HAM") // cheapest private is still reported
+    expect(r.reasons[0].headline).toBe("$450 hotel savings")
+  })
+
+  it("a luxury unlock with savings beats a bigger saving at a lower tier", () => {
+    const r = evaluateHotelValue({
+      quotes: [
+        m({ propertyCode: "CHIRZ", propertyName: "The Ritz-Carlton, Chicago", brand: "Ritz-Carlton", rateKind: "PRIVATE_MARRIOTT_FF", nightlyRate: 195 }),
+        m({ propertyCode: "CHIRZ", propertyName: "The Ritz-Carlton, Chicago", brand: "Ritz-Carlton", rateKind: "PUBLIC", nightlyRate: 245 }),
+        m({ propertyCode: "CHIMC", propertyName: "Chicago Marriott Downtown", brand: "Marriott", rateKind: "PRIVATE_MARRIOTT_FF", nightlyRate: 229 }),
+        m({ propertyCode: "CHIMC", propertyName: "Chicago Marriott Downtown", brand: "Marriott", rateKind: "PUBLIC", nightlyRate: 479 }),
+      ],
+      nights: 3,
+    })
+    expect(r.facts.propertyCode).toBe("CHIRZ")
+  })
+
+  it("private only: an informational F&F reason, never a savings claim", () => {
+    const r = evaluateHotelValue({ quotes: [m({ propertyCode: "CHIJW", propertyName: "JW Marriott Chicago", rateKind: "PRIVATE_MARRIOTT_FF", nightlyRate: 189 })], nights: 3 })
+    expect(r.reasons[0]).toMatchObject({ headline: "F&F rate from $189/night at JW Marriott Chicago", detail: "Your Marriott Friends & Family rate" })
+    expect(isInformationalHotelReason(r.reasons[0].headline)).toBe(true)
+    expect(r.facts.provider).toBe("marriott")
+  })
+
+  it("publicMatchesPrivate: a chain whose public search echoed the private rate gets no savings", () => {
+    const r = evaluateHotelValue({
+      quotes: [
+        quote({ provider: "hilton", propertyCode: "A", rateKind: "PRIVATE_HILTON_GO", nightlyRate: 150 }),
+        quote({ provider: "hilton", propertyCode: "A", rateKind: "PUBLIC", nightlyRate: 150 }),
+        quote({ provider: "hilton", propertyCode: "B", rateKind: "PRIVATE_HILTON_GO", nightlyRate: 300 }),
+        quote({ provider: "hilton", propertyCode: "B", rateKind: "PUBLIC", nightlyRate: 300.5 }),
+        quote({ provider: "hilton", propertyCode: "C", rateKind: "PRIVATE_HILTON_GO", nightlyRate: 120 }),
+        quote({ provider: "hilton", propertyCode: "C", rateKind: "PUBLIC", nightlyRate: 120 }),
+        quote({ provider: "hilton", propertyCode: "D", rateKind: "PRIVATE_HILTON_GO", nightlyRate: 100 }),
+        quote({ provider: "hilton", propertyCode: "D", rateKind: "PUBLIC", nightlyRate: 100 }),
+        quote({ provider: "hilton", propertyCode: "E", rateKind: "PRIVATE_HILTON_GO", nightlyRate: 90 }),
+        quote({ provider: "hilton", propertyCode: "E", rateKind: "PUBLIC", nightlyRate: 400 }), // 1 of 5 differs: still 80% match
+      ],
+      nights: 3,
+    })
+    expect(r.facts.publicMatchesPrivate).toBe("hilton")
+    expect(r.facts.hasPublicComparable).toBe(false)
+    expect(r.facts.savingsTotal).toBe("")
+    expect(r.reasons.some((x) => /savings|off at/.test(x.headline))).toBe(false)
+    const paired = pairQuotesDetailed([
+      quote({ provider: "marriott", propertyCode: "X", rateKind: "PRIVATE_MARRIOTT_FF", nightlyRate: 150 }),
+      quote({ provider: "marriott", propertyCode: "X", rateKind: "PUBLIC", nightlyRate: 150.4 }),
+      quote({ provider: "hilton", propertyCode: "Y", rateKind: "PRIVATE_HILTON_GO", nightlyRate: 150 }),
+      quote({ provider: "hilton", propertyCode: "Y", rateKind: "PUBLIC", nightlyRate: 250 }),
+    ])
+    expect(paired.publicMatchesPrivate).toEqual(["marriott"])
+    expect(paired.pairs.find((p) => p.provider === "hilton")!.publicQuote).not.toBeNull()
+    expect(paired.pairs.find((p) => p.provider === "marriott")!.publicQuote).toBeNull()
+  })
+
+  it("Marriott sub-brands map to tiers", () => {
+    expect(tierFromBrand("JW Marriott")).toBe("LUXURY")
+    expect(tierFromBrand("The Ritz-Carlton, Chicago")).toBe("LUXURY")
+    expect(tierFromBrand("Courtyard by Marriott")).toBe("MID")
+    expect(tierFromBrand("Chicago Marriott Downtown")).toBe("UPSCALE")
+    expect(tierFromBrand("Fairfield Inn & Suites by Marriott")).toBe("BUDGET")
   })
 })
